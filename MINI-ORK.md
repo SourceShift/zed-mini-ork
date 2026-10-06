@@ -1,20 +1,38 @@
 # mini-ork IDE
 
-Zed with mini-ork built in: a **mini-ork panel** (runs, review, learnings,
-automations, recipes) next to Zed's own Agent panel, Threads Sidebar, Git
-panel and editor.
+Zed with mini-ork built in, drawn to the `mini-ork IDE.dc.html` design:
+
+- **Activity bar + Threads board** on the left — they fill Zed's pluggable
+  workspace sidebar slot, in place of Zed's Threads Sidebar.
+- **The mini-ork thread** — Zed's Agent panel running the `mini-ork` agent, in
+  the left dock.
+- **Pages as tabs** — Orchestrator, Runs, Changes, Verify, Recipes,
+  Automations, Lanes & cost, Learning, Context, Nodes, Setup, and one tab per
+  run (DAG, Overview, Agents, Learnings, Artifacts).
+- **Title bar and status bar** with what needs you, today's spend vs the cap,
+  the scheduler, ContextNest and nodes.
+
+The IDE layers its own defaults under your settings (no dock buttons in the
+status bar); `~/.config/zed/settings.json` is shared with Zed and never written.
 
 ## Layout of the changes
 
 | What | Where | Touches Zed's files? |
 |---|---|---|
-| Panels and their data | `crates/mini_ork_ui/` | no — a new crate |
-| Hooks | `Cargo.toml`, `crates/zed/Cargo.toml`, `crates/zed/src/main.rs`, `crates/zed/src/zed.rs` | yes — 7 lines in one commit |
+| Shell and pages | `crates/mini_ork_ui/` | no — a new crate |
+| Hooks | `Cargo.toml`, `crates/zed/Cargo.toml`, `crates/zed/src/main.rs`, `crates/zed/src/zed.rs` | yes — 5 lines (`git diff $(cat MINI_ORK_BASE) -- Cargo.toml crates/zed`) |
 | Tooling | `script/mini-ork-*`, `MINI-ORK.md`, `MINI_ORK_BASE` | no — new files |
 
-The panels show what `mini-ork board --json` returns and run mini-ork's own
-commands (`mini-ork board merge|discard|stop`, `mini-ork automations …`) for
-every button. mini-ork stays the source of truth and a separate program.
+Every page is data: `mini-ork board page <key> [--tab T] [--arg k=v]` returns
+it as JSON (`mini_ork/ide_pages/spec.py` in mini-ork) and `page.rs` draws it, so a
+page changes without rebuilding the IDE. The shell polls `mini-ork board --json`
+(5 s while the IDE is active, 30 s otherwise) and every button runs a mini-ork
+command (`board merge|discard|stop|kill|resume|gate`, `automations …`). mini-ork
+stays the source of truth and a separate program.
+
+`MINI_ORK_BIN` picks the launcher (default `~/.local/bin/mini-ork`).
+`MINI_ORK_IDE_OPEN=runs,run:latest:dag` opens pages at start-up — for checking
+the IDE without clicking through it.
 
 ## Build and run
 
