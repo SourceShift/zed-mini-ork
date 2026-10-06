@@ -19,9 +19,14 @@ every button. mini-ork stays the source of truth and a separate program.
 ## Build and run
 
 ```bash
-script/mini-ork-build                 # low priority, 4 jobs, no debug info
-script/mini-ork-ide ~/path/to/project
+script/mini-ork-build                 # utility priority, 4 jobs; refreshes the app
+open -a "mini-ork IDE" ~/path/to/project   # or script/mini-ork-ide <folder>
 ```
+
+`script/mini-ork-app` (run by `mini-ork-build`) assembles `target/mini-ork IDE.app`
+around the build — its own name, bundle id `dev.mini-ork.ide` and icon, the binary
+hard-linked so it costs no space — and links it into `~/Applications`, so it opens
+from Spotlight, Launchpad and the Dock like any app.
 
 `script/mini-ork-build` keeps the Mac usable while it builds: background QoS
 (efficiency cores), 4 parallel jobs (`MINI_ORK_BUILD_JOBS`), no debug info. A

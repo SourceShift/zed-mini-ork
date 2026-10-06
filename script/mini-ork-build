@@ -16,7 +16,8 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 jobs="${MINI_ORK_BUILD_JOBS:-4}"
-exec taskpolicy -c utility env \
+taskpolicy -c utility env \
   ZED_RELEASE_CHANNEL=dev \
   ${MINI_ORK_BUILD_DEBUG:+CARGO_PROFILE_RELEASE_FAST_DEBUG=$MINI_ORK_BUILD_DEBUG} \
   cargo build -p zed --profile release-fast -j "$jobs" "$@"
+"$(dirname "$0")/mini-ork-app"   # refresh "mini-ork IDE.app" on the new binary
