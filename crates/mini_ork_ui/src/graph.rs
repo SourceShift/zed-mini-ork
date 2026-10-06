@@ -21,6 +21,7 @@ use workspace::Workspace;
 use crate::{
     board,
     page::{MiniOrkPage, arr, str_of},
+    select::{Look, Texts},
     palette::{self as p, c},
     store::{self, BoardStore, Origin},
 };
@@ -178,6 +179,7 @@ pub struct MiniOrkGraph {
     replay: Option<usize>,
     steer: Arc<dyn ErasedEditor>,
     severity: &'static str,
+    texts: Texts,
     _load: Task<()>,
     _replay: Task<()>,
     _subs: Vec<Subscription>,
@@ -244,6 +246,7 @@ impl MiniOrkGraph {
             replay: None,
             steer,
             severity: "info",
+            texts: Texts::default(),
             _load: Task::ready(()),
             _replay: Task::ready(()),
             _subs: vec![filter_sub],
@@ -986,7 +989,10 @@ impl MiniOrkGraph {
             .child(tabs);
 
         let body = match (&detail, &self.detail_error) {
-            (_, Some(error)) => div().p(px(14.)).child(p::text(error.clone(), 12.5, p::RED)).into_any_element(),
+            (_, Some(error)) => div()
+                .p(px(14.))
+                .child(self.texts.text("node-error", error, Look::new(12.5, c(p::RED)).mono(true), cx))
+                .into_any_element(),
             (None, None) => div()
                 .p(px(14.))
                 .child(crate::loading::loading_line(format!("board node {} {} --view {}", self.model.run_id, node.id, self.tab), cx))
@@ -1056,7 +1062,6 @@ impl MiniOrkGraph {
     }
 
     fn render_facts(&self, detail: &Value, cx: &mut Context<Self>) -> AnyElement {
-        let mono = p::mono_font(cx);
         let kv = arr(detail, "kv");
         let block = arr(detail, "block");
         let list = arr(detail, "list");
@@ -1080,20 +1085,19 @@ impl MiniOrkGraph {
                             .border_1()
                             .border_color(c(p::BORDER))
                             .child(p::text(str_of(k, "k"), 10.5, p::SUB))
-                            .child(
-                                div()
-                                    .text_size(px(12.5))
-                                    .font(mono.clone())
-                                    .text_color(p::named(&str_of(k, "c")))
-                                    .child(str_of(k, "v")),
-                            )
+                            .child(self.texts.text(
+                                format!("fact-{}", str_of(k, "k")),
+                                str_of(k, "v"),
+                                Look::new(12.5, p::named(&str_of(k, "c"))).mono(true),
+                                cx,
+                            ))
                     })))
                     .when(!block.is_empty(), |this| {
                         this.child(
                             v_flex()
                                 .gap(px(4.))
                                 .child(p::text(str_of(detail, "block_title").to_uppercase(), 11., p::SUB))
-                                .child(crate::page::code_box(block.clone(), cx)),
+                                .child(crate::page::code_box(&self.texts, "fact-block", block.clone(), cx)),
                         )
                     })
                     .when(!list.is_empty(), |this| {
@@ -1101,7 +1105,7 @@ impl MiniOrkGraph {
                             v_flex()
                                 .gap(px(4.))
                                 .child(p::text(str_of(detail, "list_title").to_uppercase(), 11., p::SUB))
-                                .children(list.iter().map(|it| {
+                                .children(list.iter().enumerate().map(|(i, it)| {
                                     let sub = str_of(it, "sub");
                                     h_flex()
                                         .items_start()
@@ -1113,8 +1117,10 @@ impl MiniOrkGraph {
                                         .child(
                                             v_flex()
                                                 .min_w_0()
-                                                .child(p::text(str_of(it, "t"), 12.5, p::TEXT))
-                                                .when(!sub.is_empty(), |this| this.child(p::text(sub, 11.5, p::SUB))),
+                                                .child(self.texts.text(format!("fact-l{i}"), str_of(it, "t"), Look::new(12.5, c(p::TEXT)), cx))
+                                                .when(!sub.is_empty(), |this| {
+                                                    this.child(self.texts.text(format!("fact-ls{i}"), &sub, Look::new(11.5, c(p::SUB)), cx))
+                                                }),
                                         )
                                 })),
                         )
@@ -1144,7 +1150,8 @@ impl MiniOrkGraph {
                 _ => p::SUB,
             }
         };
-        let entries = shown.iter().map(|e| stream_entry(e, &mono));
+        let entries: Vec<AnyElement> = shown.iter().enumerate().map(|(i, e)| self.stream_entry(i, e, cx)).collect();
+        let transcript_text = shown.iter().map(entry_text).collect::<Vec<_>>().join("\n");
         let running = live && node.state == "running";
         let source = str_of(detail, "source");
         let header = h_flex()
@@ -1160,6 +1167,16 @@ impl MiniOrkGraph {
             .child(p::text(status, 11.5, status_colour))
             .child(p::text(str_of(detail, "meta"), 11.5, p::DIM).truncate().min_w_0())
             .child(div().flex_1())
+            .when(!shown.is_empty(), |this| {
+                this.child(p::button(
+                    "stream-copy",
+                    "⧉ Copy",
+                    "ghost",
+                    22.,
+                    11.5,
+                    Some(Box::new(move |_, _, cx| cx.write_to_clipboard(ClipboardItem::new_string(transcript_text.clone())))),
+                ))
+            })
             .when(self.replay.is_some(), |this| {
                 this.child(p::button(
                     "stream-skip",
@@ -1313,126 +1330,128 @@ impl MiniOrkGraph {
     }
 }
 
-/// One transcript entry: `user`/`steer` boxes, `note` asides, and rows —
-/// `⏺ Tool(args)` with `⎿` result lines, `✻ Thinking…`, text, todos.
-fn stream_entry(e: &Value, mono: &gpui::Font) -> AnyElement {
-    let kind = str_of(e, "k");
-    let head = str_of(e, "head");
-    let arg = str_of(e, "arg");
-    let lines = arr(e, "lines");
-    let line_el = |l: &Value| {
-        let bg = match str_of(l, "bg").as_str() {
-            "green-bg" => Some(p::ca(0xa1c1811f)),
-            "red-bg" => Some(p::ca(0xd072771f)),
-            _ => None,
-        };
-        let colour = str_of(l, "c");
-        div()
-            .px(px(6.))
-            .rounded(px(2.))
-            .text_size(px(12.))
-            .whitespace_nowrap()
-            .text_color(if colour.is_empty() { c(p::MUTED) } else { p::named(&colour) })
-            .when_some(bg, |this, bg| this.bg(bg))
-            .child(str_of(l, "t"))
-    };
-    match kind.as_str() {
-        "user" | "steer" => {
-            let steer = kind == "steer";
-            div()
-                .px(px(10.))
-                .py(px(7.))
-                .rounded(px(6.))
-                .border_1()
-                .border_color(if steer { p::ca(0xdec18480) } else { c(p::BORDER2) })
-                .bg(if steer { p::ca(0xdec18410) } else { c(0x262a31) })
-                .child(
-                    h_flex()
-                        .items_start()
-                        .gap(px(6.))
-                        .child(p::text(">", 12.5, if steer { p::YELLOW } else { p::SUB }))
-                        .child(
-                            div()
-                                .flex_1()
-                                .min_w_0()
-                                .child(div().text_color(c(if steer { p::YELLOW } else { p::TEXT })).child(format!("{head}{arg}"))),
-                        ),
-                )
-                .into_any_element()
-        }
-        "note" => div()
-            .pl(px(20.))
-            .text_size(px(11.5))
-            .text_color(c(p::DIM))
-            .child(format!("⎿  {arg}"))
-            .into_any_element(),
-        _ => {
-            let (dot, dot_colour, italic) = match kind.as_str() {
-                "think" => ("✻", p::PURPLE, true),
-                "tool" => {
-                    let failed = lines.iter().any(|l| str_of(l, "c") == "red");
-                    ("⏺", if failed { p::RED } else { p::GREEN }, false)
-                }
-                "out" => ("", p::DIM, false),
-                _ => ("⏺", p::TEXT, false),
-            };
-            let arg_text = if kind == "tool" && !arg.is_empty() { format!("({arg})") } else { arg };
-            v_flex()
-                .when(kind != "out", |this| {
-                    this.child(
+/// An entry as plain text, for "Copy".
+fn entry_text(e: &Value) -> String {
+    let mut text = format!("{}{}", str_of(e, "head"), str_of(e, "arg"));
+    for l in arr(e, "lines") {
+        text.push_str("\n  ");
+        text.push_str(&str_of(&l, "t"));
+    }
+    text
+}
+
+impl MiniOrkGraph {
+    /// One transcript entry: `user`/`steer` boxes, `note` asides, and rows —
+    /// `⏺ Tool(args)` with `⎿` result lines, `✻ Thinking…`, text, todos.
+    /// Every piece of text is selectable.
+    fn stream_entry(&self, index: usize, e: &Value, cx: &mut Context<Self>) -> AnyElement {
+        let kind = str_of(e, "k");
+        let head = str_of(e, "head");
+        let arg = str_of(e, "arg");
+        let lines = arr(e, "lines");
+        let key = |part: &str| format!("e{index}-{part}");
+        match kind.as_str() {
+            "user" | "steer" => {
+                let steer = kind == "steer";
+                div()
+                    .px(px(10.))
+                    .py(px(7.))
+                    .rounded(px(6.))
+                    .border_1()
+                    .border_color(if steer { p::ca(0xdec18480) } else { c(p::BORDER2) })
+                    .bg(if steer { p::ca(0xdec18410) } else { c(0x262a31) })
+                    .child(
                         h_flex()
                             .items_start()
-                            .gap(px(9.))
-                            .child(div().flex_none().w(px(12.)).text_size(px(11.)).text_color(c(dot_colour)).child(dot))
-                            .child(
-                                div()
-                                    .flex_1()
-                                    .min_w_0()
-                                    .when(italic, |this| this.italic())
-                                    .child(
-                                        h_flex()
-                                            .flex_wrap()
-                                            .child(
-                                                div()
-                                                    .font_weight(gpui::FontWeight::SEMIBOLD)
-                                                    .text_color(c(p::TEXT))
-                                                    .child(head),
-                                            )
-                                            .child(div().text_color(c(p::MUTED)).child(arg_text)),
-                                    ),
-                            ),
+                            .gap(px(6.))
+                            .child(p::text(">", 12.5, if steer { p::YELLOW } else { p::SUB }))
+                            .child(div().flex_1().min_w_0().child(self.texts.text(
+                                key("box"),
+                                format!("{head}{arg}"),
+                                Look::new(12.5, c(if steer { p::YELLOW } else { p::TEXT })).mono(true),
+                                cx,
+                            ))),
                     )
-                })
-                .when(!lines.is_empty(), |this| {
-                    this.child(
-                        h_flex()
-                            .items_start()
-                            .gap(px(8.))
-                            .mt(px(2.))
-                            .pl(px(if kind == "out" { 22. } else { 0. }))
-                            .child(div().flex_none().w(px(12.)).text_color(c(p::DIM)).child("⎿"))
-                            .child(
-                                div()
-                                    .id(SharedString::from(format!("lines-{}", lines.len())))
-                                    .flex_1()
-                                    .min_w_0()
-                                    .overflow_x_scroll()
-                                    .child(v_flex().font(mono.clone()).children(lines.iter().map(line_el))),
-                            ),
-                    )
-                })
-                .into_any_element()
+                    .into_any_element()
+            }
+            "note" => div()
+                .pl(px(20.))
+                .child(self.texts.text(key("note"), format!("⎿  {arg}"), Look::new(11.5, c(p::DIM)).mono(true), cx))
+                .into_any_element(),
+            _ => {
+                let (dot, dot_colour, italic) = match kind.as_str() {
+                    "think" => ("✻", p::PURPLE, true),
+                    "tool" => {
+                        let failed = lines.iter().any(|l| str_of(l, "c") == "red");
+                        ("⏺", if failed { p::RED } else { p::GREEN }, false)
+                    }
+                    "out" => ("", p::DIM, false),
+                    _ => ("⏺", p::TEXT, false),
+                };
+                let arg_text = if kind == "tool" && !arg.is_empty() { format!("({arg})") } else { arg };
+                let line_els: Vec<AnyElement> = lines
+                    .iter()
+                    .enumerate()
+                    .map(|(i, l)| {
+                        let bg = match str_of(l, "bg").as_str() {
+                            "green-bg" => Some(p::ca(0xa1c1811f)),
+                            "red-bg" => Some(p::ca(0xd072771f)),
+                            _ => None,
+                        };
+                        let colour = str_of(l, "c");
+                        div()
+                            .px(px(6.))
+                            .rounded(px(2.))
+                            .when_some(bg, |this, bg| this.bg(bg))
+                            .child(self.texts.text(
+                                key(&format!("l{i}")),
+                                str_of(l, "t"),
+                                Look::new(12., if colour.is_empty() { c(p::MUTED) } else { p::named(&colour) }).mono(true).nowrap(),
+                                cx,
+                            ))
+                            .into_any_element()
+                    })
+                    .collect();
+                let head_el = (!head.is_empty())
+                    .then(|| self.texts.text(key("head"), &head, Look::new(12.5, c(p::TEXT)).mono(true).bold(true).italic(italic), cx));
+                let arg_el = (!arg_text.is_empty())
+                    .then(|| self.texts.text(key("arg"), &arg_text, Look::new(12.5, c(p::MUTED)).mono(true).italic(italic), cx));
+                v_flex()
+                    .when(kind != "out", |this| {
+                        this.child(
+                            h_flex()
+                                .items_start()
+                                .gap(px(9.))
+                                .child(div().flex_none().w(px(12.)).text_size(px(11.)).text_color(c(dot_colour)).child(dot))
+                                .child(h_flex().flex_1().min_w_0().flex_wrap().items_start().children(head_el).children(arg_el)),
+                        )
+                    })
+                    .when(!line_els.is_empty(), |this| {
+                        this.child(
+                            h_flex()
+                                .items_start()
+                                .gap(px(8.))
+                                .mt(px(2.))
+                                .pl(px(if kind == "out" { 22. } else { 0. }))
+                                .child(div().flex_none().w(px(12.)).text_color(c(p::DIM)).child("⎿"))
+                                .child(v_flex().flex_1().min_w_0().children(line_els)),
+                        )
+                    })
+                    .into_any_element()
+            }
         }
     }
 }
 
 impl Render for MiniOrkGraph {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        self.texts.begin();
         let viewport = window.viewport_size();
         let selected = self.selected.as_ref().and_then(|id| self.node(id)).cloned();
         let header = self.render_header(window, cx);
         let canvas = if self.list_view { self.render_list(cx) } else { self.render_graph(cx) };
         let inspector = selected.map(|node| self.render_inspector(&node, window, cx));
+        self.texts.end();
         v_flex()
             .id("mini-ork-run-graph")
             .track_focus(&self.focus_handle)
