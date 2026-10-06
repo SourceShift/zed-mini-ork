@@ -1,6 +1,6 @@
 //! The mini-ork dock panel: runs, review, learnings, automations, recipes.
 
-use std::{path::PathBuf, time::Duration};
+use std::{collections::HashMap, path::PathBuf, time::Duration};
 
 use gpui::{
     Action, App, AsyncWindowContext, Context, Entity, EventEmitter, FocusHandle, Focusable,
@@ -8,8 +8,9 @@ use gpui::{
 };
 use ui::{AgentThreadStatus, Divider, ThreadItem, prelude::*};
 use workspace::{
-    Workspace,
+    Toast, Workspace,
     dock::{DockPosition, Panel, PanelEvent},
+    notifications::NotificationId,
 };
 
 use crate::board::{self, Board};
@@ -76,6 +77,8 @@ pub struct MiniOrkPanel {
     selected_run: Option<String>,
     card: Option<String>,
     notice: Option<String>,
+    /// Each run's state at the previous refresh, to notice runs that finish.
+    last_states: HashMap<String, String>,
     _poll: Task<()>,
 }
 
@@ -127,6 +130,7 @@ impl MiniOrkPanel {
                     match result {
                         Ok((home, board)) => {
                             this.home = Some(home);
+                            this.announce_finished(&board, cx);
                             this.board = Some(board);
                             this.error = None;
                         }
@@ -153,7 +157,62 @@ impl MiniOrkPanel {
             selected_run: None,
             card: None,
             notice: None,
+            last_states: HashMap::new(),
             _poll: poll,
+        }
+    }
+
+    /// A toast for every run that was working at the previous refresh and has
+    /// finished now — "Show" selects it in the panel.
+    fn announce_finished(&mut self, board: &Board, cx: &mut Context<Self>) {
+        let first_refresh = self.last_states.is_empty();
+        let finished: Vec<board::Run> = board
+            .runs
+            .iter()
+            .filter(|run| run.state != "working")
+            .filter(|run| self.last_states.get(&run.id).is_some_and(|state| state == "working"))
+            .cloned()
+            .collect();
+        self.last_states = board
+            .runs
+            .iter()
+            .map(|run| (run.id.clone(), run.state.clone()))
+            .collect();
+        if first_refresh {
+            return;
+        }
+        let Some(workspace) = self.workspace.upgrade() else {
+            return;
+        };
+        let panel = cx.entity().downgrade();
+        for run in finished {
+            let verb = match run.state.as_str() {
+                "needs_you" => "needs you",
+                "failed" => "failed",
+                _ => "finished",
+            };
+            let title = if run.title.is_empty() { run.id.clone() } else { run.title.clone() };
+            let mut message = format!("mini-ork {verb} · {}", truncate(&title));
+            if run.added > 0 || run.removed > 0 {
+                message.push_str(&format!(" · +{} −{}", run.added, run.removed));
+            }
+            let run_id = run.id.clone();
+            let panel = panel.clone();
+            let toast = Toast::new(
+                NotificationId::named(SharedString::from(format!("mini-ork-run-{}", run.id))),
+                message,
+            )
+            .on_click("Show", move |_window, cx| {
+                panel
+                    .update(cx, |panel, cx| {
+                        panel.section = Section::Runs;
+                        panel.selected_run = None;
+                        panel.select_run(run_id.clone(), cx);
+                    })
+                    .ok();
+            })
+            .autohide();
+            workspace.update(cx, |workspace, cx| workspace.show_toast(toast, cx));
         }
     }
 
@@ -225,7 +284,24 @@ impl MiniOrkPanel {
             .pt_2()
             .pb_1()
             .gap_0p5()
-            .child(Label::new(title).size(LabelSize::Default))
+            .child(
+                h_flex()
+                    .justify_between()
+                    .child(Label::new(title).size(LabelSize::Default))
+                    .child(
+                        Button::new("mini-ork-new-task", "New task")
+                            .label_size(LabelSize::Small)
+                            .on_click(|_, window, cx| {
+                                // A new thread with the mini-ork agent in the Agent panel.
+                                if let Ok(action) = cx.build_action(
+                                    "agent::NewExternalAgentThread",
+                                    Some(serde_json::json!({ "agent": "mini-ork" })),
+                                ) {
+                                    window.dispatch_action(action, cx);
+                                }
+                            }),
+                    ),
+            )
             .when_some(counts, |this, counts| {
                 this.child(Label::new(counts).size(LabelSize::Small).color(Color::Muted))
             })
@@ -286,7 +362,34 @@ impl MiniOrkPanel {
             ));
         }
         let now = now_epoch();
-        v_flex().gap_px().children(board.runs.iter().map(|run| {
+        let groups = [
+            ("working", "WORKING"),
+            ("needs_you", "NEEDS YOU"),
+            ("done", "DONE"),
+            ("failed", "FAILED"),
+        ];
+        v_flex().gap_px().children(groups.into_iter().filter_map(|(state, heading)| {
+            let runs: Vec<&board::Run> = board.runs.iter().filter(|run| run.state == state).collect();
+            if runs.is_empty() {
+                return None;
+            }
+            Some(
+                v_flex()
+                    .gap_px()
+                    .child(
+                        div().px_2().pt_2().pb_0p5().child(
+                            Label::new(format!("{heading}  {}", runs.len()))
+                                .size(LabelSize::XSmall)
+                                .color(Color::Muted),
+                        ),
+                    )
+                    .children(runs.into_iter().map(|run| self.render_run_row(run, now, cx))),
+            )
+        }))
+    }
+
+    fn render_run_row(&self, run: &board::Run, now: i64, cx: &mut Context<Self>) -> AnyElement {
+        {
             let id = run.id.clone();
             let selected = self.selected_run.as_deref() == Some(run.id.as_str());
             let title = if run.title.is_empty() {
@@ -308,7 +411,8 @@ impl MiniOrkPanel {
             v_flex()
                 .child(item)
                 .when(selected, |this| this.child(self.render_run_detail(run, cx)))
-        }))
+                .into_any_element()
+        }
     }
 
     fn render_run_detail(&self, run: &board::Run, cx: &mut Context<Self>) -> impl IntoElement {
