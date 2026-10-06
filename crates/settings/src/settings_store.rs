@@ -613,6 +613,16 @@ impl SettingsStore {
         return rx;
     }
 
+    pub fn enqueue_settings_file_job(
+        &self,
+        job: impl 'static + FnOnce(AsyncApp) -> LocalBoxFuture<'static, Result<()>>,
+    ) {
+        self.setting_file_updates_tx
+            .unbounded_send(Box::new(job))
+            .map_err(|err| anyhow::format_err!("Failed to enqueue a settings file job: {err}"))
+            .log_with_level(log::Level::Warn);
+    }
+
     pub fn update_settings_file(
         &self,
         fs: Arc<dyn Fs>,
