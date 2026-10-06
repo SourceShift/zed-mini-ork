@@ -36,5 +36,5 @@ fi
 echo "${tag}" > MINI_ORK_BASE
 git add MINI_ORK_BASE
 git commit -q -m "mini-ork: base ${tag}" || true
-ZED_RELEASE_CHANNEL=dev cargo build -p zed --profile release-fast
+"$(dirname "$0")/mini-ork-build"
 echo "mini-ork IDE on Zed ${tag}: script/mini-ork-ide"

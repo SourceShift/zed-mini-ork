@@ -19,9 +19,15 @@ every button. mini-ork stays the source of truth and a separate program.
 ## Build and run
 
 ```bash
-ZED_RELEASE_CHANNEL=dev cargo build -p zed --profile release-fast
+script/mini-ork-build                 # low priority, 4 jobs, no debug info
 script/mini-ork-ide ~/path/to/project
 ```
+
+`script/mini-ork-build` keeps the Mac usable while it builds: background QoS
+(efficiency cores), 4 parallel jobs (`MINI_ORK_BUILD_JOBS`), no debug info. A
+first build is long; after that, a change to `crates/mini_ork_ui` rebuilds in
+about a minute. Avoid toggling features of core crates (e.g. GPUI
+`test-support`): that recompiles most of Zed.
 
 The dev channel makes it a separate instance next to an installed Zed. It
 shares `~/.config/zed` (settings, keymap, agent servers — the `mini-ork` agent
