@@ -105,6 +105,8 @@ pub struct MiniOrkPage {
     dag_scroll: ScrollHandle,
     /// The run graph, full screen, when open.
     graph: Option<Entity<crate::graph::MiniOrkGraph>>,
+    /// Open the graph (on this node, if any) once the page has loaded.
+    pub(crate) pending_graph: Option<Option<String>>,
     _graph_sub: Option<Subscription>,
     /// Board reads this page has followed (it re-reads when the board moves).
     seen_board: u64,
@@ -138,6 +140,7 @@ impl MiniOrkPage {
             fade: 0,
             dag_scroll: ScrollHandle::new(),
             graph: None,
+            pending_graph: None,
             _graph_sub: None,
             seen_board: 0,
             last_reload: std::time::Instant::now(),
@@ -1015,7 +1018,7 @@ impl MiniOrkPage {
 
 impl MiniOrkPage {
     /// Open the run graph full screen, optionally on one node's stream.
-    fn open_graph(&mut self, node: Option<String>, window: &mut Window, cx: &mut Context<Self>) {
+    pub(crate) fn open_graph(&mut self, node: Option<String>, window: &mut Window, cx: &mut Context<Self>) {
         let Some(run) = self.args.get("run").cloned() else {
             return;
         };
@@ -1164,6 +1167,14 @@ impl Item for MiniOrkPage {
 impl Render for MiniOrkPage {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.follow_board(cx);
+        if matches!(self.data, Some(Ok(_))) && !self.switching {
+            if let Some(node) = self.pending_graph.take() {
+                let page = cx.entity().downgrade();
+                window.defer(cx, move |window, cx| {
+                    page.update(cx, |page, cx| page.open_graph(node, window, cx)).ok();
+                });
+            }
+        }
         let source = self.source();
         let bar = self.loading.then(|| loading::sweep_bar(("page-sweep", self.generation as usize)));
         let content = match self.data.clone() {

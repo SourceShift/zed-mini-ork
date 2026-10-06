@@ -65,7 +65,7 @@ pub fn init(cx: &mut App) {
 
 /// The design's layout once the window has loaded: the mini-ork thread in the
 /// left dock, nothing in the right dock. `MINI_ORK_IDE_OPEN` (comma-separated
-/// `key[:tab]`, `run:<id>[:tab]` or `run:latest[:tab]`) also opens pages —
+/// `key[:tab]`, `run:<id>[:tab][:graph[:node]]` or `run:latest…`) also opens pages —
 /// for checking the IDE without clicking through it.
 fn startup_layout(window: &mut Window, cx: &mut Context<Workspace>) {
     cx.spawn_in(window, async move |workspace, cx| {
@@ -118,7 +118,17 @@ fn startup_layout(window: &mut Window, cx: &mut Context<Workspace>) {
                             } else {
                                 (parts[1].to_string(), String::new())
                             };
-                            crate::page::open_run(&entity, id, title, tab, window, cx);
+                            crate::page::open_run(&entity, id.clone(), title, tab, window, cx);
+                            if parts.get(3) == Some(&"graph") {
+                                let node = parts.get(4).map(|n| n.to_string());
+                                let page = entity
+                                    .read(cx)
+                                    .items_of_type::<crate::page::MiniOrkPage>(cx)
+                                    .find(|page| page.read(cx).args.get("run") == Some(&id));
+                                if let Some(page) = page {
+                                    page.update(cx, |page, _| page.pending_graph = Some(node));
+                                }
+                            }
                         } else {
                             let tab = parts.get(1).map(|t| t.to_string());
                             crate::page::open_page(&entity, parts[0].to_string(), tab, BTreeMap::new(), window, cx);
