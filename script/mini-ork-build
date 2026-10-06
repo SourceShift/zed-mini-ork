@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+# Build the mini-ork IDE without taking over the machine.
+#
+#   script/mini-ork-build            # the usual: rebuild after a change
+#
+# - macOS background QoS (`taskpolicy -b`): the build runs on the efficiency
+#   cores at low I/O priority, so the Mac stays responsive. It takes longer.
+# - MINI_ORK_BUILD_JOBS parallel jobs (default 4): peak RAM grows with every
+#   rustc running at once, so fewer jobs is the main memory lever.
+# - No debug info (CARGO_PROFILE_RELEASE_FAST_DEBUG=false): rustc and the
+#   linker need far less memory and the binary is a fraction of the size.
+#   (Switching this the first time rebuilds everything once.)
+# After the first build, an edit to crates/mini_ork_ui rebuilds that crate and
+# relinks Zed — about a minute.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+jobs="${MINI_ORK_BUILD_JOBS:-4}"
+exec taskpolicy -b env \
+  ZED_RELEASE_CHANNEL=dev \
+  CARGO_PROFILE_RELEASE_FAST_DEBUG=false \
+  cargo build -p zed --profile release-fast -j "$jobs" "$@"
