@@ -13,10 +13,15 @@ path = "src/mini_ork_ui.rs"
 doctest = false
 
 [dependencies]
+agent_ui.workspace = true
 anyhow.workspace = true
 gpui.workspace = true
+log.workspace = true
+platform_title_bar.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+settings.workspace = true
+theme.workspace = true
 ui.workspace = true
 util.workspace = true
 workspace.workspace = true

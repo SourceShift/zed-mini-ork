@@ -1,0 +1,1066 @@
+//! A mini-ork page as an editor tab: one generic renderer for every
+//! `mini-ork board page <key>` document (see `mini_ork/ide_pages/spec.py`).
+//! A run's tab is the `run` page with `args.run`.
+
+use std::{collections::BTreeMap, time::Duration};
+
+use gpui::{
+    AnyElement, App, ClickEvent, Context, Entity, EventEmitter, FocusHandle, Focusable, Render,
+    SharedString, Task, WeakEntity, Window, px,
+};
+use serde_json::Value;
+use ui::prelude::*;
+use workspace::{
+    Workspace,
+    item::{Item, TabContentParams},
+};
+
+use crate::{
+    board,
+    palette::{self as p, c},
+    store::{self, BoardStore, Origin},
+};
+
+/// The glyph each page shows in its tab and in the activity bar.
+pub fn glyph(key: &str) -> &'static str {
+    match key {
+        "run" => "◇",
+        "orch" => "✦",
+        "runs" => "≡",
+        "changes" => "⑂",
+        "verify" => "✓",
+        "recipes" => "▥",
+        "autos" => "◷",
+        "lanes" => "$",
+        "learn" => "❖",
+        "context" => "◫",
+        "nodes" => "⬡",
+        "setup" => "⚙",
+        _ => "◇",
+    }
+}
+
+/// The tab label before the page has loaded.
+pub fn default_label(key: &str) -> &'static str {
+    match key {
+        "orch" => "Orchestrator",
+        "runs" => "Runs",
+        "changes" => "Changes",
+        "verify" => "Verify & safety",
+        "recipes" => "Recipes & epics",
+        "autos" => "Automations",
+        "lanes" => "Lanes & cost",
+        "learn" => "Learning & memory",
+        "context" => "Context",
+        "nodes" => "Nodes",
+        "setup" => "Setup & health",
+        _ => "mini-ork",
+    }
+}
+
+fn run_label(run_id: &str) -> String {
+    match run_id.rsplit_once('-') {
+        Some((_, tail)) if !tail.is_empty() => format!("run-{tail}"),
+        _ => run_id.to_string(),
+    }
+}
+
+pub struct MiniOrkPage {
+    pub(crate) key: String,
+    pub(crate) args: BTreeMap<String, String>,
+    tab: Option<String>,
+    title_hint: String,
+    workspace: WeakEntity<Workspace>,
+    focus_handle: FocusHandle,
+    data: Option<Result<Value, String>>,
+    loading: bool,
+    generation: u64,
+    _load: Task<()>,
+}
+
+impl MiniOrkPage {
+    fn new(
+        key: String,
+        tab: Option<String>,
+        args: BTreeMap<String, String>,
+        title_hint: String,
+        workspace: WeakEntity<Workspace>,
+        cx: &mut Context<Self>,
+    ) -> Self {
+        let mut this = Self {
+            key,
+            args,
+            tab,
+            title_hint,
+            workspace,
+            focus_handle: cx.focus_handle(),
+            data: None,
+            loading: false,
+            generation: 0,
+            _load: Task::ready(()),
+        };
+        this.reload(cx);
+        this
+    }
+
+    fn label(&self) -> String {
+        if self.key == "run" {
+            return run_label(self.args.get("run").map(String::as_str).unwrap_or("run"));
+        }
+        self.data
+            .as_ref()
+            .and_then(|d| d.as_ref().ok())
+            .and_then(|d| d.get("label").and_then(Value::as_str))
+            .map(String::from)
+            .unwrap_or_else(|| default_label(&self.key).to_string())
+    }
+
+    pub fn set_args(&mut self, args: BTreeMap<String, String>, cx: &mut Context<Self>) {
+        for (k, v) in args {
+            if k == "tab" {
+                self.tab = Some(v);
+            } else if v.is_empty() {
+                self.args.remove(&k);
+            } else {
+                self.args.insert(k, v);
+            }
+        }
+        self.reload(cx);
+    }
+
+    fn set_tab(&mut self, tab: String, cx: &mut Context<Self>) {
+        self.tab = Some(tab);
+        self.reload(cx);
+    }
+
+    /// Fetch the page again; while it is live, keep refreshing it.
+    pub fn reload(&mut self, cx: &mut Context<Self>) {
+        self.generation += 1;
+        let generation = self.generation;
+        self.loading = true;
+        cx.notify();
+        let (key, tab, args) = (self.key.clone(), self.tab.clone(), self.args.clone());
+        let workspace = self.workspace.clone();
+        self._load = cx.spawn(async move |this, cx| {
+            loop {
+                // The board poller knows the project's home; wait for its first read.
+                let mut target = None;
+                for _ in 0..100 {
+                    target = cx.update(|cx| {
+                        let workspace = workspace.upgrade()?;
+                        let store = BoardStore::for_workspace(&workspace, cx)?;
+                        let store = store.read(cx);
+                        Some((store.bin.clone(), store.home.clone()?))
+                    });
+                    if target.is_some() {
+                        break;
+                    }
+                    cx.background_executor().timer(Duration::from_millis(300)).await;
+                }
+                let Some((bin, home)) = target else {
+                    this.update(cx, |this, cx| {
+                        this.loading = false;
+                        this.data = Some(Err("This project has no .mini-ork — run `mini-ork init` in it.".into()));
+                        cx.notify();
+                    })
+                    .ok();
+                    return;
+                };
+                let result = cx
+                    .background_spawn(board::fetch_page(bin, home, key.clone(), tab.clone(), args.clone()))
+                    .await;
+                let refresh = this
+                    .update(cx, |this, cx| {
+                        if this.generation != generation {
+                            return None;
+                        }
+                        this.loading = false;
+                        let refresh = match &result {
+                            Ok(value) => value.get("refresh").and_then(Value::as_u64),
+                            Err(_) => None,
+                        };
+                        this.data = Some(result.map_err(|e| e.to_string()));
+                        cx.notify();
+                        refresh
+                    })
+                    .ok()
+                    .flatten();
+                let seconds = refresh.unwrap_or(match key.as_str() {
+                    "runs" => 8,
+                    "changes" | "autos" => 15,
+                    _ => 0,
+                });
+                if seconds == 0 {
+                    return;
+                }
+                cx.background_executor().timer(Duration::from_secs(seconds)).await;
+            }
+        });
+    }
+
+    /// A button/row/chip action: `set` and tab switches stay in this page;
+    /// everything else goes through `store::perform` after this update ends.
+    fn action_handler(
+        &self,
+        action: Option<&Value>,
+        cx: &mut Context<Self>,
+    ) -> Option<Box<dyn Fn(&ClickEvent, &mut Window, &mut App) + 'static>> {
+        let action = action?.clone();
+        if action.is_null() {
+            return None;
+        }
+        let page = cx.entity().downgrade();
+        let workspace = self.workspace.clone();
+        Some(Box::new(move |_, window, cx| {
+            let (action, page, workspace) = (action.clone(), page.clone(), workspace.clone());
+            window.defer(cx, move |window, cx| {
+                if let Some(question) = action.get("confirm").and_then(Value::as_str) {
+                    let answer = window.prompt(
+                        gpui::PromptLevel::Warning,
+                        question,
+                        None,
+                        &["Yes", "Cancel"],
+                        cx,
+                    );
+                    let mut action = action.clone();
+                    if let Some(map) = action.as_object_mut() {
+                        map.remove("confirm");
+                    }
+                    let window_handle = window.window_handle();
+                    cx.spawn(async move |cx| {
+                        if answer.await.ok() == Some(0) {
+                            window_handle
+                                .update(cx, |_, window, cx| {
+                                    if let Some(workspace) = workspace.upgrade() {
+                                        store::perform(&action, &workspace, Origin::Page(page), window, cx);
+                                    }
+                                })
+                                .ok();
+                        }
+                    })
+                    .detach();
+                    return;
+                }
+                if let Some(workspace) = workspace.upgrade() {
+                    store::perform(&action, &workspace, Origin::Page(page), window, cx);
+                }
+            });
+        }))
+    }
+
+    fn button(&self, id: impl Into<ElementId>, b: &Value, height: f32, size: f32, cx: &mut Context<Self>) -> AnyElement {
+        let label = str_of(b, "label");
+        let kind = b.get("kind").and_then(Value::as_str).unwrap_or("default").to_string();
+        let handler = self.action_handler(b.get("do"), cx);
+        p::button(id, label, &kind, height, size, handler)
+    }
+
+    fn render_header(&self, page: &Value, cx: &mut Context<Self>) -> AnyElement {
+        let title = str_of(page, "title");
+        let sub = str_of(page, "sub");
+        let chips = arr(page, "chips");
+        let actions = arr(page, "actions");
+        let mono = p::mono_font(cx);
+        h_flex()
+            .items_start()
+            .gap(px(12.))
+            .flex_wrap()
+            .child(
+                v_flex()
+                    .flex_1()
+                    .min_w(px(240.))
+                    .gap(px(3.))
+                    .child(
+                        h_flex()
+                            .gap(px(10.))
+                            .flex_wrap()
+                            .items_center()
+                            .child(
+                                div()
+                                    .text_size(px(17.))
+                                    .font_weight(gpui::FontWeight::SEMIBOLD)
+                                    .text_color(c(p::TEXT))
+                                    .child(title),
+                            )
+                            .children(chips.iter().map(|chip| {
+                                div()
+                                    .px(px(7.))
+                                    .rounded(px(4.))
+                                    .border_1()
+                                    .border_color(c(p::BORDER2))
+                                    .text_size(px(11.5))
+                                    .font(mono.clone())
+                                    .text_color(p::named(&str_of(chip, "c")))
+                                    .child(str_of(chip, "t"))
+                            })),
+                    )
+                    .when(!sub.is_empty(), |this| this.child(p::text(sub, 12.5, p::SUB))),
+            )
+            .child(
+                h_flex().gap(px(6.)).flex_wrap().children(
+                    actions
+                        .iter()
+                        .enumerate()
+                        .map(|(i, b)| self.button(("page-action", i), b, 26., 12.5, cx)),
+                ),
+            )
+            .into_any_element()
+    }
+
+    fn render_tabs(&self, page: &Value, cx: &mut Context<Self>) -> Option<AnyElement> {
+        let tabs = arr(page, "tabs");
+        if tabs.is_empty() {
+            return None;
+        }
+        let current = str_of(page, "tab");
+        Some(
+            h_flex()
+                .gap(px(2.))
+                .border_b_1()
+                .border_color(c(p::BORDER))
+                .children(tabs.iter().enumerate().map(|(i, t)| {
+                    let key = str_of(t, "key");
+                    let on = key == current;
+                    div()
+                        .id(("page-tab", i))
+                        .px(px(10.))
+                        .py(px(6.))
+                        .text_size(px(12.5))
+                        .text_color(c(if on { p::TEXT } else { p::SUB }))
+                        .border_b_2()
+                        .border_color(if on { c(p::BLUE) } else { p::ca(0x00000000) })
+                        .cursor_pointer()
+                        .hover(|s| s.text_color(c(p::TEXT)))
+                        .child(str_of(t, "label"))
+                        .on_click(cx.listener(move |this, _, _, cx| this.set_tab(key.clone(), cx)))
+                }))
+                .into_any_element(),
+        )
+    }
+
+    /// Sections in the design's two-column grid: `full` spans both; `col`
+    /// pins a column (list/detail layouts); the rest flow two to a row.
+    fn render_sections(&self, page: &Value, cx: &mut Context<Self>) -> AnyElement {
+        let sections = arr(page, "sections");
+        let mut rows: Vec<AnyElement> = Vec::new();
+        let mut group: Vec<(usize, &Value)> = Vec::new();
+        let flush = |group: &mut Vec<(usize, &Value)>, rows: &mut Vec<AnyElement>, this: &Self, cx: &mut Context<Self>| {
+            if group.is_empty() {
+                return;
+            }
+            let pinned = group.iter().any(|(_, s)| s.get("col").is_some());
+            if pinned {
+                let (left, right): (Vec<_>, Vec<_>) =
+                    group.iter().partition(|(_, s)| s.get("col").and_then(Value::as_u64) != Some(2));
+                rows.push(
+                    h_flex()
+                        .items_start()
+                        .gap(px(12.))
+                        .child(v_flex().flex_1().min_w_0().gap(px(12.)).children(
+                            left.iter().map(|(i, s)| this.render_section(*i, s, cx)),
+                        ))
+                        .child(v_flex().flex_1().min_w_0().gap(px(12.)).children(
+                            right.iter().map(|(i, s)| this.render_section(*i, s, cx)),
+                        ))
+                        .into_any_element(),
+                );
+            } else {
+                for pair in group.chunks(2) {
+                    let mut row = h_flex().gap(px(12.));
+                    for (i, s) in pair {
+                        row = row.child(div().flex_1().min_w_0().flex().child(this.render_section(*i, s, cx)));
+                    }
+                    if pair.len() == 1 {
+                        row = row.child(div().flex_1().min_w_0());
+                    }
+                    rows.push(row.into_any_element());
+                }
+            }
+            group.clear();
+        };
+        for (i, s) in sections.iter().enumerate() {
+            if s.get("full").and_then(Value::as_bool).unwrap_or(false) {
+                flush(&mut group, &mut rows, self, cx);
+                rows.push(self.render_section(i, s, cx));
+            } else {
+                group.push((i, s));
+            }
+        }
+        flush(&mut group, &mut rows, self, cx);
+        v_flex().gap(px(12.)).children(rows).into_any_element()
+    }
+
+    fn render_section(&self, index: usize, s: &Value, cx: &mut Context<Self>) -> AnyElement {
+        let kind = str_of(s, "type");
+        match kind.as_str() {
+            "dag" => return self.render_dag(index, s, cx),
+            "inspector" => return self.render_inspector(index, s, cx),
+            _ => {}
+        }
+        let title = str_of(s, "title");
+        let note = str_of(s, "note");
+        let actions = arr(s, "actions");
+        let body = match kind.as_str() {
+            "table" => self.render_table(index, s, cx),
+            "kv" => self.render_kv(s, cx),
+            "list" => self.render_list(index, s, cx),
+            "bars" => self.render_bars(s, cx),
+            "flow" => self.render_flow(s),
+            "code" => self.render_code(s, cx),
+            "pills" => self.render_pills(s, cx),
+            "chips" => self.render_chips(index, s, cx),
+            _ => div().into_any_element(),
+        };
+        let has_head = !title.is_empty() || !actions.is_empty();
+        card()
+            .flex_1()
+            .px(px(14.))
+            .py(px(12.))
+            .gap(px(10.))
+            .when(has_head, |this| {
+                this.child(
+                    h_flex()
+                        .gap(px(10.))
+                        .flex_wrap()
+                        .items_center()
+                        .child(
+                            div()
+                                .flex_1()
+                                .min_w(px(120.))
+                                .text_size(px(13.))
+                                .font_weight(gpui::FontWeight::SEMIBOLD)
+                                .text_color(c(p::TEXT))
+                                .child(title),
+                        )
+                        .children(actions.iter().enumerate().map(|(i, b)| {
+                            self.button(SharedString::from(format!("s{index}-a{i}")), b, 24., 12., cx)
+                        })),
+                )
+            })
+            .when(!note.is_empty(), |this| this.child(p::text(note, 12., p::MUTED).mt(px(-4.))))
+            .child(body)
+            .into_any_element()
+    }
+
+    fn render_table(&self, index: usize, s: &Value, cx: &mut Context<Self>) -> AnyElement {
+        let cols = arr(s, "cols");
+        let head = arr(s, "head");
+        let rows = arr(s, "rows");
+        let mono = p::mono_font(cx);
+        let sized = |el: Div, i: usize| -> Div {
+            match cols.get(i) {
+                Some(col) => match col.get("w").and_then(Value::as_f64) {
+                    Some(w) => el.w(px(w as f32)).flex_none(),
+                    None => el
+                        .flex_grow(col.get("fr").and_then(Value::as_f64).unwrap_or(1.0) as f32)
+                        .flex_basis(px(0.))
+                        .min_w(px(col.get("min").and_then(Value::as_f64).unwrap_or(0.0) as f32)),
+                },
+                None => el.flex_1().min_w_0(),
+            }
+        };
+        let header = h_flex()
+            .gap(px(10.))
+            .px(px(6.))
+            .pt(px(2.))
+            .pb(px(6.))
+            .border_b_1()
+            .border_color(c(p::BORDER))
+            .children(head.iter().enumerate().map(|(i, h)| {
+                sized(div(), i)
+                    .text_size(px(11.))
+                    .text_color(c(p::SUB))
+                    .whitespace_nowrap()
+                    .overflow_hidden()
+                    .child(h.as_str().unwrap_or_default().to_string())
+            }));
+        let body = rows.iter().enumerate().map(|(r, row)| {
+            let handler = self.action_handler(row.get("do"), cx);
+            let selected = row.get("sel").and_then(Value::as_bool).unwrap_or(false);
+            let cells = arr(row, "cells");
+            let line = h_flex()
+                .id(SharedString::from(format!("s{index}-r{r}")))
+                .gap(px(10.))
+                .px(px(6.))
+                .py(px(5.))
+                .rounded(px(5.))
+                .when(selected, |this| this.bg(c(p::ROW_SELECTED)))
+                .hover(|style| style.bg(c(p::HOVER)))
+                .children(cells.iter().enumerate().map(|(i, cell)| {
+                    let mut el = sized(div(), i)
+                        .text_size(px(12.5))
+                        .text_color(p::named(&str_of(cell, "c")))
+                        .truncate()
+                        .child(str_of(cell, "t"));
+                    if bool_of(cell, "mono") {
+                        el = el.font(mono.clone());
+                    }
+                    if bool_of(cell, "b") {
+                        el = el.font_weight(gpui::FontWeight::SEMIBOLD);
+                    }
+                    el
+                }));
+            match handler {
+                Some(handler) => line.cursor_pointer().on_click(handler).into_any_element(),
+                None => line.into_any_element(),
+            }
+        });
+        v_flex().mx(px(-6.)).child(header).children(body).into_any_element()
+    }
+
+    fn render_kv(&self, s: &Value, cx: &mut Context<Self>) -> AnyElement {
+        let mono = p::mono_font(cx);
+        h_flex()
+            .flex_wrap()
+            .gap(px(8.))
+            .children(arr(s, "items").iter().map(|item| {
+                let sub = str_of(item, "sub");
+                v_flex()
+                    .w(px(150.))
+                    .flex_grow(1.)
+                    .max_w(px(260.))
+                    .gap(px(1.))
+                    .px(px(10.))
+                    .py(px(8.))
+                    .rounded(px(6.))
+                    .bg(c(p::BG))
+                    .border_1()
+                    .border_color(c(p::BORDER))
+                    .child(p::text(str_of(item, "k"), 11., p::SUB))
+                    .child(
+                        div()
+                            .text_size(px(14.))
+                            .font_weight(gpui::FontWeight::SEMIBOLD)
+                            .text_color(p::named(&str_of(item, "c")))
+                            .child(str_of(item, "v")),
+                    )
+                    .when(!sub.is_empty(), |this| {
+                        this.child(p::text(sub, 11., p::SUB).font(mono.clone()))
+                    })
+            }))
+            .into_any_element()
+    }
+
+    fn render_list(&self, index: usize, s: &Value, cx: &mut Context<Self>) -> AnyElement {
+        let mono = p::mono_font(cx);
+        v_flex()
+            .gap(px(2.))
+            .children(arr(s, "items").iter().enumerate().map(|(i, item)| {
+                let sub = str_of(item, "sub");
+                let acts = arr(item, "acts");
+                let mut title = div()
+                    .text_size(px(12.5))
+                    .text_color(p::named(&str_of(item, "tc")))
+                    .child(str_of(item, "t"));
+                if bool_of(item, "mono") {
+                    title = title.font(mono.clone());
+                }
+                h_flex()
+                    .items_start()
+                    .gap(px(9.))
+                    .px(px(2.))
+                    .py(px(5.))
+                    .border_b_1()
+                    .border_color(c(p::ROW_RULE))
+                    .child(
+                        div()
+                            .flex_none()
+                            .w(px(14.))
+                            .mt(px(1.))
+                            .text_size(px(12.))
+                            .text_color(p::named(&str_of(item, "mc")))
+                            .child(str_of(item, "m")),
+                    )
+                    .child(
+                        v_flex()
+                            .flex_1()
+                            .min_w_0()
+                            .gap(px(1.))
+                            .child(title)
+                            .when(!sub.is_empty(), |this| this.child(p::text(sub, 11.5, p::SUB))),
+                    )
+                    .when(!acts.is_empty(), |this| {
+                        this.child(h_flex().flex_none().gap(px(5.)).children(acts.iter().enumerate().map(
+                            |(a, b)| self.button(SharedString::from(format!("s{index}-i{i}-a{a}")), b, 22., 11.5, cx),
+                        )))
+                    })
+            }))
+            .into_any_element()
+    }
+
+    fn render_bars(&self, s: &Value, cx: &mut Context<Self>) -> AnyElement {
+        let mono = p::mono_font(cx);
+        v_flex()
+            .gap(px(6.))
+            .children(arr(s, "items").iter().map(|item| {
+                let pct = item.get("pct").and_then(Value::as_f64).unwrap_or(1.0).clamp(1.0, 100.0);
+                h_flex()
+                    .gap(px(10.))
+                    .items_center()
+                    .child(p::text(str_of(item, "label"), 12., p::MUTED).w(px(160.)).flex_none().truncate())
+                    .child(
+                        div()
+                            .flex_1()
+                            .h(px(8.))
+                            .rounded(px(4.))
+                            .bg(c(p::BG))
+                            .overflow_hidden()
+                            .child(
+                                div()
+                                    .h_full()
+                                    .w(gpui::relative(pct as f32 / 100.))
+                                    .rounded(px(4.))
+                                    .bg(p::named(&str_of(item, "c"))),
+                            ),
+                    )
+                    .child(
+                        p::text(str_of(item, "val"), 11.5, p::TEXT)
+                            .w(px(72.))
+                            .flex_none()
+                            .text_right()
+                            .font(mono.clone()),
+                    )
+            }))
+            .into_any_element()
+    }
+
+    fn render_flow(&self, s: &Value) -> AnyElement {
+        let mut row = h_flex().flex_wrap().items_center().gap(px(6.));
+        for (i, item) in arr(s, "items").iter().enumerate() {
+            if i > 0 {
+                row = row.child(p::text("→", 13., p::DIM));
+            }
+            let sub = str_of(item, "sub");
+            row = row.child(
+                v_flex()
+                    .px(px(9.))
+                    .py(px(5.))
+                    .rounded(px(6.))
+                    .border_1()
+                    .border_color(c(p::BORDER2))
+                    .bg(c(p::BG))
+                    .child(
+                        div()
+                            .text_size(px(12.5))
+                            .text_color(p::named(&str_of(item, "c")))
+                            .child(str_of(item, "label")),
+                    )
+                    .when(!sub.is_empty(), |this| this.child(p::text(sub, 10.5, p::SUB))),
+            );
+        }
+        row.into_any_element()
+    }
+
+    fn render_code(&self, s: &Value, cx: &mut Context<Self>) -> AnyElement {
+        code_box(arr(s, "lines"), cx).into_any_element()
+    }
+
+    fn render_pills(&self, s: &Value, cx: &mut Context<Self>) -> AnyElement {
+        let mono = p::mono_font(cx);
+        h_flex()
+            .flex_wrap()
+            .gap(px(6.))
+            .children(arr(s, "items").iter().map(|item| {
+                div()
+                    .px(px(7.))
+                    .py(px(1.))
+                    .rounded(px(4.))
+                    .border_1()
+                    .border_color(c(p::BORDER2))
+                    .text_size(px(11.5))
+                    .font(mono.clone())
+                    .text_color(p::named(&str_of(item, "c")))
+                    .child(str_of(item, "t"))
+            }))
+            .into_any_element()
+    }
+
+    fn render_chips(&self, index: usize, s: &Value, cx: &mut Context<Self>) -> AnyElement {
+        h_flex()
+            .flex_wrap()
+            .gap(px(6.))
+            .children(arr(s, "items").iter().enumerate().map(|(i, item)| {
+                let on = bool_of(item, "on");
+                let handler = self.action_handler(item.get("do"), cx);
+                let chip = h_flex()
+                    .id(SharedString::from(format!("s{index}-chip{i}")))
+                    .h(px(24.))
+                    .px(px(10.))
+                    .items_center()
+                    .rounded(px(12.))
+                    .border_1()
+                    .border_color(c(if on { p::DIM } else { p::BORDER2 }))
+                    .when(on, |this| this.bg(c(p::SELECTED)))
+                    .text_size(px(12.))
+                    .text_color(c(if on { p::TEXT } else { p::MUTED }))
+                    .child(str_of(item, "t"));
+                match handler {
+                    Some(handler) => chip.cursor_pointer().on_click(handler).into_any_element(),
+                    None => chip.into_any_element(),
+                }
+            }))
+            .into_any_element()
+    }
+
+    fn render_dag(&self, index: usize, s: &Value, cx: &mut Context<Self>) -> AnyElement {
+        let mono = p::mono_font(cx);
+        let mut row = h_flex().items_center().gap(px(10.));
+        for (ci, column) in arr(s, "cols").iter().enumerate() {
+            if ci > 0 {
+                row = row.child(p::text("→", 14., p::DIM));
+            }
+            let nodes = column.as_array().cloned().unwrap_or_default();
+            row = row.child(v_flex().gap(px(8.)).children(nodes.iter().enumerate().map(|(ni, node)| {
+                let state = str_of(node, "state");
+                let selected = bool_of(node, "sel");
+                let (mark, colour) = match state.as_str() {
+                    "done" => ("✓", p::GREEN),
+                    "running" => ("●", p::BLUE),
+                    "failed" => ("✗", p::RED),
+                    "skipped" => ("–", p::DIM),
+                    _ => ("○", p::DIM),
+                };
+                let status = match state.as_str() {
+                    "running" => "working".to_string(),
+                    other => other.to_string(),
+                };
+                let cost = str_of(node, "cost");
+                let status = if cost.is_empty() { status } else { format!("{status} · {cost}") };
+                let lane = str_of(node, "lane");
+                let border = if selected {
+                    c(p::BLUE)
+                } else if state == "running" {
+                    p::ca(0x74ade880)
+                } else {
+                    c(p::BORDER2)
+                };
+                let handler = self.action_handler(node.get("do"), cx);
+                let el = v_flex()
+                    .id(SharedString::from(format!("s{index}-n{ci}-{ni}")))
+                    .w(px(128.))
+                    .px(px(9.))
+                    .py(px(7.))
+                    .gap(px(2.))
+                    .rounded(px(7.))
+                    .border_1()
+                    .border_color(border)
+                    .bg(c(if state == "pending" { p::BG } else { p::NODE_BG }))
+                    .child(
+                        h_flex()
+                            .gap(px(6.))
+                            .child(p::text(mark, 10., colour))
+                            .child(
+                                div()
+                                    .min_w_0()
+                                    .truncate()
+                                    .text_size(px(12.5))
+                                    .font_weight(gpui::FontWeight::SEMIBOLD)
+                                    .text_color(c(p::TEXT))
+                                    .child(str_of(node, "label")),
+                            ),
+                    )
+                    .child(
+                        h_flex()
+                            .gap(px(5.))
+                            .child(div().size(px(6.)).rounded_full().bg(c(p::family(&lane))))
+                            .child(p::text(lane, 11., p::MUTED).truncate()),
+                    )
+                    .child(p::text(status, 11., colour).font(mono.clone()));
+                match handler {
+                    Some(handler) => el.cursor_pointer().on_click(handler).into_any_element(),
+                    None => el.into_any_element(),
+                }
+            })));
+        }
+        let legend = str_of(s, "legend");
+        card()
+            .p(px(16.))
+            .child(
+                div()
+                    .id(("dag-scroll", index))
+                    .overflow_x_scroll()
+                    .child(row),
+            )
+            .when(!legend.is_empty(), |this| this.child(p::text(legend, 11.5, p::SUB).mt(px(12.))))
+            .into_any_element()
+    }
+
+    fn render_inspector(&self, index: usize, s: &Value, cx: &mut Context<Self>) -> AnyElement {
+        let state = str_of(s, "state");
+        let (mark, colour) = match state.as_str() {
+            "done" => ("✓", p::GREEN),
+            "running" => ("●", p::BLUE),
+            "failed" => ("✗", p::RED),
+            _ => ("○", p::DIM),
+        };
+        let lines = arr(s, "lines");
+        let mono = p::mono_font(cx);
+        let note = str_of(s, "steer_note");
+        let left = card()
+            .flex_1()
+            .min_w_0()
+            .px(px(14.))
+            .py(px(12.))
+            .gap(px(10.))
+            .child(
+                h_flex()
+                    .gap(px(8.))
+                    .child(p::text(mark, 13., colour))
+                    .child(
+                        div()
+                            .text_size(px(13.))
+                            .font_weight(gpui::FontWeight::SEMIBOLD)
+                            .text_color(c(p::TEXT))
+                            .child(str_of(s, "label")),
+                    )
+                    .child(p::text(format!("{} · {}", str_of(s, "role"), state), 12., p::SUB)),
+            )
+            .child(
+                div()
+                    .id(("inspector-out", index))
+                    .min_h(px(90.))
+                    .max_h(px(220.))
+                    .overflow_y_scroll()
+                    .px(px(10.))
+                    .py(px(8.))
+                    .rounded(px(6.))
+                    .bg(c(p::BG))
+                    .border_1()
+                    .border_color(c(p::BORDER))
+                    .font(mono.clone())
+                    .text_size(px(11.5))
+                    .line_height(px(19.))
+                    .when(lines.is_empty(), |this| this.child(p::text("No output yet.", 11.5, p::DIM)))
+                    .children(lines.iter().map(|l| {
+                        div().text_color(p::named(&str_of(l, "c"))).child(str_of(l, "t"))
+                    })),
+            )
+            .when(!note.is_empty(), |this| {
+                this.child(
+                    h_flex()
+                        .gap(px(8.))
+                        .child(
+                            div()
+                                .text_size(px(12.))
+                                .font_weight(gpui::FontWeight::SEMIBOLD)
+                                .text_color(c(p::TEXT))
+                                .child("Steer this worker"),
+                        )
+                        .child(p::text(note, 12., p::MUTED)),
+                )
+            });
+        let right = card()
+            .w(px(260.))
+            .flex_none()
+            .px(px(14.))
+            .py(px(12.))
+            .gap(px(8.))
+            .children(arr(s, "items").iter().map(|item| {
+                v_flex()
+                    .child(p::text(str_of(item, "k"), 11., p::SUB))
+                    .child(
+                        div()
+                            .text_size(px(12.5))
+                            .font(mono.clone())
+                            .text_color(p::named(&str_of(item, "c")))
+                            .child(str_of(item, "v")),
+                    )
+            }));
+        h_flex().items_start().gap(px(12.)).child(left).child(right).into_any_element()
+    }
+}
+
+fn card() -> Div {
+    v_flex()
+        .bg(c(p::CHROME))
+        .border_1()
+        .border_color(c(p::BORDER))
+        .rounded(px(8.))
+        .min_w_0()
+}
+
+pub(crate) fn code_box(lines: Vec<Value>, cx: &App) -> Div {
+    v_flex()
+        .px(px(10.))
+        .py(px(8.))
+        .rounded(px(6.))
+        .bg(c(p::BG))
+        .border_1()
+        .border_color(c(p::BORDER))
+        .font(p::mono_font(cx))
+        .text_size(px(11.5))
+        .line_height(px(19.))
+        .overflow_hidden()
+        .children(lines.iter().map(|l| {
+            div()
+                .whitespace_nowrap()
+                .text_color(p::named(&str_of(l, "c")))
+                .child(str_of(l, "t"))
+        }))
+}
+
+pub(crate) fn str_of(v: &Value, key: &str) -> String {
+    match v.get(key) {
+        Some(Value::String(s)) => s.clone(),
+        Some(Value::Null) | None => String::new(),
+        Some(other) => other.to_string(),
+    }
+}
+
+fn bool_of(v: &Value, key: &str) -> bool {
+    v.get(key).and_then(Value::as_bool).unwrap_or(false)
+}
+
+pub(crate) fn arr(v: &Value, key: &str) -> Vec<Value> {
+    v.get(key).and_then(Value::as_array).cloned().unwrap_or_default()
+}
+
+impl EventEmitter<()> for MiniOrkPage {}
+
+impl Focusable for MiniOrkPage {
+    fn focus_handle(&self, _: &App) -> FocusHandle {
+        self.focus_handle.clone()
+    }
+}
+
+impl Item for MiniOrkPage {
+    type Event = ();
+
+    fn tab_content_text(&self, _detail: usize, _cx: &App) -> SharedString {
+        self.label().into()
+    }
+
+    fn tab_content(&self, params: TabContentParams, _window: &Window, cx: &App) -> AnyElement {
+        let mono = p::mono_font(cx);
+        h_flex()
+            .gap(px(7.))
+            .child(
+                div()
+                    .text_size(px(11.5))
+                    .font(mono)
+                    .text_color(c(if params.selected { p::BLUE } else { p::SUB }))
+                    .child(glyph(&self.key)),
+            )
+            .child(Label::new(self.label()).single_line().color(params.text_color()))
+            .into_any_element()
+    }
+
+    fn tab_tooltip_text(&self, _: &App) -> Option<SharedString> {
+        match self.args.get("run") {
+            Some(run) if !self.title_hint.is_empty() => Some(format!("{} ({run})", self.title_hint).into()),
+            Some(run) => Some(run.clone().into()),
+            None => None,
+        }
+    }
+}
+
+impl Render for MiniOrkPage {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let content = match self.data.clone() {
+            None => p::text("Loading…", 13., p::SUB).into_any_element(),
+            Some(Err(error)) => v_flex()
+                .gap(px(6.))
+                .child(p::text("This page could not be read", 15., p::TEXT))
+                .child(p::text(error, 12.5, p::RED))
+                .into_any_element(),
+            Some(Ok(page)) => v_flex()
+                .gap(px(14.))
+                .child(self.render_header(&page, cx))
+                .children(self.render_tabs(&page, cx))
+                .child(self.render_sections(&page, cx))
+                .into_any_element(),
+        };
+        div()
+            .id("mini-ork-page")
+            .track_focus(&self.focus_handle)
+            .size_full()
+            .bg(c(p::BG))
+            .text_color(c(p::TEXT))
+            .overflow_y_scroll()
+            .child(
+                div()
+                    .px(px(20.))
+                    .pt(px(16.))
+                    .pb(px(48.))
+                    .child(div().max_w(px(1080.)).mx_auto().child(content)),
+            )
+            .when(self.loading && self.data.is_some(), |this| {
+                this.child(
+                    div()
+                        .absolute()
+                        .top(px(6.))
+                        .right(px(10.))
+                        .child(p::text("↻", 12., p::DIM)),
+                )
+            })
+    }
+}
+
+/// Open a page (or bring its tab forward and switch it to `tab`).
+pub fn open_page(
+    workspace: &Entity<Workspace>,
+    key: String,
+    tab: Option<String>,
+    args: BTreeMap<String, String>,
+    window: &mut Window,
+    cx: &mut App,
+) {
+    if key == "run" {
+        if let Some(run) = args.get("run").cloned() {
+            open_run(workspace, run, String::new(), tab, window, cx);
+        }
+        return;
+    }
+    workspace.update(cx, |workspace, cx| {
+        let existing = workspace
+            .items_of_type::<MiniOrkPage>(cx)
+            .find(|page| page.read(cx).key == key);
+        if let Some(existing) = existing {
+            workspace.activate_item(&existing, true, true, window, cx);
+            if tab.is_some() || !args.is_empty() {
+                existing.update(cx, |page, cx| {
+                    if tab.is_some() {
+                        page.tab = tab;
+                    }
+                    page.args.extend(args);
+                    page.reload(cx);
+                });
+            }
+            return;
+        }
+        let weak = cx.entity().downgrade();
+        let page = cx.new(|cx| MiniOrkPage::new(key, tab, args, String::new(), weak, cx));
+        workspace.add_item_to_active_pane(Box::new(page), None, true, window, cx);
+    });
+}
+
+/// Open a run's tab (or bring it forward).
+pub fn open_run(
+    workspace: &Entity<Workspace>,
+    run_id: String,
+    title: String,
+    tab: Option<String>,
+    window: &mut Window,
+    cx: &mut App,
+) {
+    workspace.update(cx, |workspace, cx| {
+        let existing = workspace
+            .items_of_type::<MiniOrkPage>(cx)
+            .find(|page| page.read(cx).key == "run" && page.read(cx).args.get("run") == Some(&run_id));
+        if let Some(existing) = existing {
+            workspace.activate_item(&existing, true, true, window, cx);
+            if tab.is_some() {
+                existing.update(cx, |page, cx| {
+                    page.tab = tab;
+                    page.reload(cx);
+                });
+            }
+            return;
+        }
+        let weak = cx.entity().downgrade();
+        let mut args = BTreeMap::new();
+        args.insert("run".to_string(), run_id);
+        let page = cx.new(|cx| MiniOrkPage::new("run".into(), tab, args, title, weak, cx));
+        workspace.add_item_to_active_pane(Box::new(page), None, true, window, cx);
+    });
+}
