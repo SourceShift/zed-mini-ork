@@ -290,9 +290,8 @@ pub fn perform(
         let tab = action.get("tab").and_then(Value::as_str).map(String::from);
         crate::page::open_page(workspace, key.to_string(), tab, string_map(action.get("args")), window, cx);
     } else if let Some(set) = action.get("set") {
-        if let Origin::Page(page) = origin {
-            page.update(cx, |page, cx| page.set_args(string_map(Some(set)), cx)).ok();
-        }
+        let Origin::Page(page) = origin;
+        page.update(cx, |page, cx| page.set_args(string_map(Some(set)), cx)).ok();
     } else if let Some(run_id) = action.get("run").and_then(Value::as_str) {
         let title = action.get("title").and_then(Value::as_str).unwrap_or_default().to_string();
         let tab = action.get("tab").and_then(Value::as_str).map(String::from);
@@ -378,9 +377,8 @@ pub fn run_cli(args: Vec<String>, with_home: bool, workspace: &Entity<Workspace>
                 workspace.update(cx, |workspace, cx| workspace.show_toast(toast, cx));
             }
             store.update(cx, |store, cx| store.refresh(cx));
-            if let Origin::Page(page) = origin {
-                page.update(cx, |page, cx| page.reload(cx)).ok();
-            }
+            let Origin::Page(page) = origin;
+            page.update(cx, |page, cx| page.reload(cx)).ok();
         });
     })
     .detach();

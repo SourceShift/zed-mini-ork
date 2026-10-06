@@ -197,8 +197,14 @@ pub async fn fetch_page(
     Ok(value)
 }
 
+/// The shell's board read: `board --json --shell` (header, runs and counts
+/// only — cheap enough to poll), or the full `board --json` from a mini-ork
+/// that predates `--shell`.
 pub async fn fetch_board(bin: PathBuf, home: PathBuf) -> Result<Board> {
-    let value = run_json(&bin, &["board".into(), "--json".into()], &home).await?;
+    let value = match run_json(&bin, &["board".into(), "--json".into(), "--shell".into()], &home).await {
+        Ok(value) => value,
+        Err(_) => run_json(&bin, &["board".into(), "--json".into()], &home).await?,
+    };
     serde_json::from_value(value).context("reading mini-ork board")
 }
 
