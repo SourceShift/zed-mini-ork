@@ -20,6 +20,7 @@ mod graph;
 mod loading;
 mod page;
 mod palette;
+mod select;
 mod sidebar;
 mod status;
 mod store;

@@ -1,0 +1,132 @@
+//! Selectable, copyable text: every reading surface in the IDE (page text,
+//! cells, values, notes, code, the agent stream, errors) renders through Zed's
+//! plain-text `Markdown` element, so it can be selected with the mouse and
+//! copied with cmd-C or the right-click menu.
+//!
+//! One `Markdown` entity per text, kept in a per-view cache keyed by the
+//! caller; texts not used in a render are dropped after it.
+
+use std::{
+    cell::RefCell,
+    collections::{HashMap, HashSet},
+};
+
+use gpui::{
+    AnyElement, App, AppContext as _, Context, Entity, FontStyle, FontWeight, Hsla, IntoElement as _, SharedString,
+    TextOverflow, TextStyle, WhiteSpace, px, relative,
+};
+use markdown::{Markdown, MarkdownElement, MarkdownStyle};
+
+use crate::palette as p;
+
+#[derive(Default)]
+pub struct Texts {
+    map: RefCell<HashMap<String, (SharedString, Entity<Markdown>)>>,
+    used: RefCell<HashSet<String>>,
+}
+
+impl Texts {
+    /// Call before building a render; `end` after it drops unused texts.
+    pub fn begin(&self) {
+        self.used.borrow_mut().clear();
+    }
+
+    pub fn end(&self) {
+        let used = self.used.borrow();
+        self.map.borrow_mut().retain(|key, _| used.contains(key));
+    }
+
+    fn entity<T: 'static>(&self, key: &str, text: &str, cx: &mut Context<T>) -> Entity<Markdown> {
+        self.used.borrow_mut().insert(key.to_string());
+        let existing = self.map.borrow().get(key).cloned();
+        match existing {
+            Some((current, markdown)) if current.as_ref() == text => markdown,
+            Some((_, markdown)) => {
+                let text: SharedString = text.to_string().into();
+                markdown.update(cx, |markdown, cx| markdown.reset(text.clone(), cx));
+                self.map.borrow_mut().insert(key.to_string(), (text, markdown.clone()));
+                markdown
+            }
+            None => {
+                let text: SharedString = text.to_string().into();
+                let markdown = cx.new(|cx| Markdown::new_text(text.clone(), cx));
+                self.map.borrow_mut().insert(key.to_string(), (text, markdown.clone()));
+                markdown
+            }
+        }
+    }
+
+    /// `text` as a selectable element with this look.
+    pub fn text<T: 'static>(&self, key: impl AsRef<str>, text: impl AsRef<str>, look: Look, cx: &mut Context<T>) -> AnyElement {
+        let markdown = self.entity(key.as_ref(), text.as_ref(), cx);
+        element(markdown, look, cx)
+    }
+}
+
+#[derive(Clone, Copy)]
+pub struct Look {
+    pub size: f32,
+    pub colour: Hsla,
+    pub mono: bool,
+    pub weight: FontWeight,
+    pub nowrap: bool,
+    pub italic: bool,
+}
+
+impl Look {
+    pub fn new(size: f32, colour: Hsla) -> Self {
+        Self { size, colour, mono: false, weight: FontWeight::NORMAL, nowrap: false, italic: false }
+    }
+
+    pub fn mono(mut self, on: bool) -> Self {
+        self.mono = on;
+        self
+    }
+
+    pub fn bold(mut self, on: bool) -> Self {
+        if on {
+            self.weight = FontWeight::SEMIBOLD;
+        }
+        self
+    }
+
+    /// One line, cut with an ellipsis.
+    pub fn nowrap(mut self) -> Self {
+        self.nowrap = true;
+        self
+    }
+
+    pub fn italic(mut self, on: bool) -> Self {
+        self.italic = on;
+        self
+    }
+}
+
+fn element(markdown: Entity<Markdown>, look: Look, cx: &App) -> AnyElement {
+    let settings = theme::theme_settings(cx);
+    let font = if look.mono { settings.buffer_font(cx).clone() } else { settings.ui_font(cx).clone() };
+    let mut text = TextStyle {
+        color: look.colour,
+        font_family: font.family.clone(),
+        font_features: font.features.clone(),
+        font_fallbacks: font.fallbacks.clone(),
+        font_size: px(look.size).into(),
+        font_weight: look.weight,
+        line_height: relative(1.5),
+        ..Default::default()
+    };
+    if look.nowrap {
+        text.white_space = WhiteSpace::Nowrap;
+        text.text_overflow = Some(TextOverflow::Truncate("…".into()));
+    }
+    if look.italic {
+        text.font_style = FontStyle::Italic;
+    }
+    let style = MarkdownStyle {
+        base_text_style: text,
+        selection_background_color: p::ca(0x74ade859),
+        paragraph_spacing: px(0.),
+        ..Default::default()
+    };
+    MarkdownElement::new(markdown, style).into_any_element()
+}
