@@ -12,8 +12,8 @@ use gpui::{
     SharedString, Task, WeakEntity, Window, px,
 };
 use serde_json::Value;
-use gpui::{Animation, AnimationExt as _};
-use ui::prelude::*;
+use gpui::{Animation, AnimationExt as _, ScrollHandle};
+use ui::{ScrollAxes, Scrollbars, WithScrollbar as _, prelude::*};
 use workspace::{
     Workspace,
     item::{Item, TabContentParams},
@@ -63,10 +63,19 @@ pub fn default_label(key: &str) -> &'static str {
     }
 }
 
+/// `run-1791302645-a41c` → `run-a41c`; `run-le-1791314676-64879-1` →
+/// `run-64879-1`: whatever follows the epoch seconds, else the last part.
 fn run_label(run_id: &str) -> String {
-    match run_id.rsplit_once('-') {
-        Some((_, tail)) if !tail.is_empty() => format!("run-{tail}"),
-        _ => run_id.to_string(),
+    let parts: Vec<&str> = run_id.split('-').collect();
+    let epoch = parts
+        .iter()
+        .position(|part| part.len() >= 9 && part.chars().all(|c| c.is_ascii_digit()));
+    match epoch {
+        Some(i) if i + 1 < parts.len() => format!("run-{}", parts[i + 1..].join("-")),
+        _ => match run_id.rsplit_once('-') {
+            Some((_, tail)) if !tail.is_empty() => format!("run-{tail}"),
+            _ => run_id.to_string(),
+        },
     }
 }
 
@@ -89,6 +98,8 @@ pub struct MiniOrkPage {
     shapes: HashMap<String, Vec<Shape>>,
     /// Bumped whenever fresh content replaces a skeleton (its fade-in key).
     fade: u64,
+    /// The DAG card scrolls sideways, as in the design.
+    dag_scroll: ScrollHandle,
     generation: u64,
     _load: Task<()>,
 }
@@ -115,6 +126,7 @@ impl MiniOrkPage {
             cache: HashMap::new(),
             shapes: HashMap::new(),
             fade: 0,
+            dag_scroll: ScrollHandle::new(),
             generation: 0,
             _load: Task::ready(()),
         };
@@ -416,11 +428,11 @@ impl MiniOrkPage {
 
     /// Sections in the design's two-column grid: `full` spans both; `col`
     /// pins a column (list/detail layouts); the rest flow two to a row.
-    fn render_sections(&self, page: &Value, cx: &mut Context<Self>) -> AnyElement {
+    fn render_sections(&self, page: &Value, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
         let sections = arr(page, "sections");
         let mut rows: Vec<AnyElement> = Vec::new();
         let mut group: Vec<(usize, &Value)> = Vec::new();
-        let flush = |group: &mut Vec<(usize, &Value)>, rows: &mut Vec<AnyElement>, this: &Self, cx: &mut Context<Self>| {
+        let flush = |group: &mut Vec<(usize, &Value)>, rows: &mut Vec<AnyElement>, this: &Self, window: &mut Window, cx: &mut Context<Self>| {
             if group.is_empty() {
                 return;
             }
@@ -433,10 +445,10 @@ impl MiniOrkPage {
                         .items_start()
                         .gap(px(12.))
                         .child(v_flex().flex_1().min_w_0().gap(px(12.)).children(
-                            left.iter().map(|(i, s)| this.render_section(*i, s, cx)),
+                            left.iter().map(|(i, s)| this.render_section(*i, s, window, cx)),
                         ))
                         .child(v_flex().flex_1().min_w_0().gap(px(12.)).children(
-                            right.iter().map(|(i, s)| this.render_section(*i, s, cx)),
+                            right.iter().map(|(i, s)| this.render_section(*i, s, window, cx)),
                         ))
                         .into_any_element(),
                 );
@@ -444,7 +456,7 @@ impl MiniOrkPage {
                 for pair in group.chunks(2) {
                     let mut row = h_flex().gap(px(12.));
                     for (i, s) in pair {
-                        row = row.child(div().flex_1().min_w_0().flex().child(this.render_section(*i, s, cx)));
+                        row = row.child(div().flex_1().min_w_0().flex().child(this.render_section(*i, s, window, cx)));
                     }
                     if pair.len() == 1 {
                         row = row.child(div().flex_1().min_w_0());
@@ -456,20 +468,20 @@ impl MiniOrkPage {
         };
         for (i, s) in sections.iter().enumerate() {
             if s.get("full").and_then(Value::as_bool).unwrap_or(false) {
-                flush(&mut group, &mut rows, self, cx);
-                rows.push(self.render_section(i, s, cx));
+                flush(&mut group, &mut rows, self, window, cx);
+                rows.push(self.render_section(i, s, window, cx));
             } else {
                 group.push((i, s));
             }
         }
-        flush(&mut group, &mut rows, self, cx);
+        flush(&mut group, &mut rows, self, window, cx);
         v_flex().gap(px(12.)).children(rows).into_any_element()
     }
 
-    fn render_section(&self, index: usize, s: &Value, cx: &mut Context<Self>) -> AnyElement {
+    fn render_section(&self, index: usize, s: &Value, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
         let kind = str_of(s, "type");
         match kind.as_str() {
-            "dag" => return self.render_dag(index, s, cx),
+            "dag" => return self.render_dag(index, s, window, cx),
             "inspector" => return self.render_inspector(index, s, cx),
             _ => {}
         }
@@ -778,15 +790,16 @@ impl MiniOrkPage {
             .into_any_element()
     }
 
-    fn render_dag(&self, index: usize, s: &Value, cx: &mut Context<Self>) -> AnyElement {
+    fn render_dag(&self, index: usize, s: &Value, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
         let mono = p::mono_font(cx);
-        let mut row = h_flex().items_center().gap(px(10.));
+        // Columns keep their width so a wide DAG overflows and scrolls.
+        let mut row = h_flex().flex_none().items_center().gap(px(10.));
         for (ci, column) in arr(s, "cols").iter().enumerate() {
             if ci > 0 {
-                row = row.child(p::text("→", 14., p::DIM));
+                row = row.child(p::text("→", 14., p::DIM).flex_none());
             }
             let nodes = column.as_array().cloned().unwrap_or_default();
-            row = row.child(v_flex().gap(px(8.)).children(nodes.iter().enumerate().map(|(ni, node)| {
+            row = row.child(v_flex().flex_none().gap(px(8.)).children(nodes.iter().enumerate().map(|(ni, node)| {
                 let state = str_of(node, "state");
                 let selected = bool_of(node, "sel");
                 let (mark, colour) = match state.as_str() {
@@ -849,13 +862,22 @@ impl MiniOrkPage {
             })));
         }
         let legend = str_of(s, "legend");
+        let scroller = div()
+            .id(("dag-scroll", index))
+            .w_full()
+            .overflow_x_scroll()
+            .track_scroll(&self.dag_scroll)
+            .pb(px(12.))
+            .child(row);
         card()
             .p(px(16.))
             .child(
-                div()
-                    .id(("dag-scroll", index))
-                    .overflow_x_scroll()
-                    .child(row),
+                div().relative().w_full().child(scroller).custom_scrollbars(
+                    Scrollbars::always_visible(ScrollAxes::Horizontal)
+                        .tracked_scroll_handle(&self.dag_scroll),
+                    window,
+                    cx,
+                ),
             )
             .when(!legend.is_empty(), |this| this.child(p::text(legend, 11.5, p::SUB).mt(px(12.))))
             .into_any_element()
@@ -1031,7 +1053,7 @@ impl Item for MiniOrkPage {
 }
 
 impl Render for MiniOrkPage {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let source = self.source();
         let bar = self.loading.then(|| loading::sweep_bar(("page-sweep", self.generation as usize)));
         let content = match self.data.clone() {
@@ -1065,7 +1087,7 @@ impl Render for MiniOrkPage {
                 .child(self.render_header(&page, cx))
                 .child(v_flex().children(self.render_tabs(&page, cx)).children(bar.map(|b| div().mt(px(-2.)).child(b))))
                 .child(
-                    div().child(self.render_sections(&page, cx)).with_animation(
+                    div().child(self.render_sections(&page, window, cx)).with_animation(
                         ("page-fade", self.fade as usize),
                         Animation::new(Duration::from_millis(280)),
                         |el, delta| el.opacity(delta),
