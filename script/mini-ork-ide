@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+# Start the mini-ork IDE (the release-fast build of this tree).
+#   script/mini-ork-ide [project folder]
+# It runs on Zed's dev channel: a separate instance next to an installed Zed,
+# sharing your Zed settings (~/.config/zed), with its own window state.
+set -euo pipefail
+root="$(cd "$(dirname "$0")/.." && pwd)"
+bin="${root}/target/release-fast/zed"
+[[ -x "$bin" ]] || { echo "not built yet: ZED_RELEASE_CHANNEL=dev cargo build -p zed --profile release-fast" >&2; exit 1; }
+exec "$bin" "$@"
