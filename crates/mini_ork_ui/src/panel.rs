@@ -75,7 +75,6 @@ pub struct MiniOrkPanel {
     board: Option<Board>,
     error: Option<String>,
     selected_run: Option<String>,
-    card: Option<String>,
     notice: Option<String>,
     /// Each run's state at the previous refresh, to notice runs that finish.
     last_states: HashMap<String, String>,
@@ -155,7 +154,6 @@ impl MiniOrkPanel {
             board: None,
             error: None,
             selected_run: None,
-            card: None,
             notice: None,
             last_states: HashMap::new(),
             _poll: poll,
@@ -197,17 +195,17 @@ impl MiniOrkPanel {
                 message.push_str(&format!(" · +{} −{}", run.added, run.removed));
             }
             let run_id = run.id.clone();
+            let run_title = title.clone();
             let panel = panel.clone();
             let toast = Toast::new(
                 NotificationId::named(SharedString::from(format!("mini-ork-run-{}", run.id))),
                 message,
             )
-            .on_click("Show", move |_window, cx| {
+            .on_click("Show", move |window, cx| {
                 panel
                     .update(cx, |panel, cx| {
                         panel.section = Section::Runs;
-                        panel.selected_run = None;
-                        panel.select_run(run_id.clone(), cx);
+                        panel.open_run(run_id.clone(), run_title.clone(), window, cx);
                     })
                     .ok();
             })
@@ -216,32 +214,14 @@ impl MiniOrkPanel {
         }
     }
 
-    fn select_run(&mut self, run_id: String, cx: &mut Context<Self>) {
-        if self.selected_run.as_deref() == Some(run_id.as_str()) {
-            self.selected_run = None;
-            self.card = None;
-            cx.notify();
-            return;
-        }
+    /// Open the run as its own tab (or bring that tab forward).
+    fn open_run(&mut self, run_id: String, title: String, window: &mut Window, cx: &mut Context<Self>) {
         self.selected_run = Some(run_id.clone());
-        self.card = Some("Loading…".into());
         cx.notify();
-        let (Some(home), bin) = (self.home.clone(), self.bin.clone()) else {
+        let (Some(home), Some(workspace)) = (self.home.clone(), self.workspace.upgrade()) else {
             return;
         };
-        cx.spawn(async move |this, cx| {
-            let card = cx
-                .background_spawn(board::fetch_run_card(bin, home, run_id.clone()))
-                .await;
-            this.update(cx, |this, cx| {
-                if this.selected_run.as_deref() == Some(run_id.as_str()) {
-                    this.card = Some(card.unwrap_or_else(|error| error.to_string()));
-                    cx.notify();
-                }
-            })
-            .ok();
-        })
-        .detach();
+        crate::run_view::open_run_tab(&workspace, run_id, title, home, self.bin.clone(), window, cx);
     }
 
     fn act(&mut self, args: Vec<String>, cx: &mut Context<Self>) {
@@ -397,11 +377,14 @@ impl MiniOrkPanel {
             } else {
                 run.title.clone()
             };
-            let mut item = ThreadItem::new(SharedString::from(format!("mini-ork-run-{}", run.id)), title)
+            let mut item = ThreadItem::new(SharedString::from(format!("mini-ork-run-{}", run.id)), title.clone())
                 .status(status_for(&run.state))
                 .timestamp(age(run.started_at, now))
                 .selected(selected)
-                .on_click(cx.listener(move |this, _, _, cx| this.select_run(id.clone(), cx)));
+                .on_click({
+                    let title = title.clone();
+                    cx.listener(move |this, _, window, cx| this.open_run(id.clone(), title.clone(), window, cx))
+                });
             if run.added > 0 {
                 item = item.added(run.added as usize);
             }
@@ -410,70 +393,8 @@ impl MiniOrkPanel {
             }
             v_flex()
                 .child(item)
-                .when(selected, |this| this.child(self.render_run_detail(run, cx)))
                 .into_any_element()
         }
-    }
-
-    fn render_run_detail(&self, run: &board::Run, cx: &mut Context<Self>) -> impl IntoElement {
-        let meta = format!(
-            "{} · step {} · ${:.2}",
-            run.recipe,
-            if run.step.is_empty() { "—" } else { run.step.as_str() },
-            run.cost_usd
-        );
-        let mut buttons = h_flex().gap_1();
-        if run.has_workspace {
-            let merge_id = run.id.clone();
-            let discard_id = run.id.clone();
-            buttons = buttons
-                .child(
-                    Button::new(SharedString::from(format!("merge-{}", run.id)), "Merge")
-                        .style(ButtonStyle::Filled)
-                        .label_size(LabelSize::Small)
-                        .on_click(cx.listener(move |this, _, _, cx| {
-                            this.act(vec!["board".into(), "merge".into(), merge_id.clone()], cx)
-                        })),
-                )
-                .child(
-                    Button::new(SharedString::from(format!("discard-{}", run.id)), "Discard")
-                        .label_size(LabelSize::Small)
-                        .on_click(cx.listener(move |this, _, _, cx| {
-                            this.act(vec!["board".into(), "discard".into(), discard_id.clone()], cx)
-                        })),
-                );
-        }
-        if run.state == "working" {
-            let stop_id = run.id.clone();
-            buttons = buttons.child(
-                Button::new(SharedString::from(format!("stop-{}", run.id)), "Stop")
-                    .label_size(LabelSize::Small)
-                    .on_click(cx.listener(move |this, _, _, cx| {
-                        this.act(vec!["board".into(), "stop".into(), stop_id.clone()], cx)
-                    })),
-            );
-        }
-        let card = self.card.clone().unwrap_or_default();
-        v_flex()
-            .px_3()
-            .py_1()
-            .gap_1()
-            .child(Label::new(meta).size(LabelSize::XSmall).color(Color::Muted))
-            .child(buttons)
-            .children(
-                card.lines()
-                    .filter(|line| !line.trim().is_empty() && !line.starts_with("| ---"))
-                    .take(40)
-                    .map(|line| {
-                        Label::new(clean_markdown(line))
-                            .size(LabelSize::XSmall)
-                            .color(if line.starts_with('#') {
-                                Color::Default
-                            } else {
-                                Color::Muted
-                            })
-                    }),
-            )
     }
 
     fn render_review(&self, board: &Board, cx: &mut Context<Self>) -> impl IntoElement {
@@ -710,14 +631,6 @@ fn truncate(text: &str) -> String {
     }
     let cut: String = text.chars().take(TEXT_LIMIT).collect();
     format!("{cut}…")
-}
-
-fn clean_markdown(line: &str) -> String {
-    line.trim_start_matches('#')
-        .replace("**", "")
-        .replace('`', "")
-        .trim()
-        .to_string()
 }
 
 impl EventEmitter<PanelEvent> for MiniOrkPanel {}

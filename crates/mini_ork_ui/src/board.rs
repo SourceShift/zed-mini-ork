@@ -135,6 +135,109 @@ pub struct OpenWorkspace {
     pub files: Vec<String>,
 }
 
+/// One run's card, as `mini-ork board run <id>` returns it in `card`.
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct Card {
+    #[serde(default)]
+    pub recipe: String,
+    #[serde(default)]
+    pub status: String,
+    #[serde(default)]
+    pub detail: String,
+    #[serde(default)]
+    pub steps: Vec<CardStep>,
+    #[serde(default)]
+    pub cost_by_stage: BTreeMap<String, f64>,
+    #[serde(default)]
+    pub cost_total: f64,
+    #[serde(default)]
+    pub files: Vec<CardFile>,
+    #[serde(default)]
+    pub verdict: Option<String>,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct CardStep {
+    #[serde(default)]
+    pub name: String,
+    #[serde(default, rename = "type")]
+    pub kind: String,
+    #[serde(default)]
+    pub lane: String,
+    #[serde(default)]
+    pub seconds: Option<i64>,
+    #[serde(default)]
+    pub state: String,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct CardFile {
+    #[serde(default)]
+    pub path: String,
+    #[serde(default)]
+    pub abs: Option<String>,
+    #[serde(default)]
+    pub added: u64,
+    #[serde(default)]
+    pub removed: u64,
+}
+
+/// Everything `mini-ork board run <id>` returns, for the run tab.
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct RunDetail {
+    #[serde(default)]
+    pub card: Card,
+    #[serde(default)]
+    pub kickoff: Kickoff,
+    #[serde(default)]
+    pub artifacts: Vec<Artifact>,
+    #[serde(default)]
+    pub diff: String,
+    #[serde(default)]
+    pub workspace: Option<RunWorkspace>,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct Kickoff {
+    #[serde(default)]
+    pub path: Option<String>,
+    #[serde(default)]
+    pub text: String,
+    #[serde(default)]
+    pub truncated: bool,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct Artifact {
+    #[serde(default)]
+    pub path: String,
+    #[serde(default)]
+    pub abs: String,
+    #[serde(default)]
+    pub size: u64,
+    #[serde(default)]
+    pub group: String,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct RunWorkspace {
+    #[serde(default)]
+    pub branch: String,
+    #[serde(default)]
+    pub base: String,
+}
+
+pub async fn fetch_run_detail(bin: PathBuf, home: PathBuf, run_id: String) -> Result<RunDetail> {
+    let value = run_json(&bin, &["board".into(), "run".into(), run_id], &home).await?;
+    if value.get("ok").and_then(Value::as_bool) == Some(false) {
+        return Err(anyhow!(
+            "{}",
+            value.get("error").and_then(Value::as_str).unwrap_or("no such run")
+        ));
+    }
+    serde_json::from_value(value).context("reading the run")
+}
+
 /// The `mini-ork` launcher: `$MINI_ORK_BIN`, else the managed launcher
 /// `~/.local/bin/mini-ork` (written by `mini-ork install`; it pins mini-ork's
 /// own Python), else the first `mini-ork` on `PATH`. The managed one comes
@@ -206,17 +309,6 @@ async fn run_json(bin: &Path, args: &[String], home: &Path) -> Result<Value> {
 pub async fn fetch_board(bin: PathBuf, home: PathBuf) -> Result<Board> {
     let value = run_json(&bin, &["board".into(), "--json".into()], &home).await?;
     serde_json::from_value(value).context("reading mini-ork board")
-}
-
-pub async fn fetch_run_card(bin: PathBuf, home: PathBuf, run_id: String) -> Result<String> {
-    let value = run_json(&bin, &["board".into(), "run".into(), run_id], &home).await?;
-    if let Some(markdown) = value.get("markdown").and_then(Value::as_str) {
-        return Ok(markdown.to_string());
-    }
-    Err(anyhow!(
-        "{}",
-        value.get("error").and_then(Value::as_str).unwrap_or("no run card")
-    ))
 }
 
 /// Run a mini-ork action (`board merge <id>`, `automations run <id>`, …) and
