@@ -11,6 +11,7 @@
 
 mod board;
 mod panel;
+mod run_view;
 
 pub use panel::MiniOrkPanel;
 
