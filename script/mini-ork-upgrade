@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+# Move the mini-ork IDE onto a new Zed release.
+#
+#   script/mini-ork-upgrade v1.23.0
+#
+# Our changes are the commits after the Zed tag recorded in MINI_ORK_BASE:
+# the mini_ork_ui crate, a small hooks commit (the only edits to Zed's own
+# files) and this tooling. The upgrade checks out the new tag on a new branch,
+# re-applies those commits, records the new base and builds. If a cherry-pick
+# stops, the conflict is in the hooks commit (a few lines in Cargo.toml,
+# crates/zed/Cargo.toml, crates/zed/src/main.rs, crates/zed/src/zed.rs) or a
+# Zed API our crate uses changed — fix it, `git cherry-pick --continue`, and
+# run this script again with --resume.
+set -euo pipefail
+
+tag="${1:?usage: script/mini-ork-upgrade <zed tag, e.g. v1.23.0> [--resume]}"
+cd "$(git rev-parse --show-toplevel)"
+upstream="${MINI_ORK_ZED_UPSTREAM:-https://github.com/zed-industries/zed}"
+
+if [[ "${2:-}" != "--resume" ]]; then
+  if ! git diff --quiet || ! git diff --cached --quiet; then
+    echo "mini-ork-upgrade: commit or stash your changes first" >&2
+    exit 1
+  fi
+  old_base="$(cat MINI_ORK_BASE)"
+  commits=$(git rev-list --reverse "${old_base}..HEAD")
+  [[ -n "$commits" ]] || { echo "mini-ork-upgrade: no mini-ork commits after ${old_base}" >&2; exit 1; }
+  echo "mini-ork commits to carry over:"
+  git log --oneline "${old_base}..HEAD"
+  git fetch --depth 1 "$upstream" "refs/tags/${tag}:refs/tags/${tag}"
+  git switch -c "mini-ork-${tag}" "${tag}"
+  # shellcheck disable=SC2086
+  git cherry-pick $commits
+fi
+
+echo "${tag}" > MINI_ORK_BASE
+git add MINI_ORK_BASE
+git commit -q -m "mini-ork: base ${tag}" || true
+ZED_RELEASE_CHANNEL=dev cargo build -p zed --profile release-fast
+echo "mini-ork IDE on Zed ${tag}: script/mini-ork-ide"
