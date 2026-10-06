@@ -12,7 +12,10 @@ use gpui::{
     SharedString, Task, WeakEntity, Window, px,
 };
 use serde_json::Value;
-use gpui::{Animation, AnimationExt as _, ScrollHandle};
+use gpui::{
+    Animation, AnimationExt as _, AnchoredPositionMode, DismissEvent, ScrollHandle, Subscription, anchored,
+    deferred, point,
+};
 use ui::{ScrollAxes, Scrollbars, WithScrollbar as _, prelude::*};
 use workspace::{
     Workspace,
@@ -100,6 +103,13 @@ pub struct MiniOrkPage {
     fade: u64,
     /// The DAG card scrolls sideways, as in the design.
     dag_scroll: ScrollHandle,
+    /// The run graph, full screen, when open.
+    graph: Option<Entity<crate::graph::MiniOrkGraph>>,
+    _graph_sub: Option<Subscription>,
+    /// Board reads this page has followed (it re-reads when the board moves).
+    seen_board: u64,
+    last_reload: std::time::Instant,
+    _store_sub: Option<Subscription>,
     generation: u64,
     _load: Task<()>,
 }
@@ -127,6 +137,11 @@ impl MiniOrkPage {
             shapes: HashMap::new(),
             fade: 0,
             dag_scroll: ScrollHandle::new(),
+            graph: None,
+            _graph_sub: None,
+            seen_board: 0,
+            last_reload: std::time::Instant::now(),
+            _store_sub: None,
             generation: 0,
             _load: Task::ready(()),
         };
@@ -203,6 +218,7 @@ impl MiniOrkPage {
 
     /// Fetch the page again; while it is live, keep refreshing it.
     pub fn reload(&mut self, cx: &mut Context<Self>) {
+        self.last_reload = std::time::Instant::now();
         self.generation += 1;
         let generation = self.generation;
         self.loading = true;
@@ -252,6 +268,11 @@ impl MiniOrkPage {
                             Ok(value) => value.get("refresh").and_then(Value::as_u64),
                             Err(_) => None,
                         };
+                        if let (Ok(value), Some(graph)) = (&result, this.graph.clone()) {
+                            if let Some(model) = this.args.get("run").and_then(|run| crate::graph::Model::from_page(value, run)) {
+                                graph.update(cx, |graph, cx| graph.set_model(model, cx));
+                            }
+                        }
                         if let Ok(value) = &result {
                             this.cache.insert(this.cache_key(), value.clone());
                             let tab = this.tab.clone().unwrap_or_else(|| str_of(value, "tab"));
@@ -273,11 +294,9 @@ impl MiniOrkPage {
                     })
                     .ok()
                     .flatten();
-                let seconds = refresh.unwrap_or(match key.as_str() {
-                    "runs" => 8,
-                    "changes" | "autos" => 15,
-                    _ => 0,
-                });
+                // Pages follow the board (see `follow_board`); only a page that
+                // asks for it refreshes on a timer.
+                let seconds = refresh.unwrap_or(0);
                 if seconds == 0 {
                     return;
                 }
@@ -823,7 +842,8 @@ impl MiniOrkPage {
                 } else {
                     c(p::BORDER2)
                 };
-                let handler = self.action_handler(node.get("do"), cx);
+                // Any node opens the run graph full screen on that node's stream.
+                let node_id = str_of(node, "id");
                 let el = v_flex()
                     .id(SharedString::from(format!("s{index}-n{ci}-{ni}")))
                     .w(px(128.))
@@ -855,10 +875,12 @@ impl MiniOrkPage {
                             .child(p::text(lane, 11., p::MUTED).truncate()),
                     )
                     .child(p::text(status, 11., colour).font(mono.clone()));
-                match handler {
-                    Some(handler) => el.cursor_pointer().on_click(handler).into_any_element(),
-                    None => el.into_any_element(),
-                }
+                el.cursor_pointer()
+                    .hover(|s| s.border_color(c(p::BLUE)))
+                    .on_click(cx.listener(move |this, _, window, cx| {
+                        this.open_graph(Some(node_id.clone()), window, cx)
+                    }))
+                    .into_any_element()
             })));
         }
         let legend = str_of(s, "legend");
@@ -867,10 +889,33 @@ impl MiniOrkPage {
             .w_full()
             .overflow_x_scroll()
             .track_scroll(&self.dag_scroll)
+            .pt(px(14.))
             .pb(px(12.))
             .child(row);
+        let full_screen = div()
+            .id(("dag-full", index))
+            .absolute()
+            .top(px(8.))
+            .right(px(8.))
+            .h(px(24.))
+            .px(px(9.))
+            .flex()
+            .items_center()
+            .rounded(px(5.))
+            .border_1()
+            .border_color(c(p::BORDER2))
+            .bg(c(p::BG))
+            .text_size(px(12.))
+            .text_color(c(p::MUTED))
+            .cursor_pointer()
+            .hover(|s| s.bg(c(p::HOVER)).text_color(c(p::TEXT)))
+            .tooltip(ui::Tooltip::text("Full screen · inspect every node"))
+            .child("⤢ Full screen")
+            .on_click(cx.listener(|this, _, window, cx| this.open_graph(None, window, cx)));
         card()
+            .relative()
             .p(px(16.))
+            .child(full_screen)
             .child(
                 div().relative().w_full().child(scroller).custom_scrollbars(
                     Scrollbars::always_visible(ScrollAxes::Horizontal)
@@ -968,6 +1013,70 @@ impl MiniOrkPage {
     }
 }
 
+impl MiniOrkPage {
+    /// Open the run graph full screen, optionally on one node's stream.
+    fn open_graph(&mut self, node: Option<String>, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(run) = self.args.get("run").cloned() else {
+            return;
+        };
+        let Some(Ok(page)) = self.data.clone() else {
+            return;
+        };
+        let Some(model) = crate::graph::Model::from_page(&page, &run) else {
+            return;
+        };
+        if let Some(graph) = self.graph.clone() {
+            if let Some(node) = node {
+                graph.update(cx, |graph, cx| graph.open_node(node, cx));
+            }
+            return;
+        }
+        let (workspace, page_handle) = (self.workspace.clone(), cx.entity().downgrade());
+        let graph = cx.new(|cx| crate::graph::MiniOrkGraph::new(model, node, workspace, page_handle, window, cx));
+        self._graph_sub = Some(cx.subscribe(&graph, |this, _, _: &DismissEvent, cx| {
+            this.graph = None;
+            this._graph_sub = None;
+            cx.notify();
+        }));
+        graph.update(cx, |graph, cx| graph.focus(window, cx));
+        self.graph = Some(graph);
+        cx.notify();
+    }
+
+    /// Re-read when the board moved (mini-ork wrote to the project) and this
+    /// page is the one in front — so what you look at is never stale.
+    fn follow_board(&mut self, cx: &mut Context<Self>) {
+        if self._store_sub.is_some() {
+            return;
+        }
+        let Some(workspace) = self.workspace.upgrade() else {
+            return;
+        };
+        let Some(store) = BoardStore::for_workspace(&workspace, cx) else {
+            return;
+        };
+        self.seen_board = store.read(cx).generation;
+        self._store_sub = Some(cx.observe(&store, |this, store, cx| {
+            let generation = store.read(cx).generation;
+            if generation == this.seen_board {
+                return;
+            }
+            this.seen_board = generation;
+            let in_front = this
+                .workspace
+                .upgrade()
+                .and_then(|w| w.read(cx).active_item(cx))
+                .is_some_and(|item| item.item_id() == cx.entity_id());
+            if (in_front || this.graph.is_some())
+                && !this.loading
+                && this.last_reload.elapsed() >= Duration::from_secs(2)
+            {
+                this.reload(cx);
+            }
+        }));
+    }
+}
+
 fn card() -> Div {
     v_flex()
         .bg(c(p::CHROME))
@@ -1054,6 +1163,7 @@ impl Item for MiniOrkPage {
 
 impl Render for MiniOrkPage {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        self.follow_board(cx);
         let source = self.source();
         let bar = self.loading.then(|| loading::sweep_bar(("page-sweep", self.generation as usize)));
         let content = match self.data.clone() {
@@ -1109,6 +1219,17 @@ impl Render for MiniOrkPage {
                     .pb(px(48.))
                     .child(div().max_w(px(1080.)).mx_auto().child(content)),
             )
+            .when_some(self.graph.clone(), |this, graph| {
+                this.child(
+                    deferred(
+                        anchored()
+                            .position_mode(AnchoredPositionMode::Window)
+                            .position(point(px(0.), px(0.)))
+                            .child(graph),
+                    )
+                    .with_priority(100),
+                )
+            })
     }
 }
 

@@ -14,7 +14,11 @@ doctest = false
 
 [dependencies]
 agent_ui.workspace = true
+ui_input.workspace = true
 anyhow.workspace = true
+chrono.workspace = true
+fs.workspace = true
+futures.workspace = true
 gpui.workspace = true
 log.workspace = true
 platform_title_bar.workspace = true

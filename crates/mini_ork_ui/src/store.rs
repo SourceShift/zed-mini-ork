@@ -16,10 +16,14 @@ use workspace::{OpenOptions, Toast, Workspace, notifications::NotificationId};
 
 use crate::board::{self, Board};
 
-/// Time between the end of one board read and the start of the next — slower
-/// while the IDE is not the active app, so it costs nothing in the background.
-const POLL_INTERVAL: Duration = Duration::from_secs(5);
-const POLL_INTERVAL_INACTIVE: Duration = Duration::from_secs(30);
+/// The board is re-read when mini-ork writes to the project's `.mini-ork`
+/// (state.db, its WAL, run folders) — never on a fixed beat. Reads are at least
+/// `MIN_GAP` apart so a busy run coalesces into one read per gap; a slow safety
+/// read covers anything the watcher misses.
+const MIN_GAP: Duration = Duration::from_millis(1500);
+const MIN_GAP_INACTIVE: Duration = Duration::from_secs(10);
+const SAFETY_READ: Duration = Duration::from_secs(60);
+const WATCH_LATENCY: Duration = Duration::from_millis(300);
 
 pub struct BoardStore {
     workspace: WeakEntity<Workspace>,
@@ -29,6 +33,9 @@ pub struct BoardStore {
     pub error: Option<String>,
     /// Each run's state at the previous read, to notice runs that finish.
     last_states: HashMap<String, String>,
+    /// Bumped on every fresh read; pages re-read themselves when it moves.
+    pub generation: u64,
+    _watcher: Option<std::sync::Arc<dyn fs::Watcher>>,
     _poll: Task<()>,
 }
 
@@ -141,6 +148,8 @@ impl BoardStore {
 
     fn new(workspace: WeakEntity<Workspace>, cx: &mut Context<Self>) -> Self {
         let poll = cx.spawn(async move |this, cx| {
+            let (changed_tx, mut changed_rx) = futures::channel::mpsc::unbounded::<()>();
+            let mut watched: Option<PathBuf> = None;
             loop {
                 let Ok((bin, root)) = this.update(cx, |this, cx| (this.bin.clone(), this.project_root(cx)))
                 else {
@@ -161,6 +170,7 @@ impl BoardStore {
                     }
                     None => Err(anyhow::anyhow!("Open a project folder to see its mini-ork state.")),
                 };
+                let home = result.as_ref().ok().map(|(home, _)| home.clone());
                 let updated = this.update(cx, |this, cx| {
                     match result {
                         Ok((home, board)) => {
@@ -168,6 +178,7 @@ impl BoardStore {
                             this.announce_finished(&board, cx);
                             this.board = Some(board);
                             this.error = None;
+                            this.generation += 1;
                         }
                         Err(error) => this.error = Some(error.to_string()),
                     }
@@ -176,9 +187,41 @@ impl BoardStore {
                 if updated.is_err() {
                     break;
                 }
+                // Watch the home once it is known (and again if the project moves).
+                if let Some(home) = home.filter(|home| watched.as_ref() != Some(home)) {
+                    let fs = cx.update(|cx| <dyn fs::Fs>::global(cx));
+                    let (mut events, watcher) = fs.watch(&home, WATCH_LATENCY).await;
+                    this.update(cx, |this, _| this._watcher = Some(watcher)).ok();
+                    let tx = changed_tx.clone();
+                    cx.background_spawn(async move {
+                        use futures::StreamExt as _;
+                        while let Some(batch) = events.next().await {
+                            if batch.iter().any(|event| relevant(&event.path))
+                                && tx.unbounded_send(()).is_err()
+                            {
+                                break;
+                            }
+                        }
+                    })
+                    .detach();
+                    watched = Some(home);
+                }
                 let active = cx.update(|cx| cx.active_window().is_some());
-                let wait = if active { POLL_INTERVAL } else { POLL_INTERVAL_INACTIVE };
-                cx.background_executor().timer(wait).await;
+                cx.background_executor()
+                    .timer(if active { MIN_GAP } else { MIN_GAP_INACTIVE })
+                    .await;
+                // Wait for the next change (or the safety read), then drain the
+                // burst so one read covers it.
+                {
+                    use futures::{FutureExt as _, StreamExt as _};
+                    let mut next = changed_rx.next().fuse();
+                    let mut safety = cx.background_executor().timer(SAFETY_READ).fuse();
+                    futures::select_biased! {
+                        _ = next => {},
+                        _ = safety => {},
+                    }
+                }
+                while changed_rx.try_recv().is_ok() {}
             }
         });
         Self {
@@ -188,6 +231,8 @@ impl BoardStore {
             board: None,
             error: None,
             last_states: HashMap::new(),
+            generation: 0,
+            _watcher: None,
             _poll: poll,
         }
     }
@@ -203,6 +248,7 @@ impl BoardStore {
                 if let Ok(board) = result {
                     this.announce_finished(&board, cx);
                     this.board = Some(board);
+                    this.generation += 1;
                     cx.notify();
                 }
             })
@@ -258,6 +304,17 @@ impl BoardStore {
             workspace.update(cx, |workspace, cx| workspace.show_toast(toast, cx));
         }
     }
+}
+
+/// Writes that can change what the IDE shows: the database and run folders —
+/// not lock files, caches or the IDE's own scratch.
+fn relevant(path: &std::path::Path) -> bool {
+    let text = path.to_string_lossy();
+    if text.ends_with(".lock") || text.contains("/__pycache__/") || text.ends_with("-shm") {
+        return false;
+    }
+    text.contains("state.db") || text.contains("/runs/") || text.contains("/worktrees/")
+        || text.ends_with("automations.json")
 }
 
 pub fn short(text: &str, limit: usize) -> String {
