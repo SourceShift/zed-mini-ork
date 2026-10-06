@@ -2,13 +2,17 @@
 //! `mini-ork board page <key>` document (see `mini_ork/ide_pages/spec.py`).
 //! A run's tab is the `run` page with `args.run`.
 
-use std::{collections::BTreeMap, time::Duration};
+use std::{
+    collections::{BTreeMap, HashMap},
+    time::Duration,
+};
 
 use gpui::{
     AnyElement, App, ClickEvent, Context, Entity, EventEmitter, FocusHandle, Focusable, Render,
     SharedString, Task, WeakEntity, Window, px,
 };
 use serde_json::Value;
+use gpui::{Animation, AnimationExt as _};
 use ui::prelude::*;
 use workspace::{
     Workspace,
@@ -17,6 +21,7 @@ use workspace::{
 
 use crate::{
     board,
+    loading::{self, Shape},
     palette::{self as p, c},
     store::{self, BoardStore, Origin},
 };
@@ -74,6 +79,16 @@ pub struct MiniOrkPage {
     focus_handle: FocusHandle,
     data: Option<Result<Value, String>>,
     loading: bool,
+    /// A user switched tab or filter and the new content is on its way: the
+    /// content area shows a loader instead of the previous content.
+    switching: bool,
+    /// Every (tab, args) result seen this session: a revisited tab shows at
+    /// once and refreshes under the sweep bar.
+    cache: HashMap<String, Value>,
+    /// The section shapes each tab last had, for its skeleton.
+    shapes: HashMap<String, Vec<Shape>>,
+    /// Bumped whenever fresh content replaces a skeleton (its fade-in key).
+    fade: u64,
     generation: u64,
     _load: Task<()>,
 }
@@ -96,6 +111,10 @@ impl MiniOrkPage {
             focus_handle: cx.focus_handle(),
             data: None,
             loading: false,
+            switching: false,
+            cache: HashMap::new(),
+            shapes: HashMap::new(),
+            fade: 0,
             generation: 0,
             _load: Task::ready(()),
         };
@@ -125,11 +144,48 @@ impl MiniOrkPage {
                 self.args.insert(k, v);
             }
         }
+        self.begin_switch();
         self.reload(cx);
+    }
+
+    fn cache_key(&self) -> String {
+        format!("{}|{:?}", self.tab.clone().unwrap_or_default(), self.args)
+    }
+
+    /// A user asked for other content: show it from the cache when it has been
+    /// seen, else a skeleton until it arrives.
+    pub(crate) fn begin_switch(&mut self) {
+        match self.cache.get(&self.cache_key()) {
+            Some(cached) => {
+                self.data = Some(Ok(cached.clone()));
+                self.switching = false;
+            }
+            None => self.switching = true,
+        }
+    }
+
+    fn source(&self) -> String {
+        let mut source = format!("board page {}", self.key);
+        if let Some(tab) = &self.tab {
+            source.push_str(&format!(" --tab {tab}"));
+        }
+        for (k, v) in &self.args {
+            source.push_str(&format!(" --arg {k}={v}"));
+        }
+        source
+    }
+
+    fn skeleton_shapes(&self) -> Vec<Shape> {
+        let tab = self.tab.clone().unwrap_or_default();
+        self.shapes
+            .get(&tab)
+            .cloned()
+            .unwrap_or_else(|| loading::default_shapes(&self.key, &tab))
     }
 
     fn set_tab(&mut self, tab: String, cx: &mut Context<Self>) {
         self.tab = Some(tab);
+        self.begin_switch();
         self.reload(cx);
     }
 
@@ -160,6 +216,7 @@ impl MiniOrkPage {
                 let Some((bin, home)) = target else {
                     this.update(cx, |this, cx| {
                         this.loading = false;
+                        this.switching = false;
                         this.data = Some(Err("This project has no .mini-ork — run `mini-ork init` in it.".into()));
                         cx.notify();
                     })
@@ -175,10 +232,29 @@ impl MiniOrkPage {
                             return None;
                         }
                         this.loading = false;
+                        if this.switching || this.data.is_none() {
+                            this.fade += 1;
+                        }
+                        this.switching = false;
                         let refresh = match &result {
                             Ok(value) => value.get("refresh").and_then(Value::as_u64),
                             Err(_) => None,
                         };
+                        if let Ok(value) = &result {
+                            this.cache.insert(this.cache_key(), value.clone());
+                            let tab = this.tab.clone().unwrap_or_else(|| str_of(value, "tab"));
+                            let shapes: Vec<Shape> = arr(value, "sections")
+                                .iter()
+                                .map(|s| Shape {
+                                    kind: str_of(s, "type"),
+                                    full: s.get("full").and_then(Value::as_bool).unwrap_or(false),
+                                    titled: !str_of(s, "title").is_empty(),
+                                })
+                                .collect();
+                            if !shapes.is_empty() {
+                                this.shapes.insert(tab, shapes);
+                            }
+                        }
                         this.data = Some(result.map_err(|e| e.to_string()));
                         cx.notify();
                         refresh
@@ -312,7 +388,7 @@ impl MiniOrkPage {
         if tabs.is_empty() {
             return None;
         }
-        let current = str_of(page, "tab");
+        let current = self.tab.clone().unwrap_or_else(|| str_of(page, "tab"));
         Some(
             h_flex()
                 .gap(px(2.))
@@ -956,8 +1032,29 @@ impl Item for MiniOrkPage {
 
 impl Render for MiniOrkPage {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let source = self.source();
+        let bar = self.loading.then(|| loading::sweep_bar(("page-sweep", self.generation as usize)));
         let content = match self.data.clone() {
-            None => p::text("Loading…", 13., p::SUB).into_any_element(),
+            None => v_flex()
+                .gap(px(14.))
+                .child(
+                    div()
+                        .text_size(px(17.))
+                        .font_weight(gpui::FontWeight::SEMIBOLD)
+                        .text_color(c(p::TEXT))
+                        .child(self.label()),
+                )
+                .children(bar)
+                .child(loading::loading_line(source, cx))
+                .child(loading::skeleton(&self.skeleton_shapes()))
+                .into_any_element(),
+            Some(Ok(page)) if self.switching => v_flex()
+                .gap(px(14.))
+                .child(self.render_header(&page, cx))
+                .child(v_flex().children(self.render_tabs(&page, cx)).children(bar.map(|b| div().mt(px(-2.)).child(b))))
+                .child(loading::loading_line(source, cx))
+                .child(loading::skeleton(&self.skeleton_shapes()))
+                .into_any_element(),
             Some(Err(error)) => v_flex()
                 .gap(px(6.))
                 .child(p::text("This page could not be read", 15., p::TEXT))
@@ -966,8 +1063,14 @@ impl Render for MiniOrkPage {
             Some(Ok(page)) => v_flex()
                 .gap(px(14.))
                 .child(self.render_header(&page, cx))
-                .children(self.render_tabs(&page, cx))
-                .child(self.render_sections(&page, cx))
+                .child(v_flex().children(self.render_tabs(&page, cx)).children(bar.map(|b| div().mt(px(-2.)).child(b))))
+                .child(
+                    div().child(self.render_sections(&page, cx)).with_animation(
+                        ("page-fade", self.fade as usize),
+                        Animation::new(Duration::from_millis(280)),
+                        |el, delta| el.opacity(delta),
+                    ),
+                )
                 .into_any_element(),
         };
         div()
@@ -984,15 +1087,6 @@ impl Render for MiniOrkPage {
                     .pb(px(48.))
                     .child(div().max_w(px(1080.)).mx_auto().child(content)),
             )
-            .when(self.loading && self.data.is_some(), |this| {
-                this.child(
-                    div()
-                        .absolute()
-                        .top(px(6.))
-                        .right(px(10.))
-                        .child(p::text("↻", 12., p::DIM)),
-                )
-            })
     }
 }
 
@@ -1023,6 +1117,7 @@ pub fn open_page(
                         page.tab = tab;
                     }
                     page.args.extend(args);
+                    page.begin_switch();
                     page.reload(cx);
                 });
             }
@@ -1052,6 +1147,7 @@ pub fn open_run(
             if tab.is_some() {
                 existing.update(cx, |page, cx| {
                     page.tab = tab;
+                    page.begin_switch();
                     page.reload(cx);
                 });
             }
