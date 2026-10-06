@@ -64,6 +64,7 @@ impl Section {
 }
 
 pub struct MiniOrkPanel {
+    workspace: WeakEntity<Workspace>,
     focus_handle: FocusHandle,
     position: DockPosition,
     section: Section,
@@ -83,22 +84,28 @@ impl MiniOrkPanel {
         workspace: WeakEntity<Workspace>,
         mut cx: AsyncWindowContext,
     ) -> anyhow::Result<Entity<Self>> {
-        workspace.update_in(&mut cx, |workspace, _window, cx| {
-            let root = workspace
-                .project()
-                .read(cx)
-                .visible_worktrees(cx)
-                .next()
-                .map(|worktree| worktree.read(cx).abs_path().to_path_buf());
-            cx.new(|cx| Self::new(root, cx))
+        workspace.update_in(&mut cx, |_workspace, _window, cx| {
+            let weak = cx.entity().downgrade();
+            cx.new(|cx| Self::new(weak, cx))
         })
     }
 
-    fn new(root: Option<PathBuf>, cx: &mut Context<Self>) -> Self {
+    /// The first folder of the project. Read on every refresh: a window opens
+    /// before its folders are added, so the panel must not capture it once.
+    fn project_root(&self, cx: &App) -> Option<PathBuf> {
+        let workspace = self.workspace.upgrade()?;
+        let project = workspace.read(cx).project().read(cx);
+        let worktree = project.visible_worktrees(cx).next()?;
+        Some(worktree.read(cx).abs_path().to_path_buf())
+    }
+
+    fn new(workspace: WeakEntity<Workspace>, cx: &mut Context<Self>) -> Self {
         let poll = cx.spawn(async move |this, cx| {
             loop {
-                let Ok((bin, root)) = this.read_with(cx, |this, _| (this.bin.clone(), this.root.clone()))
-                else {
+                let Ok((bin, root)) = this.update(cx, |this, cx| {
+                    this.root = this.project_root(cx);
+                    (this.bin.clone(), this.root.clone())
+                }) else {
                     break;
                 };
                 let result = match root {
@@ -134,10 +141,11 @@ impl MiniOrkPanel {
             }
         });
         Self {
+            workspace,
             focus_handle: cx.focus_handle(),
             position: DockPosition::Left,
             section: Section::Runs,
-            root,
+            root: None,
             home: None,
             bin: board::mini_ork_bin(),
             board: None,
