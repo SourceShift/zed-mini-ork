@@ -394,7 +394,10 @@ impl MiniOrkSidebar {
                                 .min_w_0()
                                 .gap(px(1.))
                                 .child(p::text(title.clone(), 13., p::TEXT).truncate())
-                                .child(p::text(sub, 11.5, sub_colour).truncate()),
+                                .child(p::text(sub, 11.5, sub_colour).truncate())
+                                .children(span_line(run.started_at, run.ended_at, state).map(|line| {
+                                    p::text(line, 10.5, p::DIM).font(mono.clone()).truncate()
+                                })),
                         )
                         .child(
                             v_flex()
@@ -407,6 +410,9 @@ impl MiniOrkSidebar {
                                 .child(format!("${:.2}", run.cost_usd))
                                 .child(age(run.started_at, now)),
                         )
+                        .when_some(span_tooltip(run.started_at, run.ended_at), |this, tip| {
+                            this.tooltip(Tooltip::text(tip))
+                        })
                         .on_click(cx.listener(move |this, _, window, cx| {
                             this.selected_run = Some(id.clone());
                             cx.notify();
@@ -438,6 +444,47 @@ impl MiniOrkSidebar {
             )
             .into_any_element()
     }
+}
+
+fn local(epoch: i64) -> Option<chrono::DateTime<chrono::Local>> {
+    use chrono::TimeZone as _;
+    chrono::Local.timestamp_opt(epoch, 0).single()
+}
+
+/// `21:03 → 21:41`, `21:03 → running`, with the date when it is not today
+/// (and the end's date only when it differs from the start's).
+fn span_line(started: Option<i64>, ended: Option<i64>, state: &str) -> Option<String> {
+    let start = local(started?)?;
+    let today = chrono::Local::now().date_naive();
+    let fmt = |t: &chrono::DateTime<chrono::Local>, same_day_as: chrono::NaiveDate| {
+        if t.date_naive() == same_day_as {
+            t.format("%H:%M").to_string()
+        } else {
+            t.format("%b %-d %H:%M").to_string()
+        }
+    };
+    let head = fmt(&start, today);
+    let tail = match ended.and_then(local) {
+        Some(end) if state != "working" => fmt(&end, start.date_naive()),
+        _ if state == "working" => "running".to_string(),
+        _ => "—".to_string(),
+    };
+    Some(format!("{head} → {tail}"))
+}
+
+fn span_tooltip(started: Option<i64>, ended: Option<i64>) -> Option<String> {
+    let start = local(started?)?;
+    let mut text = format!("Started {}", start.format("%Y-%m-%d %H:%M:%S"));
+    if let Some(end) = ended.and_then(local) {
+        let secs = (end - start).num_seconds().max(0);
+        let took = if secs >= 3600 {
+            format!("{}h {:02}m", secs / 3600, (secs % 3600) / 60)
+        } else {
+            format!("{}m {:02}s", secs / 60, secs % 60)
+        };
+        text.push_str(&format!(" · Finished {} · {took}", end.format("%Y-%m-%d %H:%M:%S")));
+    }
+    Some(text)
 }
 
 fn now_epoch() -> i64 {

@@ -85,6 +85,8 @@ pub struct Run {
     #[serde(default)]
     pub started_at: Option<i64>,
     #[serde(default)]
+    pub ended_at: Option<i64>,
+    #[serde(default)]
     pub cost_usd: f64,
     #[serde(default)]
     pub added: u64,
@@ -167,6 +169,32 @@ async fn run_json(bin: &Path, args: &[String], home: &Path) -> Result<Value> {
             String::from_utf8_lossy(&output.stderr).trim()
         )
     })?;
+    Ok(value)
+}
+
+/// One node's detail view (`mini-ork board node <run> <node> --view V`):
+/// stream, output, prompt, telemetry or learning. `offset` asks the stream
+/// view for the entries after the ones already shown.
+pub async fn fetch_node(
+    bin: PathBuf,
+    home: PathBuf,
+    run: String,
+    node: String,
+    view: String,
+    offset: Option<u64>,
+) -> Result<Value> {
+    let mut argv = vec!["board".to_string(), "node".into(), run, node, "--view".into(), view];
+    if let Some(offset) = offset {
+        argv.push("--offset".into());
+        argv.push(offset.to_string());
+    }
+    let value = run_json(&bin, &argv, &home).await?;
+    if value.get("ok").and_then(Value::as_bool) == Some(false) {
+        return Err(anyhow!(
+            "{}",
+            value.get("error").and_then(Value::as_str).unwrap_or("the node could not be read")
+        ));
+    }
     Ok(value)
 }
 
