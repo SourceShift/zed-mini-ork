@@ -36,5 +36,5 @@ fi
 echo "${tag}" > MINI_ORK_BASE
 git add MINI_ORK_BASE
 git commit -q -m "mini-ork: base ${tag}" || true
-"$(dirname "$0")/mini-ork-build"
+MINI_ORK_BUILD_DEBUG=false "$(dirname "$0")/mini-ork-build"  # a full rebuild anyway
 echo "mini-ork IDE on Zed ${tag}: script/mini-ork-ide"

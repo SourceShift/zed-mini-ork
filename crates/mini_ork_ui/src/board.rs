@@ -135,11 +135,20 @@ pub struct OpenWorkspace {
     pub files: Vec<String>,
 }
 
-/// The `mini-ork` launcher: `$MINI_ORK_BIN`, else on `PATH`, else
-/// `~/.local/bin/mini-ork` (an app started from the Dock has a bare `PATH`).
+/// The `mini-ork` launcher: `$MINI_ORK_BIN`, else the managed launcher
+/// `~/.local/bin/mini-ork` (written by `mini-ork install`; it pins mini-ork's
+/// own Python), else the first `mini-ork` on `PATH`. The managed one comes
+/// before `PATH` because a checkout's `bin/mini-ork` on `PATH` runs under
+/// whatever `python3` is first, which may lack mini-ork's dependencies.
 pub fn mini_ork_bin() -> PathBuf {
     if let Some(bin) = std::env::var_os("MINI_ORK_BIN") {
         return PathBuf::from(bin);
+    }
+    if let Some(home) = std::env::var_os("HOME") {
+        let candidate = Path::new(&home).join(".local/bin/mini-ork");
+        if candidate.is_file() {
+            return candidate;
+        }
     }
     if let Some(path) = std::env::var_os("PATH") {
         for dir in std::env::split_paths(&path) {
@@ -147,12 +156,6 @@ pub fn mini_ork_bin() -> PathBuf {
             if candidate.is_file() {
                 return candidate;
             }
-        }
-    }
-    if let Some(home) = std::env::var_os("HOME") {
-        let candidate = Path::new(&home).join(".local/bin/mini-ork");
-        if candidate.is_file() {
-            return candidate;
         }
     }
     PathBuf::from("mini-ork")
@@ -184,6 +187,9 @@ async fn run_json(bin: &Path, args: &[String], home: &Path) -> Result<Value> {
         .args(args)
         .arg("--home")
         .arg(home)
+        // An inherited flag would stop the launcher from switching to
+        // mini-ork's own Python.
+        .env_remove("MINI_ORK_VENV_ACTIVE")
         .output()
         .await
         .with_context(|| format!("running {}", bin.display()))?;
