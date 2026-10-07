@@ -200,6 +200,56 @@ pub fn model_icon(lane: &str) -> Option<IconName> {
     pick.iter().find(|(needle, _)| lane.contains(needle)).map(|(_, icon)| *icon)
 }
 
+/// The provider mark (as Orca draws it) for a model lane, as an asset path.
+pub fn model_image(lane: &str) -> Option<&'static str> {
+    let lane = lane.to_ascii_lowercase();
+    let pick = [
+        ("opus", "images/llm/claude.svg"),
+        ("sonnet", "images/llm/claude.svg"),
+        ("haiku", "images/llm/claude.svg"),
+        ("claude", "images/llm/claude.svg"),
+        ("anthropic", "images/llm/claude.svg"),
+        ("deepseek", "images/llm/deepseek.png"),
+        ("glm", "images/llm/zai.png"),
+        ("zhipu", "images/llm/zai.png"),
+        ("zai", "images/llm/zai.png"),
+        ("z-ai", "images/llm/zai.png"),
+        ("minimax", "images/llm/minimax.svg"),
+        ("kimi", "images/llm/kimi.png"),
+        ("moonshot", "images/llm/kimi.png"),
+        ("qwen", "images/llm/qwen.png"),
+        ("gemini", "images/llm/gemini.png"),
+        ("mistral", "images/llm/mistral.png"),
+        ("grok", "images/llm/grok.png"),
+        ("xai", "images/llm/grok.png"),
+    ];
+    pick.iter().find(|(needle, _)| lane.contains(needle)).map(|(_, path)| *path)
+}
+
+/// A lane's mark at `size` px: the provider's logo (Orca's set), else Zed's
+/// tinted model icon (OpenAI), else a dot in the family colour.
+pub fn lane_mark(lane: &str, size: f32) -> AnyElement {
+    if let Some(path) = model_image(lane) {
+        return gpui::img(path).size(px(size)).flex_none().rounded(px(2.)).into_any_element();
+    }
+    if let Some(icon) = model_icon(lane) {
+        return gpui::svg()
+            .path(icon.path())
+            .size(px(size))
+            .flex_none()
+            .text_color(c(family(lane)))
+            .into_any_element();
+    }
+    let dot = (size * 0.5).max(5.);
+    div()
+        .size(px(dot))
+        .mx(px((size - dot) / 2.))
+        .flex_none()
+        .rounded_full()
+        .bg(c(if lane.is_empty() || lane == "shell" { DIM } else { family(lane) }))
+        .into_any_element()
+}
+
 /// The mark and colour of a run state.
 pub fn state_mark(state: &str) -> (&'static str, u32) {
     match state {

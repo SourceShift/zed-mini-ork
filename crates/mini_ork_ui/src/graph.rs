@@ -809,7 +809,7 @@ impl MiniOrkGraph {
                     h_flex()
                         .gap(px(5. * z))
                         .min_w_0()
-                        .child(div().size(px(6. * z)).rounded_full().bg(c(p::family(&n.lane))))
+                        .child(p::lane_mark(&n.lane, 11. * z))
                         .child(
                             p::text(
                                 if n.role.is_empty() { n.lane.clone() } else { format!("{} · {}", n.lane, n.role) },
@@ -966,7 +966,7 @@ impl MiniOrkGraph {
                                 .w(px(120.))
                                 .flex_none()
                                 .gap(px(5.))
-                                .child(div().size(px(6.)).rounded_full().bg(c(p::family(&n.lane))))
+                                .child(p::lane_mark(&n.lane, 11.))
                                 .child(p::text(n.lane.clone(), 11.5, p::MUTED).truncate()),
                         )
                         .child(p::text(state_text(&n.state).to_string(), 11.5, mc).w(px(80.)).flex_none())
@@ -1072,11 +1072,16 @@ impl MiniOrkGraph {
                         })))
                     }),
             )
-            .child(p::text(
-                format!("{} · stage {} of {} · {}", if node.role.is_empty() { "node" } else { &node.role }, node.col + 1, stage_count, head),
-                12.,
-                p::SUB,
-            ))
+            .child(
+                h_flex()
+                    .gap(px(6.))
+                    .child(p::lane_mark(&node.lane, 13.))
+                    .child(p::text(
+                        format!("{} · stage {} of {} · {}", if node.role.is_empty() { "node" } else { &node.role }, node.col + 1, stage_count, head),
+                        12.,
+                        p::SUB,
+                    )),
+            )
             .child(tabs);
 
         let body = match (&detail, &self.detail_error) {
@@ -1158,6 +1163,68 @@ impl MiniOrkGraph {
         }
     }
 
+    /// Changed-file rows: clicking a row unfolds that file's own diff under it
+    /// (its slice of `diff`); "Open" opens the file when it exists on disk.
+    fn file_rows(&self, key: &str, files: &[Value], diff: &str, cx: &mut Context<Self>) -> Vec<AnyElement> {
+        let mono = p::mono_font(cx);
+        let sections = diff_sections(diff);
+        let mut rows: Vec<AnyElement> = Vec::new();
+        for (i, f) in files.iter().enumerate() {
+            let path = str_of(f, "path");
+            let abs = str_of(f, "abs");
+            let slice = section_for(&sections, &path);
+            let open_key = format!("{key}:{path}");
+            let open = self.art_open.contains(&open_key);
+            let mut row = h_flex()
+                .id(SharedString::from(format!("{key}-file-{i}")))
+                .gap(px(10.))
+                .px(px(6.))
+                .py(px(3.))
+                .rounded(px(4.))
+                .hover(|s| s.bg(c(p::HOVER)))
+                .child(
+                    p::text(if slice.is_none() { " " } else if open { "▾" } else { "▸" }, 11., p::SUB)
+                        .w(px(10.))
+                        .flex_none(),
+                )
+                .child(div().flex_1().min_w_0().text_size(px(12.)).font(mono.clone()).text_color(c(p::TEXT)).truncate().child(path.clone()))
+                .child(p::text(format!("+{}", str_of(f, "added")), 11.5, p::GREEN).font(mono.clone()))
+                .child(p::text(format!("−{}", str_of(f, "removed")), 11.5, p::RED).font(mono.clone()));
+            if !abs.is_empty() {
+                let opener = self.opener(abs);
+                row = row.child(p::button(
+                    SharedString::from(format!("{key}-open-{i}")),
+                    "Open",
+                    "ghost",
+                    20.,
+                    11.,
+                    Some(Box::new(move |event, window, cx| {
+                        cx.stop_propagation();
+                        opener(event, window, cx);
+                    })),
+                ));
+            }
+            if slice.is_some() {
+                row = row.cursor_pointer().on_click(cx.listener(move |this, _, _, cx| {
+                    if !this.art_open.remove(&open_key) {
+                        this.art_open.insert(open_key.clone());
+                    }
+                    cx.notify();
+                }));
+            }
+            rows.push(row.into_any_element());
+            if let (true, Some(text)) = (open, slice) {
+                let total = text.lines().count();
+                let mut lines = Self::diff_lines(&text, 400);
+                if total > 400 {
+                    lines.push(serde_json::json!({ "t": format!("… +{} more lines", total - 400), "c": "muted" }));
+                }
+                rows.push(div().pl(px(16.)).child(crate::page::code_box(&self.texts, &format!("{key}-diff-{i}"), lines, cx)).into_any_element());
+            }
+        }
+        rows
+    }
+
     /// A diff as coloured lines for `code_box`.
     fn diff_lines(diff: &str, limit: usize) -> Vec<Value> {
         diff.lines()
@@ -1183,7 +1250,6 @@ impl MiniOrkGraph {
     /// (verdict and findings, checks, report), the files it touched, its final
     /// message, and links to its own artefacts.
     fn render_overview(&self, node: &Node, detail: &Value, cx: &mut Context<Self>) -> AnyElement {
-        let mono = p::mono_font(cx);
         let heading = |text: &str| p::text(text.to_uppercase(), 11., p::SUB);
         let headline = detail.get("headline").cloned().unwrap_or(Value::Null);
         let facts = arr(detail, "facts");
@@ -1246,25 +1312,9 @@ impl MiniOrkGraph {
                     if path.is_empty() { row.into_any_element() } else { row.cursor_pointer().on_click(self.opener(path)).into_any_element() }
                 }))
         });
-        let files_el = (!files.is_empty()).then(|| {
-            v_flex()
-                .gap(px(2.))
-                .child(heading("Files"))
-                .children(files.iter().enumerate().map(|(i, f)| {
-                    let abs = str_of(f, "abs");
-                    let row = h_flex()
-                        .id(SharedString::from(format!("ov-file-{i}")))
-                        .gap(px(10.))
-                        .px(px(6.))
-                        .py(px(3.))
-                        .rounded(px(4.))
-                        .hover(|s| s.bg(c(p::HOVER)))
-                        .child(div().flex_1().min_w_0().text_size(px(12.)).font(mono.clone()).text_color(c(p::TEXT)).truncate().child(str_of(f, "path")))
-                        .child(p::text(format!("+{}", str_of(f, "added")), 11.5, p::GREEN).font(mono.clone()))
-                        .child(p::text(format!("−{}", str_of(f, "removed")), 11.5, p::RED).font(mono.clone()));
-                    if abs.is_empty() { row.into_any_element() } else { row.cursor_pointer().on_click(self.opener(abs)).into_any_element() }
-                }))
-        });
+        let overview_diff = str_of(detail, "diff");
+        let file_rows = self.file_rows("ov", &files, &overview_diff, cx);
+        let files_el = (!files.is_empty()).then(|| v_flex().gap(px(2.)).child(heading("Files")).children(file_rows));
         let final_el = (!final_text.is_empty()).then(|| {
             v_flex().gap(px(4.)).child(heading("Final message")).child(
                 self.texts.nested_scroll(
@@ -1463,30 +1513,14 @@ impl MiniOrkGraph {
                 }))
         });
 
+        let changed_rows = self.file_rows("changed", &files, &diff, cx);
         let files_section = v_flex()
             .gap(px(2.))
             .child(heading(format!("Files changed after {}", node.label)))
             .when(files.is_empty(), |this| {
                 this.child(p::text(if diff_note.is_empty() { "No code changed by this point.".to_string() } else { diff_note.clone() }, 12., p::SUB))
             })
-            .children(files.iter().enumerate().map(|(i, f)| {
-                let abs = str_of(f, "abs");
-                let row = h_flex()
-                    .id(SharedString::from(format!("changed-{i}")))
-                    .gap(px(10.))
-                    .px(px(6.))
-                    .py(px(4.))
-                    .rounded(px(4.))
-                    .hover(|s| s.bg(c(p::HOVER)))
-                    .child(div().flex_1().min_w_0().text_size(px(12.)).font(mono.clone()).text_color(c(p::TEXT)).truncate().child(str_of(f, "path")))
-                    .child(p::text(format!("+{}", str_of(f, "added")), 11.5, p::GREEN).font(mono.clone()))
-                    .child(p::text(format!("−{}", str_of(f, "removed")), 11.5, p::RED).font(mono.clone()));
-                if abs.is_empty() {
-                    row.into_any_element()
-                } else {
-                    row.cursor_pointer().on_click(open_path(abs)).into_any_element()
-                }
-            }));
+            .children(changed_rows);
 
         let diff_section = (!diff.is_empty()).then(|| {
             let lines: Vec<Value> = diff
@@ -2199,4 +2233,47 @@ fn human_size(bytes: u64) -> String {
         b if b < 1024 * 1024 => format!("{:.1} KB", b as f64 / 1024.),
         b => format!("{:.1} MB", b as f64 / (1024. * 1024.)),
     }
+}
+
+/// A unified diff split per file: a section starts at `diff --git`, or at a
+/// `--- ` header that no `diff --git` line introduced (plain patches).
+fn diff_sections(diff: &str) -> Vec<String> {
+    let mut sections = Vec::new();
+    let mut current = String::new();
+    let mut in_git_header = false;
+    for line in diff.lines() {
+        let git = line.starts_with("diff --git ");
+        let starts = git || (line.starts_with("--- ") && !in_git_header);
+        if starts && !current.is_empty() {
+            sections.push(std::mem::take(&mut current));
+        }
+        in_git_header = git
+            || (in_git_header
+                && ["index ", "new file", "deleted file", "similarity", "rename ", "old mode", "new mode"]
+                    .iter()
+                    .any(|p| line.starts_with(p)));
+        current.push_str(line);
+        current.push('\n');
+    }
+    if !current.is_empty() {
+        sections.push(current);
+    }
+    sections
+}
+
+/// The section of `path` (a repo-relative path or a bare file name).
+fn section_for(sections: &[String], path: &str) -> Option<String> {
+    if path.is_empty() {
+        return None;
+    }
+    let needle = format!("/{}", path.trim_start_matches('/'));
+    sections
+        .iter()
+        .find(|section| {
+            section.lines().take(4).any(|line| {
+                (line.starts_with("diff --git ") || line.starts_with("--- ") || line.starts_with("+++ "))
+                    && (line.contains(&needle) || line.ends_with(&format!(" {path}")))
+            })
+        })
+        .cloned()
 }

@@ -907,7 +907,7 @@ impl MiniOrkPage {
                     .child(
                         h_flex()
                             .gap(px(5.))
-                            .child(div().size(px(6.)).rounded_full().bg(c(p::family(&lane))))
+                            .child(p::lane_mark(&lane, 11.))
                             .child(p::text(lane, 11., p::MUTED).truncate()),
                     )
                     .child(p::text(status, 11., colour).font(mono.clone()));
