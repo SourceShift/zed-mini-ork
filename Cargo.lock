@@ -11095,11 +11095,21 @@ dependencies = [
 name = "mini_ork_ui"
 version = "0.1.0"
 dependencies = [
+ "agent_ui",
  "anyhow",
+ "chrono",
+ "fs",
+ "futures 0.3.34",
  "gpui",
+ "log",
+ "markdown",
+ "platform_title_bar",
  "serde",
  "serde_json",
+ "settings",
+ "theme",
  "ui",
+ "ui_input",
  "util",
  "workspace",
 ]

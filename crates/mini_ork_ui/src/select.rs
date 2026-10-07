@@ -12,8 +12,9 @@ use std::{
 };
 
 use gpui::{
-    AnyElement, App, AppContext as _, Context, Entity, FontStyle, FontWeight, Hsla, IntoElement as _, SharedString,
-    TextOverflow, TextStyle, WhiteSpace, px, relative,
+    AnyElement, App, AppContext as _, Context, Div, Entity, FontStyle, FontWeight, Hsla, InteractiveElement as _,
+    IntoElement as _, ScrollHandle, SharedString, Stateful, StatefulInteractiveElement as _, TextOverflow, TextStyle,
+    WhiteSpace, px, relative,
 };
 use markdown::{Markdown, MarkdownElement, MarkdownStyle};
 
@@ -23,6 +24,7 @@ use crate::palette as p;
 pub struct Texts {
     map: RefCell<HashMap<String, (SharedString, Entity<Markdown>)>>,
     used: RefCell<HashSet<String>>,
+    scrolls: RefCell<HashMap<String, ScrollHandle>>,
 }
 
 impl Texts {
@@ -34,6 +36,27 @@ impl Texts {
     pub fn end(&self) {
         let used = self.used.borrow();
         self.map.borrow_mut().retain(|key, _| used.contains(key));
+        self.scrolls.borrow_mut().retain(|key, _| used.contains(key));
+    }
+
+    /// `el` as a scroll box inside another scroll area (the stream, a page):
+    /// the wheel scrolls this box while it can move and reaches the outer area
+    /// only at this box's ends or when its content fits.
+    pub fn nested_scroll(&self, key: impl AsRef<str>, el: Stateful<Div>) -> Stateful<Div> {
+        let key = format!("scroll:{}", key.as_ref());
+        self.used.borrow_mut().insert(key.clone());
+        let handle = self.scrolls.borrow_mut().entry(key).or_default().clone();
+        let probe = handle.clone();
+        el.track_scroll(&handle).on_scroll_wheel(move |_, _, cx| {
+            // Runs after this box's own scroll listener added the delta and
+            // before layout clamps it: still inside [-max, 0] means this box
+            // took the scroll, so the outer area must not move too.
+            let max = probe.max_offset().y;
+            let y = probe.offset().y;
+            if max > px(0.) && y <= px(0.) && y >= -max {
+                cx.stop_propagation();
+            }
+        })
     }
 
     fn entity<T: 'static>(&self, key: &str, text: &str, cx: &mut Context<T>) -> Entity<Markdown> {

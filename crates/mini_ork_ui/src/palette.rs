@@ -1,16 +1,24 @@
 //! The mini-ork IDE design's palette, sizes and small building blocks.
 //!
-//! Colours are fixed (the design is drawn in Zed's One Dark), and pages name
-//! colours rather than sending hex — see `mini_ork/ide_pages/spec.py`.
+//! The design is drawn in Zed's One Dark, so views name its colours (`BG`,
+//! `TEXT`, `GREEN`, …, and a few literal greys). `c` / `ca` map each of them
+//! onto the ACTIVE Zed theme (editor/panel backgrounds, borders, text levels,
+//! status and syntax colours), so the IDE follows any theme, light or dark,
+//! and re-colours when the theme changes. Pages name colours rather than
+//! sending hex — see `mini_ork/ide_pages/spec.py`.
 
-use gpui::{AnyElement, App, ClickEvent, Div, Font, Hsla, Window, px, rgb, rgba};
+use std::{collections::HashMap, sync::RwLock};
+
+use gpui::{AnyElement, App, ClickEvent, Div, Font, Hsla, Window, px, rgb};
+use theme::ActiveTheme as _;
 use ui::prelude::*;
 
 pub const BG: u32 = 0x282c33;
 pub const CHROME: u32 = 0x2f343e;
 pub const BORDER: u32 = 0x363c46;
 pub const BORDER2: u32 = 0x464b57;
-pub const HOVER: u32 = 0x363c46;
+// One step off BORDER so the theme map can tell hover from a border.
+pub const HOVER: u32 = 0x363c47;
 pub const SELECTED: u32 = 0x454a56;
 pub const ROW_SELECTED: u32 = 0x3b414d;
 pub const ROW_RULE: u32 = 0x30353f;
@@ -29,12 +37,78 @@ pub const PURPLE: u32 = 0xb477cf;
 pub const CYAN: u32 = 0x6eb4bf;
 pub const ORANGE: u32 = 0xc0966b;
 
-pub fn c(hex: u32) -> Hsla {
-    rgb(hex).into()
+/// Literal design greys that views use directly.
+const STREAM_BOX: u32 = 0x262a31;
+const ELEMENT: u32 = 0x353a44;
+const CANVAS: u32 = 0x1f2227;
+const SKELETON: u32 = 0x434a56;
+
+/// Design colour → active-theme colour; `None` until `sync_theme` runs.
+static THEMED: RwLock<Option<HashMap<u32, Hsla>>> = RwLock::new(None);
+
+/// Rebuild the design → theme map from the active theme. Called at init and
+/// whenever the theme changes.
+pub fn sync_theme(cx: &App) {
+    let theme = cx.theme();
+    let colors = theme.colors();
+    let status = theme.status();
+    let syntax = |name: &str, fallback: u32| -> Hsla {
+        theme
+            .syntax()
+            .style_for_name(name)
+            .and_then(|style| style.color)
+            .unwrap_or_else(|| rgb(fallback).into())
+    };
+    // A surface a little darker than `base`, in light and dark themes alike.
+    let shade = |base: Hsla, amount: f32| Hsla { l: (base.l - amount).clamp(0., 1.), ..base };
+    let map = HashMap::from([
+        (BG, colors.editor_background),
+        (CHROME, colors.panel_background),
+        (BORDER, colors.border_variant),
+        (BORDER2, colors.border),
+        (HOVER, colors.element_hover),
+        (SELECTED, colors.element_selected),
+        (ROW_SELECTED, colors.background),
+        (ROW_RULE, colors.border_variant.opacity(0.6)),
+        (NODE_BG, colors.element_background.blend(colors.element_hover.opacity(0.6))),
+        (TEXT, colors.text),
+        (BODY, colors.text.blend(colors.text_muted.opacity(0.45))),
+        (MUTED, colors.text_muted),
+        (SUB, colors.text_placeholder),
+        (DIM, colors.text_disabled.opacity(0.75)),
+        (BLUE, colors.text_accent),
+        (GREEN, status.success),
+        (RED, status.error),
+        (YELLOW, status.warning),
+        (PURPLE, syntax("keyword", PURPLE)),
+        (CYAN, syntax("type", CYAN)),
+        (ORANGE, syntax("number", ORANGE)),
+        (STREAM_BOX, shade(colors.editor_background, 0.02)),
+        (ELEMENT, colors.element_background),
+        (CANVAS, shade(colors.editor_background, 0.04)),
+        (SKELETON, colors.border),
+    ]);
+    if let Ok(mut themed) = THEMED.write() {
+        *themed = Some(map);
+    }
 }
 
+/// A design colour, as the active theme draws it (the literal hex when the
+/// colour is not part of the design palette).
+pub fn c(hex: u32) -> Hsla {
+    THEMED
+        .read()
+        .ok()
+        .and_then(|themed| themed.as_ref().and_then(|map| map.get(&hex).copied()))
+        .unwrap_or_else(|| rgb(hex).into())
+}
+
+/// A design colour with an alpha byte (`0xRRGGBBAA`): the themed colour of
+/// `RRGGBB` at that alpha, so tints follow the theme too.
 pub fn ca(hex_with_alpha: u32) -> Hsla {
-    rgba(hex_with_alpha).into()
+    let alpha = (hex_with_alpha & 0xff) as f32 / 255.;
+    let base = c(hex_with_alpha >> 8);
+    Hsla { a: base.a * alpha, ..base }
 }
 
 /// A colour name from a page (`"green"`, `"fam:sonnet"`, …).

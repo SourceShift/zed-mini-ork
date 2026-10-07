@@ -523,12 +523,17 @@ impl MiniOrkPage {
             "pills" => self.render_pills(s, cx),
             "chips" => self.render_chips(index, s, cx),
             // Full document, capped in height and scrolled inside.
-            "markdown" => div()
-                .id(SharedString::from(format!("s{index}-md-box")))
-                .max_h(px(640.))
-                .overflow_y_scroll()
-                .pr(px(6.))
-                .child(self.texts.markdown(format!("s{index}-md"), str_of(s, "text"), Look::new(13., c(p::BODY)), cx))
+            "markdown" => self
+                .texts
+                .nested_scroll(
+                    format!("s{index}-md-box"),
+                    div()
+                        .id(SharedString::from(format!("s{index}-md-box")))
+                        .max_h(px(640.))
+                        .overflow_y_scroll()
+                        .pr(px(6.))
+                        .child(self.texts.markdown(format!("s{index}-md"), str_of(s, "text"), Look::new(13., c(p::BODY)), cx)),
+                )
                 .into_any_element(),
             _ => div().into_any_element(),
         };
@@ -1121,7 +1126,7 @@ fn card() -> Div {
 /// A monospace block; every line selectable, and a Copy button for all of it.
 pub(crate) fn code_box<T: 'static>(texts: &Texts, key: &str, lines: Vec<Value>, cx: &mut Context<T>) -> gpui::Stateful<Div> {
     let all = lines.iter().map(|l| str_of(l, "t")).collect::<Vec<_>>().join("\n");
-    v_flex()
+    let block = v_flex()
         .id(SharedString::from(format!("{key}-box")))
         .max_h(px(480.))
         .overflow_y_scroll()
@@ -1132,7 +1137,9 @@ pub(crate) fn code_box<T: 'static>(texts: &Texts, key: &str, lines: Vec<Value>, 
         .bg(c(p::BG))
         .border_1()
         .border_color(c(p::BORDER))
-        .overflow_hidden()
+        // Clip sideways only: a plain overflow_hidden would also undo the
+        // vertical scroll above.
+        .overflow_x_hidden()
         .children(lines.iter().enumerate().map(|(i, l)| {
             texts.text(
                 format!("{key}-{i}"),
@@ -1157,7 +1164,8 @@ pub(crate) fn code_box<T: 'static>(texts: &Texts, key: &str, lines: Vec<Value>, 
                     .child("⧉ Copy")
                     .on_click(move |_, _, cx| cx.write_to_clipboard(gpui::ClipboardItem::new_string(all.clone()))),
             )
-        })
+        });
+    texts.nested_scroll(format!("{key}-box"), block)
 }
 
 pub(crate) fn str_of(v: &Value, key: &str) -> String {

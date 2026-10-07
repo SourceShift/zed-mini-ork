@@ -1,4 +1,4 @@
-//! The mini-ork IDE title bar: project, branch and worktrees on the left (when
+//! The mini-ork IDE title bar: project and branch on the left (when
 //! the Threads board is closed — otherwise the sidebar's top strip shows them),
 //! and on the right what needs you, today's spend, the scheduler, nodes and
 //! sign-in. It replaces Zed's title bar item; Zed's `PlatformTitleBar` still
@@ -8,13 +8,14 @@ use gpui::{
     AnyElement, App, Context, Entity, Render, Subscription, WeakEntity, Window, px,
 };
 use platform_title_bar::PlatformTitleBar;
-use ui::{Tooltip, prelude::*, utils::TRAFFIC_LIGHT_PADDING};
+use ui::{ButtonLike, ContextMenu, PopoverMenu, Tooltip, prelude::*, utils::TRAFFIC_LIGHT_PADDING};
 use workspace::{MultiWorkspace, Workspace};
 
 use crate::{
     board::Header,
     page,
     palette::{self as p, c},
+    projects,
     sidebar::{ACTIVITY_WIDTH, MiniOrkSidebar},
     store::BoardStore,
 };
@@ -81,63 +82,98 @@ impl MiniOrkTitleBar {
     }
 }
 
-/// Project ⌄ · ⎇ branch · ⑂ N worktrees — shared with the sidebar strip,
-/// which leaves the worktrees to the title bar (the strip is narrow).
+/// Project ⌄ · ⎇ branch — shared with the sidebar strip.
 pub fn left_items(
     header: &Header,
     project: &str,
     workspace: Option<Entity<Workspace>>,
     with_project: bool,
-    with_worktrees: bool,
 ) -> Vec<AnyElement> {
-    let open = move |key: &'static str, tab: &'static str| {
-        let workspace = workspace.clone();
-        move |_: &gpui::ClickEvent, window: &mut Window, cx: &mut App| {
-            if let Some(workspace) = workspace.clone() {
-                window.defer(cx, move |window, cx| {
-                    page::open_page(&workspace, key.into(), Some(tab.into()), Default::default(), window, cx);
-                });
-            }
-        }
-    };
     let mut items = Vec::new();
     if with_project {
-        items.push(div()
-            .id("tb-project")
-            .px(px(6.))
-            .py(px(3.))
-            .rounded(px(5.))
-            .text_size(px(12.5))
-            .font_weight(gpui::FontWeight::SEMIBOLD)
-            .text_color(c(p::TEXT))
-            .cursor_pointer()
-            .hover(|s| s.bg(c(p::HOVER)))
-            .tooltip(Tooltip::text("Switch project"))
-            .child(format!("{project} ⌄"))
-            .on_click(open("setup", "projects"))
-            .into_any_element());
+        items.push(project_switcher(project, workspace).into_any_element());
         if !header.branch.is_empty() {
             items.push(p::text(format!("⎇ {}", header.branch), 12.5, p::SUB).into_any_element());
         }
     }
-    if with_worktrees && header.worktrees > 0 {
-        items.push(
-            div()
-                .id("tb-worktrees")
-                .px(px(6.))
-                .py(px(3.))
-                .rounded(px(5.))
-                .text_size(px(12.5))
-                .text_color(c(p::MUTED))
-                .cursor_pointer()
-                .hover(|s| s.bg(c(p::HOVER)).text_color(c(p::TEXT)))
-                .tooltip(Tooltip::text("Open worktrees"))
-                .child(format!("⑂ {} worktrees", header.worktrees))
-                .on_click(open("changes", "worktrees"))
-                .into_any_element(),
-        );
-    }
     items
+}
+
+/// `project ⌄`: a menu of the known mini-ork projects (the current one
+/// checked) that switches this window to the one picked, plus "Open project
+/// folder…" and "Manage projects…".
+fn project_switcher(project: &str, workspace: Option<Entity<Workspace>>) -> impl IntoElement {
+    let trigger = ButtonLike::new("tb-project").child(
+        div()
+            .px(px(2.))
+            .text_size(px(12.5))
+            .font_weight(gpui::FontWeight::SEMIBOLD)
+            .text_color(c(p::TEXT))
+            .child(format!("{project} ⌄")),
+    );
+    PopoverMenu::new("tb-project-menu")
+        .trigger_with_tooltip(trigger, Tooltip::text("Switch project"))
+        .menu(move |window, cx| {
+            let workspace = workspace.clone()?;
+            let current = projects::current_root(&workspace, cx);
+            let known = projects::known();
+            Some(ContextMenu::build(window, cx, move |mut menu, _, _| {
+                menu = menu.header("mini-ork projects");
+                let mut roots = known.clone();
+                if let Some(current) = current.clone().filter(|root| !roots.contains(root)) {
+                    roots.insert(0, current);
+                }
+                for root in roots {
+                    let is_current = current.as_deref() == Some(root.as_path());
+                    let name = root
+                        .file_name()
+                        .map(|n| n.to_string_lossy().to_string())
+                        .unwrap_or_else(|| root.to_string_lossy().to_string());
+                    let path = root.to_string_lossy().replace(&std::env::var("HOME").unwrap_or_default(), "~");
+                    let missing = !root.join(".mini-ork").is_dir();
+                    let workspace = workspace.clone();
+                    let target = root.clone();
+                    menu = menu.custom_entry(
+                        move |_, _| {
+                            h_flex()
+                                .w_full()
+                                .gap(px(8.))
+                                .child(div().w(px(12.)).text_color(c(p::GREEN)).child(if is_current { "✓" } else { "" }))
+                                .child(
+                                    v_flex()
+                                        .child(
+                                            div()
+                                                .text_size(px(12.5))
+                                                .text_color(c(p::TEXT))
+                                                .when(is_current, |this| this.font_weight(gpui::FontWeight::SEMIBOLD))
+                                                .child(name.clone()),
+                                        )
+                                        .child(
+                                            div()
+                                                .text_size(px(11.))
+                                                .text_color(c(if missing { p::RED } else { p::SUB }))
+                                                .child(if missing { format!("{path} · no .mini-ork") } else { path.clone() }),
+                                        ),
+                                )
+                                .into_any_element()
+                        },
+                        move |window, cx| projects::switch_to(&workspace, target.clone(), window, cx),
+                    );
+                }
+                let pick_workspace = workspace.clone();
+                let manage_workspace = workspace.clone();
+                menu.separator()
+                    .entry("Open project folder…", None, move |window, cx| {
+                        projects::pick(&pick_workspace, window, cx)
+                    })
+                    .entry("Manage projects…", None, move |window, cx| {
+                        let workspace = manage_workspace.clone();
+                        window.defer(cx, move |window, cx| {
+                            page::open_page(&workspace, "setup".into(), Some("projects".into()), Default::default(), window, cx);
+                        });
+                    })
+            }))
+        })
 }
 
 fn right_items(header: &Header, workspace: Option<Entity<Workspace>>, cx: &App) -> Vec<AnyElement> {
@@ -248,14 +284,14 @@ impl Render for MiniOrkTitleBar {
             0.
         };
         // With the Threads board open, the sidebar strip shows the project and
-        // branch; the worktrees count continues here.
+        // branch instead.
         let strip_has_project = sidebar_width > ACTIVITY_WIDTH + 1. && board_open;
         let left = h_flex()
             .gap(px(10.))
             .when(traffic_gap > 0., |this| this.pl(px(traffic_gap)))
             .when(strip_has_project, |this| this.pl(px(4.)))
             .when(!project.is_empty(), |this| {
-                this.children(left_items(&header, &project, workspace.clone(), !strip_has_project, true))
+                this.children(left_items(&header, &project, workspace.clone(), !strip_has_project))
             });
         let right = h_flex()
             .gap(px(10.))

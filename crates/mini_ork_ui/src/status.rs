@@ -49,6 +49,19 @@ impl MiniOrkStatus {
 }
 
 fn toggle_board(workspace: &WeakEntity<Workspace>, cx: &mut App) {
+    with_sidebar(workspace, cx, |sidebar, cx| sidebar.toggle_board(cx));
+}
+
+/// Open the Threads board, where working and failed runs are grouped.
+fn show_board(workspace: &WeakEntity<Workspace>, cx: &mut App) {
+    with_sidebar(workspace, cx, |sidebar, cx| sidebar.show_board(cx));
+}
+
+fn with_sidebar(
+    workspace: &WeakEntity<Workspace>,
+    cx: &mut App,
+    f: impl FnOnce(&mut MiniOrkSidebar, &mut Context<MiniOrkSidebar>),
+) {
     let Some(workspace) = workspace.upgrade() else {
         return;
     };
@@ -60,7 +73,7 @@ fn toggle_board(workspace: &WeakEntity<Workspace>, cx: &mut App) {
         .sidebar()
         .and_then(|s| s.to_any().downcast::<MiniOrkSidebar>().ok());
     if let Some(sidebar) = sidebar {
-        sidebar.update(cx, |sidebar, cx| sidebar.toggle_board(cx));
+        sidebar.update(cx, f);
         mw.update(cx, |_, cx| cx.notify());
     }
 }
@@ -90,6 +103,10 @@ impl Render for MiniOrkStatus {
                 .child(label)
                 .on_click(move |_, window, cx| {
                     let workspace = workspace.clone();
+                    if key == "threads" {
+                        show_board(&workspace, cx);
+                        return;
+                    }
                     window.defer(cx, move |window, cx| {
                         if let Some(workspace) = workspace.upgrade() {
                             page::open_page(&workspace, key.into(), tab.map(String::from), Default::default(), window, cx);
@@ -129,9 +146,9 @@ impl Render for MiniOrkStatus {
                 "status-working",
                 format!("● {} working", header.working),
                 if header.working > 0 { p::BLUE } else { p::SUB },
-                "Active runs",
-                "runs",
-                Some("active"),
+                "Working runs — on the Threads board",
+                "threads",
+                None,
                 w.clone(),
             ))
             .child(item("status-needs", format!("✋ {}", header.needs_you), p::YELLOW, "Needs you", "verify", Some("inbox"), w.clone()))
@@ -139,9 +156,9 @@ impl Render for MiniOrkStatus {
                 "status-failed",
                 format!("✗ {}", header.failed),
                 if header.failed > 0 { p::RED } else { p::SUB },
-                "Failed runs",
-                "runs",
-                Some("runs"),
+                "Failed runs — on the Threads board",
+                "threads",
+                None,
                 w.clone(),
             ))
             .child(item(

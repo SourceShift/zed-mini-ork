@@ -20,6 +20,7 @@ mod graph;
 mod loading;
 mod page;
 mod palette;
+mod projects;
 mod select;
 mod sidebar;
 mod status;
@@ -48,6 +49,13 @@ const IDE_DEFAULTS: &str = r#"{
 }"#;
 
 pub fn init(cx: &mut App) {
+    // Every IDE colour follows the active Zed theme, and re-colours on change.
+    palette::sync_theme(cx);
+    cx.observe_global::<theme::GlobalTheme>(|cx| {
+        palette::sync_theme(cx);
+        cx.refresh_windows();
+    })
+    .detach();
     store::init(cx);
     title_bar::init(cx);
     status::init(cx);

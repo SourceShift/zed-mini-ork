@@ -1345,17 +1345,20 @@ impl MiniOrkGraph {
                                         }),
                                 )
                                 .child(
-                                    div()
-                                        .id("fact-md")
-                                        .max_h(px(480.))
-                                        .overflow_y_scroll()
-                                        .px(px(10.))
-                                        .py(px(8.))
-                                        .rounded(px(6.))
-                                        .bg(c(p::BG))
-                                        .border_1()
-                                        .border_color(c(p::BORDER))
-                                        .child(self.texts.markdown("fact-md-doc", str_of(&doc, "text"), Look::new(12.5, c(p::BODY)), cx)),
+                                    self.texts.nested_scroll(
+                                        "fact-md",
+                                        div()
+                                            .id("fact-md")
+                                            .max_h(px(480.))
+                                            .overflow_y_scroll()
+                                            .px(px(10.))
+                                            .py(px(8.))
+                                            .rounded(px(6.))
+                                            .bg(c(p::BG))
+                                            .border_1()
+                                            .border_color(c(p::BORDER))
+                                            .child(self.texts.markdown("fact-md-doc", str_of(&doc, "text"), Look::new(12.5, c(p::BODY)), cx)),
+                                    ),
                                 ),
                         )
                     })
@@ -1700,18 +1703,21 @@ impl MiniOrkGraph {
                             .gap(px(6.))
                             .child(p::text(">", 12.5, if steer { p::YELLOW } else { p::SUB }))
                             .child(
-                                div()
-                                    .id(SharedString::from(key("box-scroll")))
-                                    .flex_1()
-                                    .min_w_0()
-                                    .max_h(px(360.))
-                                    .overflow_y_scroll()
-                                    .child(if steer {
-                                        self.texts.text(key("box"), format!("{head}{arg}"), Look::new(12.5, c(p::YELLOW)).mono(true), cx)
-                                    } else {
-                                        // The prompt is a markdown document: render it whole.
-                                        self.texts.markdown(key("box"), format!("{head}{arg}"), Look::new(12.5, c(p::TEXT)), cx)
-                                    }),
+                                self.texts.nested_scroll(
+                                    key("box-scroll"),
+                                    div()
+                                        .id(SharedString::from(key("box-scroll")))
+                                        .flex_1()
+                                        .min_w_0()
+                                        .max_h(px(360.))
+                                        .overflow_y_scroll()
+                                        .child(if steer {
+                                            self.texts.text(key("box"), format!("{head}{arg}"), Look::new(12.5, c(p::YELLOW)).mono(true), cx)
+                                        } else {
+                                            // The prompt is a markdown document: render it whole.
+                                            self.texts.markdown(key("box"), format!("{head}{arg}"), Look::new(12.5, c(p::TEXT)), cx)
+                                        }),
+                                ),
                             ),
                     )
                     .into_any_element()
@@ -1782,12 +1788,16 @@ impl MiniOrkGraph {
                 let arg_el = (!arg_text.is_empty()).then(|| {
                     if kind == "text" {
                         // Agent text is markdown: whole, capped, scrollable.
-                        div()
-                            .id(SharedString::from(key("text-scroll")))
-                            .w_full()
-                            .max_h(px(360.))
-                            .overflow_y_scroll()
-                            .child(self.texts.markdown(key("arg"), &arg_text, Look::new(12.5, c(p::TEXT)), cx))
+                        self.texts
+                            .nested_scroll(
+                                key("text-scroll"),
+                                div()
+                                    .id(SharedString::from(key("text-scroll")))
+                                    .w_full()
+                                    .max_h(px(360.))
+                                    .overflow_y_scroll()
+                                    .child(self.texts.markdown(key("arg"), &arg_text, Look::new(12.5, c(p::TEXT)), cx)),
+                            )
                             .into_any_element()
                     } else {
                         div()
