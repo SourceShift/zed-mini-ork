@@ -2,7 +2,7 @@
 //!
 //! It fills Zed's pluggable workspace sidebar slot (`workspace::Sidebar`), so
 //! it sits left of the docks, full height. Its top strip continues the title
-//! bar (project, branch, worktrees) under the window's traffic lights.
+//! bar (project, branch) under the window's traffic lights.
 
 use std::{sync::Arc, time::Duration};
 
@@ -26,11 +26,9 @@ const BOARD_WIDTH: f32 = 272.;
 const BOARD_MIN: f32 = 200.;
 
 /// The activity bar, top to bottom: key, glyph, tooltip.
-const ACTIVITIES: [(&str, &str, &str); 12] = [
+const ACTIVITIES: [(&str, &str, &str); 10] = [
     ("threads", "▤", "Threads (task board)"),
     ("orch", "✦", "Orchestrator & intake"),
-    ("runs", "≡", "Runs & live execution"),
-    ("changes", "⑂", "Changes & worktrees"),
     ("verify", "✓", "Verification & safety"),
     ("recipes", "▥", "Recipes, specs & epics"),
     ("autos", "◷", "Automations & scheduling"),
@@ -236,6 +234,13 @@ impl MiniOrkSidebar {
         cx.notify();
     }
 
+    /// Open the Threads board (no-op when it is already open).
+    pub fn show_board(&mut self, cx: &mut Context<Self>) {
+        if !self.board_open {
+            self.toggle_board(cx);
+        }
+    }
+
     fn workspace(&self, cx: &App) -> Option<Entity<Workspace>> {
         Some(self.multi_workspace.upgrade()?.read(cx).workspace().clone())
     }
@@ -293,7 +298,7 @@ impl MiniOrkSidebar {
             .whitespace_nowrap()
             .overflow_hidden()
             .when(self.board_open && !project.is_empty(), |this| {
-                this.children(crate::title_bar::left_items(&header, &project, workspace, true, false))
+                this.children(crate::title_bar::left_items(&header, &project, workspace, true))
             })
             .into_any_element()
     }
@@ -323,7 +328,7 @@ impl MiniOrkSidebar {
             let on = if *key == "threads" {
                 self.board_open
             } else {
-                active_key.as_deref() == Some(*key) || (*key == "runs" && active_key.as_deref() == Some("run"))
+                active_key.as_deref() == Some(*key)
             };
             let key = key.to_string();
             let workspace = workspace.clone();
