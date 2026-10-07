@@ -43,6 +43,11 @@ pub struct TNode {
     pub id: String,
     pub lane: String,
     pub state: String,
+    /// The workflow node type (verifier, implementer, …); empty when unknown.
+    pub kind: String,
+    /// node_start epoch seconds and the node_end duration, when seen.
+    pub started_at: Option<i64>,
+    pub duration_ms: Option<i64>,
 }
 
 #[derive(Debug, Clone)]
@@ -80,6 +85,12 @@ struct RawNode {
     lane: Option<String>,
     #[serde(default)]
     state: String,
+    #[serde(default, rename = "type")]
+    kind: Option<String>,
+    #[serde(default)]
+    started_at: Option<f64>,
+    #[serde(default)]
+    duration_ms: Option<f64>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -118,6 +129,9 @@ impl Thumb {
                 id: n.id,
                 lane: n.lane.unwrap_or_default(),
                 state: n.state,
+                kind: n.kind.unwrap_or_default(),
+                started_at: n.started_at.map(|t| t as i64),
+                duration_ms: n.duration_ms.map(|d| d as i64),
             })
             .collect();
         let index: HashMap<&str, usize> =
@@ -323,6 +337,9 @@ fn edge_colour(kind: &str) -> gpui::Hsla {
 }
 
 /// A thumbnail of `thumb`, `w` px wide and as tall as its layer count needs.
+// Not drawn on the Threads board any more (the user asked for Orca-style node
+// lists only, 2026-10-07); the parsed nodes still feed those lists.
+#[allow(dead_code)]
 pub fn render_thumb(thumb: &Thumb, w: f32) -> AnyElement {
     let w = w.max(MIN_W);
     let layout = layout(thumb, w);
