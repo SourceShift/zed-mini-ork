@@ -18,6 +18,7 @@
 mod board;
 mod graph;
 mod loading;
+mod node_tab;
 mod page;
 mod palette;
 mod projects;

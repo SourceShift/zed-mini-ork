@@ -15,7 +15,7 @@ use gpui::{
     Render, ScrollHandle, SharedString, Subscription, Task, WeakEntity, Window, WindowControlArea, px,
 };
 use ui_input::{ERASED_EDITOR_FACTORY, ErasedEditor, ErasedEditorEvent};
-use ui::{Tooltip, prelude::*, utils::{TRAFFIC_LIGHT_PADDING, platform_title_bar_height}};
+use ui::{CommonAnimationExt as _, Tooltip, prelude::*, utils::{TRAFFIC_LIGHT_PADDING, platform_title_bar_height}};
 use workspace::{MultiWorkspace, MultiWorkspaceEvent, Sidebar, SidebarEvent, SidebarSide, Workspace};
 
 use crate::{
@@ -78,6 +78,8 @@ pub struct MiniOrkSidebar {
     /// not spawn a subprocess on every render, but a single hiccup must not
     /// leave the board without DAGs until the run set happens to change.
     thumbs_retry_at: Option<Instant>,
+    /// Run cards whose node list the user folded.
+    folded: HashSet<String>,
     _thumbs: Task<()>,
     _search: Task<()>,
     _search_sub: Subscription,
@@ -152,6 +154,7 @@ impl MiniOrkSidebar {
             thumbs_sig: None,
             loading_thumbs: false,
             thumbs_retry_at: None,
+            folded: HashSet::new(),
             _thumbs: Task::ready(()),
             _search: Task::ready(()),
             _search_sub: search_sub,
@@ -528,11 +531,6 @@ impl MiniOrkSidebar {
     ) -> AnyElement {
         let mono = p::mono_font(cx);
         let runs: Vec<Run> = self.visible_runs(board);
-        // The row's own padding (8) plus the list's (6) each side, so the
-        // strip spans the row exactly. `thumb::render_thumb` positions from
-        // this same width — reading the painted bounds instead would misalign
-        // every edge.
-        let thumb_w = (self.board_width - 28.).max(thumb::MIN_W);
         let counts = board.map(|b| b.counts.clone()).unwrap_or_default();
         let header = {
             let workspace = workspace.clone();
@@ -662,87 +660,7 @@ impl MiniOrkSidebar {
                     .child(format!("{} · {}", label.to_uppercase(), rows.len())),
             );
             for run in rows {
-                let selected = self.selected_run.as_deref() == Some(run.id.as_str());
-                let sub_colour = match state {
-                    "failed" => p::RED,
-                    "needs_you" => p::YELLOW,
-                    _ => p::SUB,
-                };
-                let mut sub = run.step.clone();
-                if (run.added > 0 || run.removed > 0) && !sub.contains('+') {
-                    let change = format!("+{} −{}", run.added, run.removed);
-                    sub = if sub.is_empty() { change } else { format!("{sub} · {change}") };
-                }
-                if sub.is_empty() {
-                    sub = run.recipe.clone();
-                }
-                let (id, title) = (run.id.clone(), run.display_title());
-                let workspace = workspace.clone();
-                list = list.child(
-                    // A column, not a row: a full-width thumbnail cannot be a
-                    // fourth child of the three-column strip at BOARD_WIDTH.
-                    v_flex()
-                        .id(SharedString::from(format!("board-run-{}", run.id)))
-                        .w_full()
-                        .px(px(8.))
-                        .py(px(6.))
-                        .rounded(px(6.))
-                        .gap(px(4.))
-                        .when(selected, |this| this.bg(c(p::SELECTED)))
-                        .hover(|s| s.bg(c(p::HOVER)))
-                        .cursor_pointer()
-                        .child(
-                            h_flex()
-                                .items_start()
-                                .gap(px(8.))
-                                .w_full()
-                                .child(p::text(mark, 12., colour).w(px(14.)).flex_none().mt(px(1.)))
-                                .child(
-                                    v_flex()
-                                        .flex_1()
-                                        .min_w_0()
-                                        .gap(px(1.))
-                                        .child(p::text(title.clone(), 13., p::TEXT).truncate())
-                                        .child(p::text(sub, 11.5, sub_colour).truncate())
-                                        .children(
-                                            span_line(run.started_at, run.ended_at, state).map(|line| {
-                                                p::text(line, 10.5, p::DIM).font(mono.clone()).truncate()
-                                            }),
-                                        ),
-                                )
-                                .child(
-                                    v_flex()
-                                        .flex_none()
-                                        .items_end()
-                                        .gap(px(1.))
-                                        .text_size(px(11.))
-                                        .text_color(c(p::SUB))
-                                        .font(mono.clone())
-                                        .child(format!("${:.2}", run.cost_usd))
-                                        .child(age(run.started_at, now)),
-                                ),
-                        )
-                        // No thumbnail until the dags page has answered for
-                        // this run — the row keeps today's height until then.
-                        .children(
-                            self.thumbs
-                                .get(&run.id)
-                                .map(|dag| thumb::render_thumb(dag, thumb_w)),
-                        )
-                        .when_some(span_tooltip(run.started_at, run.ended_at), |this, tip| {
-                            this.tooltip(Tooltip::text(tip))
-                        })
-                        .on_click(cx.listener(move |this, _, window, cx| {
-                            this.selected_run = Some(id.clone());
-                            cx.notify();
-                            let (id, title, workspace) = (id.clone(), title.clone(), workspace.clone());
-                            window.defer(cx, move |window, cx| {
-                                if let Some(workspace) = workspace {
-                                    page::open_run(&workspace, id, title, None, window, cx);
-                                }
-                            });
-                        })),
-                );
+                list = list.child(self.render_run(run, state, now, &mono, workspace, cx));
             }
         }
         if self.loading_more {
@@ -793,6 +711,297 @@ impl MiniOrkSidebar {
                     .child(list),
             )
             .into_any_element()
+    }
+}
+
+impl MiniOrkSidebar {
+    /// One run, drawn like Orca draws its sessions: a status mark (a spinner
+    /// while working), the title and a dim subtitle. The selected run and the
+    /// ones still in flight open into a card that lists their nodes — status,
+    /// model mark, name and elapsed time — each a link into the run graph.
+    #[allow(clippy::too_many_arguments)]
+    fn render_run(
+        &self,
+        run: &Run,
+        state: &str,
+        now: i64,
+        mono: &gpui::Font,
+        workspace: &Option<Entity<Workspace>>,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let selected = self.selected_run.as_deref() == Some(run.id.as_str());
+        let sub_colour = match state {
+            "failed" => p::RED,
+            "needs_you" => p::YELLOW,
+            _ => p::SUB,
+        };
+        let mut sub = run.recipe.clone();
+        if !run.step.is_empty() {
+            sub = if sub.is_empty() { run.step.clone() } else { format!("{sub} · {}", run.step) };
+        }
+        if run.added > 0 || run.removed > 0 {
+            sub = format!("{sub} · +{} −{}", run.added, run.removed);
+        }
+        let (id, title) = (run.id.clone(), run.display_title());
+        let open = {
+            let (id, title, workspace) = (id.clone(), title.clone(), workspace.clone());
+            cx.listener(move |this, _, window, cx| {
+                this.selected_run = Some(id.clone());
+                cx.notify();
+                let (id, title, workspace) = (id.clone(), title.clone(), workspace.clone());
+                window.defer(cx, move |window, cx| {
+                    if let Some(workspace) = workspace {
+                        page::open_run(&workspace, id, title, None, window, cx);
+                    }
+                });
+            })
+        };
+        let head = h_flex()
+            .w_full()
+            .gap(px(8.))
+            .child(div().w(px(14.)).flex_none().flex().justify_center().child(status_mark(state, &run.id)))
+            .child(
+                div()
+                    .flex_1()
+                    .min_w_0()
+                    .text_size(px(13.))
+                    .text_color(c(p::TEXT))
+                    .when(selected, |this| this.font_weight(gpui::FontWeight::SEMIBOLD))
+                    .truncate()
+                    .child(title.clone()),
+            )
+            .child(
+                div()
+                    .flex_none()
+                    .text_size(px(11.))
+                    .text_color(c(p::SUB))
+                    .font(mono.clone())
+                    .child(age(run.started_at, now)),
+            );
+        let sub_line = h_flex()
+            .w_full()
+            .pl(px(22.))
+            .gap(px(6.))
+            .child(div().flex_1().min_w_0().text_size(px(11.5)).text_color(c(sub_colour)).truncate().child(sub))
+            .child(
+                div()
+                    .flex_none()
+                    .text_size(px(10.5))
+                    .text_color(c(p::DIM))
+                    .font(mono.clone())
+                    .child(format!("${:.2}", run.cost_usd)),
+            );
+        let span = span_line(run.started_at, run.ended_at, state).map(|line| {
+            div().pl(px(22.)).text_size(px(10.5)).text_color(c(p::DIM)).font(mono.clone()).truncate().child(line)
+        });
+        let tooltip = span_tooltip(run.started_at, run.ended_at);
+        let carded = selected || matches!(state, "working" | "needs_you");
+        if !carded {
+            return v_flex()
+                .id(SharedString::from(format!("board-run-{}", run.id)))
+                .w_full()
+                .px(px(8.))
+                .py(px(6.))
+                .gap(px(2.))
+                .rounded(px(6.))
+                .hover(|s| s.bg(c(p::HOVER)))
+                .cursor_pointer()
+                .child(head)
+                .child(sub_line)
+                .children(span)
+                .when_some(tooltip, |this, tip| this.tooltip(Tooltip::text(tip)))
+                .on_click(open)
+                .into_any_element();
+        }
+
+        // The card: header, then "N nodes" that folds the node list away.
+        let dag = self.thumbs.get(&run.id);
+        let folded = self.folded.contains(&run.id);
+        let seen = dag.map(|d| d.nodes.iter().filter(|n| n.state != "never_seen").count()).unwrap_or(0);
+        let total = dag.map(|d| d.nodes.len()).unwrap_or(0);
+        let fold_id = run.id.clone();
+        let fold_row = (total > 0).then(|| {
+            h_flex()
+                .id(SharedString::from(format!("board-fold-{}", run.id)))
+                .pl(px(22.))
+                .pr(px(2.))
+                .gap(px(6.))
+                .text_size(px(11.5))
+                .text_color(c(p::SUB))
+                .cursor_pointer()
+                .hover(|s| s.text_color(c(p::TEXT)))
+                .child(format!("{seen} of {total} nodes"))
+                .child(div().flex_1())
+                .child(if folded { "▸" } else { "▾" })
+                .on_click(cx.listener(move |this, _, _, cx| {
+                    if !this.folded.remove(&fold_id) {
+                        this.folded.insert(fold_id.clone());
+                    }
+                    cx.notify();
+                }))
+        });
+        let body: Option<AnyElement> = dag.filter(|_| !folded).map(|dag| {
+            let mut nodes = v_flex().gap(px(1.)).pl(px(18.));
+            for node in &dag.nodes {
+                nodes = nodes.child(self.render_node_row(run, node, now, mono, workspace, cx));
+            }
+            nodes.into_any_element()
+        });
+        v_flex()
+            .id(SharedString::from(format!("board-run-{}", run.id)))
+            .w_full()
+            .my(px(3.))
+            .p(px(8.))
+            .gap(px(4.))
+            .rounded(px(8.))
+            .bg(c(if selected { p::SELECTED } else { p::BG }))
+            .border_1()
+            .border_color(c(if selected { p::BORDER2 } else { p::BORDER }))
+            .child(
+                v_flex()
+                    .id(SharedString::from(format!("board-run-head-{}", run.id)))
+                    .gap(px(2.))
+                    .cursor_pointer()
+                    .child(head)
+                    .child(sub_line)
+                    .children(span)
+                    .when_some(tooltip, |this, tip| this.tooltip(Tooltip::text(tip)))
+                    .on_click(open),
+            )
+            .children(fold_row)
+            .children(body)
+            .into_any_element()
+    }
+
+    /// One node in a run card: status, model mark, name, elapsed. Clicking it
+    /// opens the run graph on that node.
+    fn render_node_row(
+        &self,
+        run: &Run,
+        node: &thumb::TNode,
+        now: i64,
+        mono: &gpui::Font,
+        workspace: &Option<Entity<Workspace>>,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let running = node.state == "running";
+        let pending = node.state == "never_seen";
+        let elapsed = match (node.started_at, node.duration_ms) {
+            (_, Some(ms)) if !running => duration_label(ms / 1000),
+            (Some(start), _) if running => duration_label(now - start),
+            _ => String::new(),
+        };
+        let logo: AnyElement = match p::model_icon(&node.lane) {
+            Some(icon) => gpui::svg()
+                .path(icon.path())
+                .size(px(12.))
+                .flex_none()
+                .text_color(c(p::family(&node.lane)))
+                .into_any_element(),
+            None => div()
+                .size(px(6.))
+                .mx(px(3.))
+                .flex_none()
+                .rounded_full()
+                .bg(c(if node.lane.is_empty() { p::DIM } else { p::family(&node.lane) }))
+                .into_any_element(),
+        };
+        let (run_id, title, node_id, workspace) =
+            (run.id.clone(), run.display_title(), node.id.clone(), workspace.clone());
+        h_flex()
+            .id(SharedString::from(format!("board-node-{}-{}", run.id, node.id)))
+            .h(px(20.))
+            .px(px(4.))
+            .gap(px(6.))
+            .rounded(px(4.))
+            .cursor_pointer()
+            .hover(|s| s.bg(c(p::HOVER)))
+            .tooltip(Tooltip::text(
+                [node.id.as_str(), node.kind.as_str(), node.lane.as_str(), &node.state.replace('_', " ")]
+                    .iter()
+                    .filter(|s| !s.is_empty())
+                    .copied()
+                    .collect::<Vec<_>>()
+                    .join(" · "),
+            ))
+            .child(node_mark(&node.state, &format!("{}-{}", run.id, node.id)))
+            .child(logo)
+            .child(
+                div()
+                    .flex_1()
+                    .min_w_0()
+                    .text_size(px(12.))
+                    .text_color(c(if running { p::TEXT } else if pending { p::DIM } else { p::MUTED }))
+                    .truncate()
+                    .child(node.id.clone()),
+            )
+            .child(div().flex_none().text_size(px(11.)).text_color(c(p::DIM)).font(mono.clone()).child(elapsed))
+            .on_click(cx.listener(move |_, _, window, cx| {
+                let (run_id, title, node_id, workspace) =
+                    (run_id.clone(), title.clone(), node_id.clone(), workspace.clone());
+                window.defer(cx, move |window, cx| {
+                    if let Some(workspace) = workspace {
+                        crate::node_tab::open_node_tab(&workspace, run_id, node_id, title, None, WeakEntity::new_invalid(), window, cx);
+                    }
+                });
+            }))
+            .into_any_element()
+    }
+}
+
+/// A run's status: a spinner while it works, otherwise a coloured dot.
+fn status_mark(state: &str, key: &str) -> AnyElement {
+    if matches!(state, "working" | "running") {
+        return Icon::new(IconName::LoadCircle)
+            .size(IconSize::XSmall)
+            .color(Color::Custom(c(p::YELLOW)))
+            .with_keyed_rotate_animation(SharedString::from(format!("run-spin-{key}")), 2)
+            .into_any_element();
+    }
+    let colour = match state {
+        "done" | "published" => p::GREEN,
+        "failed" | "error" => p::RED,
+        "needs_you" | "needs" => p::YELLOW,
+        _ => p::DIM,
+    };
+    div().size(px(8.)).rounded_full().bg(c(colour)).into_any_element()
+}
+
+/// A node's status: spinner, ✓ in a ring, ✕ in a ring, or an empty ring.
+fn node_mark(state: &str, key: &str) -> AnyElement {
+    let ring = |colour: u32| {
+        div()
+            .size(px(12.))
+            .flex_none()
+            .rounded_full()
+            .border_1()
+            .border_color(c(colour))
+            .flex()
+            .items_center()
+            .justify_center()
+    };
+    match state {
+        "running" => Icon::new(IconName::LoadCircle)
+            .size(IconSize::XSmall)
+            .color(Color::Custom(c(p::YELLOW)))
+            .with_keyed_rotate_animation(SharedString::from(format!("node-spin-{key}")), 2)
+            .into_any_element(),
+        "done" => ring(p::GREEN)
+            .child(gpui::svg().path(IconName::Check.path()).size(px(8.)).text_color(c(p::GREEN)))
+            .into_any_element(),
+        "failed" => ring(p::RED)
+            .child(gpui::svg().path(IconName::Close.path()).size(px(7.)).text_color(c(p::RED)))
+            .into_any_element(),
+        _ => ring(p::DIM).into_any_element(),
+    }
+}
+
+/// `45s`, `12m`, `1h 05m`.
+fn duration_label(secs: i64) -> String {
+    match secs.max(0) {
+        s @ 0..60 => format!("{s}s"),
+        s @ 60..3600 => format!("{}m", s / 60),
+        s => format!("{}h {:02}m", s / 3600, (s % 3600) / 60),
     }
 }
 

@@ -35,11 +35,15 @@ const NH: f32 = 76.;
 const GX: f32 = 74.;
 const GY: f32 = 18.;
 const STREAM_POLL: Duration = Duration::from_millis(1500);
-const TABS: [(&str, &str); 6] = [
+/// The node inspector, in reading order: what happened, the live work, the
+/// code it changed, what it was given and produced, then the raw material.
+const TABS: [(&str, &str); 8] = [
+    ("overview", "Overview"),
     ("stream", "Stream"),
     ("changes", "Changes"),
-    ("output", "Output"),
+    ("artifacts", "Artifacts"),
     ("prompt", "Prompt"),
+    ("output", "Output"),
     ("telemetry", "Telemetry"),
     ("learning", "Learning"),
 ];
@@ -198,9 +202,13 @@ pub struct MiniOrkGraph {
     stream_filter: &'static str,
     stream_cursor: Option<usize>,
     expanded: HashSet<usize>,
+    /// Artifact previews the user opened (by path).
+    art_open: HashSet<String>,
     steer: Arc<dyn ErasedEditor>,
     severity: &'static str,
     texts: Texts,
+    /// Hosted in a node tab: only the inspector, full width, no canvas.
+    pub tab_mode: bool,
     _load: Task<()>,
     _subs: Vec<Subscription>,
 }
@@ -257,7 +265,7 @@ impl MiniOrkGraph {
             canvas_scroll: ScrollHandle::new(),
             drag: Default::default(),
             selected: None,
-            tab: "stream".into(),
+            tab: "overview".into(),
             detail: HashMap::new(),
             detail_error: None,
             loading: false,
@@ -267,9 +275,11 @@ impl MiniOrkGraph {
             stream_filter: "all",
             stream_cursor: None,
             expanded: HashSet::new(),
+            art_open: HashSet::new(),
             steer,
             severity: "info",
             texts: Texts::default(),
+            tab_mode: false,
             _load: Task::ready(()),
             _subs: vec![filter_sub],
         };
@@ -379,7 +389,14 @@ impl MiniOrkGraph {
                         let value = match result {
                             Ok(value) => value,
                             Err(error) => {
-                                this.detail_error = Some(error.to_string());
+                                let error = error.to_string();
+                                // A mini-ork that predates the Overview: show the stream instead.
+                                if tab == "overview" && error.contains("invalid choice") {
+                                    this.tab = "stream".into();
+                                    this.load_detail(cx);
+                                    return false;
+                                }
+                                this.detail_error = Some(error);
                                 cx.notify();
                                 return false;
                             }
@@ -1003,13 +1020,20 @@ impl MiniOrkGraph {
                 .hover(|s| s.bg(c(p::HOVER)))
                 .child(glyph)
         };
-        let tabs = h_flex().gap(px(2.)).border_b_1().border_color(c(p::BORDER)).children(TABS.iter().map(|(key, label)| {
+        let agent = !matches!(node.lane.as_str(), "" | "shell" | "verifier" | "rollback" | "publisher");
+        let tabs = h_flex().id("node-tabs").overflow_x_scroll().gap(px(1.)).border_b_1().border_color(c(p::BORDER)).children(TABS.iter().map(|(key, label)| {
             let on = self.tab == *key;
-            let label = if *key == "stream" && live && node.state == "running" { "Stream ●".to_string() } else { label.to_string() };
+            let label = match *key {
+                "stream" if node.state == "running" && live => if agent { "Live ●" } else { "Command ●" }.to_string(),
+                "stream" if node.state == "running" => if agent { "Live" } else { "Command" }.to_string(),
+                "stream" if !agent => "Command".to_string(),
+                _ => label.to_string(),
+            };
             let key = key.to_string();
             div()
                 .id(SharedString::from(format!("node-tab-{key}")))
-                .px(px(9.))
+                .flex_none()
+                .px(px(8.))
                 .py(px(6.))
                 .text_size(px(12.5))
                 .text_color(c(if on { p::TEXT } else { p::SUB }))
@@ -1041,10 +1065,12 @@ impl MiniOrkGraph {
                     .child(div().flex_1())
                     .child(icon_button("node-prev", "↑").on_click(cx.listener(|this, _, _, cx| this.step(-1, cx))))
                     .child(icon_button("node-next", "↓").on_click(cx.listener(|this, _, _, cx| this.step(1, cx))))
-                    .child(icon_button("node-close", "✕").on_click(cx.listener(|this, _, _, cx| {
-                        this.selected = None;
-                        cx.notify();
-                    }))),
+                    .when(!self.tab_mode, |this| {
+                        this.child(icon_button("node-close", "✕").on_click(cx.listener(|this, _, _, cx| {
+                            this.selected = None;
+                            cx.notify();
+                        })))
+                    }),
             )
             .child(p::text(
                 format!("{} · stage {} of {} · {}", if node.role.is_empty() { "node" } else { &node.role }, node.col + 1, stage_count, head),
@@ -1072,6 +1098,8 @@ impl MiniOrkGraph {
                 .into_any_element(),
             (Some(detail), None) if is_stream => self.render_stream(node, detail, live, window, cx),
             (Some(detail), None) if self.tab == "changes" => self.render_changes(node, detail, cx),
+            (Some(detail), None) if self.tab == "overview" => self.render_overview(node, detail, cx),
+            (Some(detail), None) if self.tab == "artifacts" => self.render_artifacts(detail, cx),
             (Some(detail), None) => self.render_facts(detail, cx),
         };
 
@@ -1096,9 +1124,9 @@ impl MiniOrkGraph {
 
         v_flex()
             .flex_none()
-            .w(px(if is_stream { 600. } else { 420. }))
+            .when(self.tab_mode, |this| this.w_full().flex_1())
+            .when(!self.tab_mode, |this| this.w(px(600.)).border_l_1())
             .h_full()
-            .border_l_1()
             .border_color(c(p::BORDER))
             .bg(c(p::CHROME))
             .child(header)
@@ -1114,6 +1142,242 @@ impl MiniOrkGraph {
                     .border_color(c(p::BORDER))
                     .children(acts),
             )
+            .into_any_element()
+    }
+
+    /// Open a file in the workspace (a click handler).
+    fn opener(&self, path: String) -> impl Fn(&ClickEvent, &mut Window, &mut App) + 'static {
+        let workspace = self.workspace.clone();
+        move |_: &ClickEvent, window: &mut Window, cx: &mut App| {
+            let (workspace, path) = (workspace.clone(), path.clone());
+            window.defer(cx, move |window, cx| {
+                if let Some(workspace) = workspace.upgrade() {
+                    store::perform(&serde_json::json!({ "path": path }), &workspace, Origin::Page(WeakEntity::new_invalid()), window, cx);
+                }
+            });
+        }
+    }
+
+    /// A diff as coloured lines for `code_box`.
+    fn diff_lines(diff: &str, limit: usize) -> Vec<Value> {
+        diff.lines()
+            .take(limit)
+            .map(|l| {
+                let colour = if l.starts_with("+++") || l.starts_with("---") {
+                    "text"
+                } else if l.starts_with('+') {
+                    "green"
+                } else if l.starts_with('-') {
+                    "red"
+                } else if l.starts_with("@@") {
+                    "blue"
+                } else {
+                    "muted"
+                };
+                serde_json::json!({ "t": l, "c": colour })
+            })
+            .collect()
+    }
+
+    /// What the node did, at a glance: one headline, its facts, its result
+    /// (verdict and findings, checks, report), the files it touched, its final
+    /// message, and links to its own artefacts.
+    fn render_overview(&self, node: &Node, detail: &Value, cx: &mut Context<Self>) -> AnyElement {
+        let mono = p::mono_font(cx);
+        let heading = |text: &str| p::text(text.to_uppercase(), 11., p::SUB);
+        let headline = detail.get("headline").cloned().unwrap_or(Value::Null);
+        let facts = arr(detail, "facts");
+        let result = detail.get("result").cloned().unwrap_or(Value::Null);
+        let items = arr(&result, "items");
+        let files = arr(detail, "files");
+        let final_text = detail.get("final").map(|f| str_of(f, "text")).unwrap_or_default();
+        let links = arr(detail, "links");
+
+        let headline_el = (!str_of(&headline, "t").is_empty()).then(|| {
+            div().child(self.texts.text(
+                "ov-headline",
+                str_of(&headline, "t"),
+                Look::new(14., p::named(&str_of(&headline, "c"))).bold(true),
+                cx,
+            ))
+        });
+        let facts_el = (!facts.is_empty()).then(|| {
+            div()
+                .grid()
+                .grid_cols(2)
+                .gap_x(px(14.))
+                .gap_y(px(6.))
+                .children(facts.iter().enumerate().map(|(i, f)| {
+                    v_flex()
+                        .min_w_0()
+                        .child(p::text(str_of(f, "k"), 10.5, p::SUB))
+                        .child(self.texts.text(
+                            format!("ov-fact-{i}"),
+                            str_of(f, "v"),
+                            Look::new(12.5, p::named(&str_of(f, "c"))).mono(true),
+                            cx,
+                        ))
+                }))
+        });
+        let result_el = (!items.is_empty()).then(|| {
+            let title = str_of(&result, "title");
+            v_flex()
+                .gap(px(2.))
+                .child(heading(if title.is_empty() { "Result" } else { &title }))
+                .children(items.iter().enumerate().map(|(i, it)| {
+                    let sub = str_of(it, "sub");
+                    let path = str_of(it, "path");
+                    let row = h_flex()
+                        .id(SharedString::from(format!("ov-res-{i}")))
+                        .items_start()
+                        .gap(px(8.))
+                        .py(px(4.))
+                        .border_b_1()
+                        .border_color(c(0x353a44))
+                        .child(p::text(str_of(it, "m"), 12.5, p::SUB).text_color(p::named(&str_of(it, "mc"))).w(px(12.)).flex_none())
+                        .child(
+                            v_flex()
+                                .min_w_0()
+                                .child(self.texts.text(format!("ov-res-t{i}"), str_of(it, "t"), Look::new(12.5, p::named(&str_of(it, "tc"))), cx))
+                                .when(!sub.is_empty(), |this| {
+                                    this.child(self.texts.text(format!("ov-res-s{i}"), &sub, Look::new(11.5, c(p::SUB)).mono(true), cx))
+                                }),
+                        );
+                    if path.is_empty() { row.into_any_element() } else { row.cursor_pointer().on_click(self.opener(path)).into_any_element() }
+                }))
+        });
+        let files_el = (!files.is_empty()).then(|| {
+            v_flex()
+                .gap(px(2.))
+                .child(heading("Files"))
+                .children(files.iter().enumerate().map(|(i, f)| {
+                    let abs = str_of(f, "abs");
+                    let row = h_flex()
+                        .id(SharedString::from(format!("ov-file-{i}")))
+                        .gap(px(10.))
+                        .px(px(6.))
+                        .py(px(3.))
+                        .rounded(px(4.))
+                        .hover(|s| s.bg(c(p::HOVER)))
+                        .child(div().flex_1().min_w_0().text_size(px(12.)).font(mono.clone()).text_color(c(p::TEXT)).truncate().child(str_of(f, "path")))
+                        .child(p::text(format!("+{}", str_of(f, "added")), 11.5, p::GREEN).font(mono.clone()))
+                        .child(p::text(format!("−{}", str_of(f, "removed")), 11.5, p::RED).font(mono.clone()));
+                    if abs.is_empty() { row.into_any_element() } else { row.cursor_pointer().on_click(self.opener(abs)).into_any_element() }
+                }))
+        });
+        let final_el = (!final_text.is_empty()).then(|| {
+            v_flex().gap(px(4.)).child(heading("Final message")).child(
+                self.texts.nested_scroll(
+                    "ov-final",
+                    div()
+                        .id("ov-final")
+                        .max_h(px(360.))
+                        .overflow_y_scroll()
+                        .px(px(10.))
+                        .py(px(8.))
+                        .rounded(px(6.))
+                        .bg(c(p::BG))
+                        .border_1()
+                        .border_color(c(p::BORDER))
+                        .child(self.texts.markdown("ov-final-md", &final_text, Look::new(12.5, c(p::BODY)), cx)),
+                ),
+            )
+        });
+        let links_el = (!links.is_empty()).then(|| {
+            h_flex().flex_wrap().gap(px(6.)).children(links.iter().enumerate().map(|(i, l)| {
+                p::button(
+                    SharedString::from(format!("ov-link-{i}")),
+                    str_of(l, "label"),
+                    "ghost",
+                    22.,
+                    11.5,
+                    Some(Box::new(self.opener(str_of(l, "path")))),
+                )
+            }))
+        });
+        let empty = headline_el.is_none() && facts_el.is_none() && items.is_empty() && final_text.is_empty();
+        div()
+            .id("node-overview")
+            .flex_1()
+            .min_h_0()
+            .overflow_y_scroll()
+            .px(px(14.))
+            .py(px(12.))
+            .child(
+                v_flex()
+                    .gap(px(14.))
+                    .children(headline_el)
+                    .children(facts_el)
+                    .children(result_el)
+                    .children(files_el)
+                    .children(final_el)
+                    .children(links_el)
+                    .when(empty, |this| {
+                        this.child(p::text(format!("Nothing recorded for {} yet.", node.label), 12.5, p::SUB))
+                    }),
+            )
+            .into_any_element()
+    }
+
+    /// What the node was given and what it produced; each artefact opens, and
+    /// unfolds into a preview.
+    fn render_artifacts(&self, detail: &Value, cx: &mut Context<Self>) -> AnyElement {
+        let mono = p::mono_font(cx);
+        let section = |title: &str, list: Vec<Value>, empty: &str, key: &str, cx: &mut Context<Self>| {
+            let mut col = v_flex().gap(px(2.)).child(p::text(title.to_uppercase(), 11., p::SUB));
+            if list.is_empty() {
+                col = col.child(p::text(empty.to_string(), 12., p::SUB));
+            }
+            for (i, a) in list.iter().enumerate() {
+                let path = str_of(a, "path");
+                let open = self.art_open.contains(&path);
+                let toggle_path = path.clone();
+                let size = a.get("size").and_then(Value::as_u64).unwrap_or(0);
+                let from = str_of(a, "from");
+                col = col.child(
+                    h_flex()
+                        .id(SharedString::from(format!("art-{key}-{i}")))
+                        .gap(px(8.))
+                        .px(px(6.))
+                        .py(px(4.))
+                        .rounded(px(4.))
+                        .cursor_pointer()
+                        .hover(|s| s.bg(c(p::HOVER)))
+                        .child(p::text(if open { "▾" } else { "▸" }, 11., p::SUB).w(px(10.)).flex_none())
+                        .child(div().flex_1().min_w_0().text_size(px(12.)).font(mono.clone()).text_color(c(p::TEXT)).truncate().child(str_of(a, "name")))
+                        .when(!from.is_empty(), |this| this.child(p::text(from.clone(), 11., p::SUB).flex_none()))
+                        .child(p::text(human_size(size), 11., p::DIM).font(mono.clone()).flex_none())
+                        .child(p::button(SharedString::from(format!("art-open-{key}-{i}")), "Open", "ghost", 20., 11., Some(Box::new(self.opener(path.clone())))))
+                        .on_click(cx.listener(move |this, _, _, cx| {
+                            if !this.art_open.remove(&toggle_path) {
+                                this.art_open.insert(toggle_path.clone());
+                            }
+                            cx.notify();
+                        })),
+                );
+                if open {
+                    let preview = str_of(a, "preview");
+                    let kind = str_of(a, "kind");
+                    let lines: Vec<Value> = if kind == "diff" {
+                        Self::diff_lines(&preview, 400)
+                    } else {
+                        preview.lines().map(|l| serde_json::json!({ "t": l, "c": "body" })).collect()
+                    };
+                    col = col.child(div().pl(px(16.)).child(crate::page::code_box(&self.texts, &format!("art-pv-{key}-{i}"), lines, cx)));
+                }
+            }
+            col
+        };
+        let inputs = section("Given to this node", arr(detail, "inputs"), "No inputs recorded.", "in", cx);
+        let outputs = section("Produced by this node", arr(detail, "outputs"), "No outputs recorded.", "out", cx);
+        div()
+            .id("node-artifacts")
+            .flex_1()
+            .min_h_0()
+            .overflow_y_scroll()
+            .px(px(14.))
+            .py(px(12.))
+            .child(v_flex().gap(px(16.)).child(inputs).child(outputs))
             .into_any_element()
     }
 
@@ -1143,6 +1407,31 @@ impl MiniOrkGraph {
         let diff_note = str_of(detail, "diff_note");
         let commits_note = str_of(detail, "commits_note");
 
+        let agent_edits = arr(detail, "agent_edits");
+        let agent_note = str_of(detail, "agent_edits_note");
+        let edits_section = (!agent_edits.is_empty() || !agent_note.is_empty()).then(|| {
+            let mut col = v_flex().gap(px(6.)).child(heading(format!("Edited by {}", node.label)));
+            if agent_edits.is_empty() {
+                col = col.child(p::text(agent_note.clone(), 12., p::SUB));
+            }
+            for (i, e) in agent_edits.iter().enumerate() {
+                let path = str_of(e, "path");
+                col = col
+                    .child(
+                        h_flex()
+                            .id(SharedString::from(format!("edit-{i}")))
+                            .gap(px(8.))
+                            .cursor_pointer()
+                            .on_click(open_path(path.clone()))
+                            .child(div().flex_1().min_w_0().text_size(px(12.)).font(mono.clone()).text_color(c(p::TEXT)).truncate().child(path.clone()))
+                            .child(p::text(str_of(e, "tool"), 11., p::SUB))
+                            .child(p::text(format!("+{}", str_of(e, "added")), 11.5, p::GREEN).font(mono.clone()))
+                            .child(p::text(format!("−{}", str_of(e, "removed")), 11.5, p::RED).font(mono.clone())),
+                    )
+                    .child(crate::page::code_box(&self.texts, &format!("edit-diff-{i}"), Self::diff_lines(&str_of(e, "diff"), 400), cx));
+            }
+            col
+        });
         let result_section = (!result_items.is_empty()).then(|| {
             v_flex()
                 .gap(px(4.))
@@ -1277,6 +1566,7 @@ impl MiniOrkGraph {
             .child(
                 v_flex()
                     .gap(px(14.))
+                    .children(edits_section)
                     .children(result_section)
                     .child(files_section)
                     .children(diff_section)
@@ -1839,6 +2129,18 @@ impl Render for MiniOrkGraph {
         self.texts.begin();
         let viewport = window.viewport_size();
         let selected = self.selected.as_ref().and_then(|id| self.node(id)).cloned();
+        if self.tab_mode {
+            let inspector = selected.map(|node| self.render_inspector(&node, window, cx));
+            self.texts.end();
+            return v_flex()
+                .id("mini-ork-node-tab")
+                .track_focus(&self.focus_handle)
+                .size_full()
+                .bg(c(p::CHROME))
+                .text_color(c(p::TEXT))
+                .children(inspector)
+                .into_any_element();
+        }
         let header = self.render_header(window, cx);
         let canvas = if self.list_view { self.render_list(cx) } else { self.render_graph(cx) };
         let inspector = selected.map(|node| self.render_inspector(&node, window, cx));
@@ -1869,6 +2171,7 @@ impl Render for MiniOrkGraph {
                 gpui::Animation::new(Duration::from_millis(180)),
                 |el, delta| el.opacity(delta),
             )
+            .into_any_element()
     }
 }
 
@@ -1877,9 +2180,23 @@ impl MiniOrkGraph {
         window.focus(&self.focus_handle, cx);
     }
 
-    /// The overlay is already open: jump to another node's stream.
+    /// The node the inspector shows.
+    pub fn selected_node(&self) -> Option<String> {
+        self.selected.clone()
+    }
+
+    /// The overlay is already open: jump to another node's overview.
     pub fn open_node(&mut self, node: String, cx: &mut Context<Self>) {
-        self.tab = "stream".into();
+        self.tab = "overview".into();
         self.select(node, cx);
+    }
+}
+
+/// `812 B`, `14.2 KB`, `3.1 MB`.
+fn human_size(bytes: u64) -> String {
+    match bytes {
+        b if b < 1024 => format!("{b} B"),
+        b if b < 1024 * 1024 => format!("{:.1} KB", b as f64 / 1024.),
+        b => format!("{:.1} MB", b as f64 / (1024. * 1024.)),
     }
 }

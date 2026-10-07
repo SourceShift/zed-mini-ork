@@ -914,7 +914,7 @@ impl MiniOrkPage {
                 el.cursor_pointer()
                     .hover(|s| s.border_color(c(p::BLUE)))
                     .on_click(cx.listener(move |this, _, window, cx| {
-                        this.open_graph(Some(node_id.clone()), window, cx)
+                        this.open_node_tab(node_id.clone(), window, cx)
                     }))
                     .into_any_element()
             })));
@@ -1052,6 +1052,25 @@ impl MiniOrkPage {
 
 impl MiniOrkPage {
     /// Open the run graph full screen, optionally on one node's stream.
+    /// A DAG node opens in its own tab (the full-screen graph is the
+    /// "⤢ Full screen" button).
+    pub(crate) fn open_node_tab(&mut self, node: String, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(run) = self.args.get("run").cloned() else {
+            return;
+        };
+        let Some(Ok(page)) = self.data.clone() else {
+            return;
+        };
+        let Some(workspace) = self.workspace.upgrade() else {
+            return;
+        };
+        let model = crate::graph::Model::from_page(&page, &run);
+        let (title, handle) = (self.title_hint.clone(), cx.entity().downgrade());
+        window.defer(cx, move |window, cx| {
+            crate::node_tab::open_node_tab(&workspace, run, node, title, model, handle, window, cx);
+        });
+    }
+
     pub(crate) fn open_graph(&mut self, node: Option<String>, window: &mut Window, cx: &mut Context<Self>) {
         let Some(run) = self.args.get("run").cloned() else {
             return;

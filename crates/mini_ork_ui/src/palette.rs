@@ -42,6 +42,8 @@ const STREAM_BOX: u32 = 0x262a31;
 const ELEMENT: u32 = 0x353a44;
 const CANVAS: u32 = 0x1f2227;
 const SKELETON: u32 = 0x434a56;
+const NODE_CARD: u32 = 0x323843;
+const NODE_CARD_PENDING: u32 = 0x2a2e36;
 
 /// Design colour → active-theme colour; `None` until `sync_theme` runs.
 static THEMED: RwLock<Option<HashMap<u32, Hsla>>> = RwLock::new(None);
@@ -87,6 +89,9 @@ pub fn sync_theme(cx: &App) {
         (ELEMENT, colors.element_background),
         (CANVAS, shade(colors.editor_background, 0.04)),
         (SKELETON, colors.border),
+        // Run-graph node cards: an element surface, a quieter one while pending.
+        (NODE_CARD, colors.element_background.blend(colors.element_hover.opacity(0.4))),
+        (NODE_CARD_PENDING, colors.editor_background.blend(colors.element_background.opacity(0.6))),
     ]);
     if let Ok(mut themed) = THEMED.write() {
         *themed = Some(map);
