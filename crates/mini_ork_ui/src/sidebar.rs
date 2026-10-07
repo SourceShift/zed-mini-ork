@@ -891,21 +891,7 @@ impl MiniOrkSidebar {
             (Some(start), _) if running => duration_label(now - start),
             _ => String::new(),
         };
-        let logo: AnyElement = match p::model_icon(&node.lane) {
-            Some(icon) => gpui::svg()
-                .path(icon.path())
-                .size(px(12.))
-                .flex_none()
-                .text_color(c(p::family(&node.lane)))
-                .into_any_element(),
-            None => div()
-                .size(px(6.))
-                .mx(px(3.))
-                .flex_none()
-                .rounded_full()
-                .bg(c(if node.lane.is_empty() { p::DIM } else { p::family(&node.lane) }))
-                .into_any_element(),
-        };
+        let logo = p::lane_mark(&node.lane, 12.);
         let (run_id, title, node_id, workspace) =
             (run.id.clone(), run.display_title(), node.id.clone(), workspace.clone());
         h_flex()
