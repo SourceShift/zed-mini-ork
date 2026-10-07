@@ -31,8 +31,6 @@ pub struct Header {
     #[serde(default)]
     pub branch: String,
     #[serde(default)]
-    pub worktrees: u64,
-    #[serde(default)]
     pub needs_you: u64,
     #[serde(default)]
     pub working: u64,
