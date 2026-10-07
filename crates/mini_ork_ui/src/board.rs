@@ -1,7 +1,7 @@
 //! The `mini-ork board` contract: what the panels read and the commands they run.
 
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, HashMap},
     path::{Path, PathBuf},
 };
 
@@ -247,6 +247,21 @@ pub async fn fetch_page(
         ));
     }
     Ok(value)
+}
+
+/// A thumbnail per visible run (`mini-ork board page dags --arg ids=…`), keyed
+/// by run id. Batched by construction: one subprocess for the whole board
+/// rather than one per row, because the board is polled. Runs the page could
+/// not resolve (a recipe that no longer loads) are simply absent from the map
+/// — they lose their thumbnail, never the board.
+pub async fn fetch_thumbs(
+    bin: PathBuf,
+    home: PathBuf,
+    ids: Vec<String>,
+) -> Result<HashMap<String, crate::thumb::Thumb>> {
+    let args = BTreeMap::from([("ids".to_string(), ids.join(","))]);
+    let page = fetch_page(bin, home, "dags".to_string(), None, args).await?;
+    Ok(crate::thumb::dags_from_value(&page))
 }
 
 /// The shell's board read: `board --json --shell` (header, runs and counts

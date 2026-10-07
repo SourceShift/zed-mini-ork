@@ -159,6 +159,42 @@ pub fn family(lane: &str) -> u32 {
         .unwrap_or(SUB)
 }
 
+/// The logo of a model family, matched on the lane name the same loose way
+/// `family` matches its colour — so a lane and its mark are decided together.
+/// `None` means "no mark ships for this family yet"; the caller draws the
+/// coloured dot instead, so an unmapped lane degrades rather than vanishes.
+///
+/// Only the icons the tree already has. glm/zhipu is the one family with a
+/// `family` colour but no mark yet — it falls back to the dot until an SVG
+/// lands.
+pub fn model_icon(lane: &str) -> Option<IconName> {
+    let lane = lane.to_ascii_lowercase();
+    let pick = [
+        ("opus", IconName::AiClaude),
+        ("sonnet", IconName::AiClaude),
+        ("haiku", IconName::AiClaude),
+        ("claude", IconName::AiClaude),
+        ("anthropic", IconName::AiClaude),
+        ("codex", IconName::AiOpenAi),
+        ("gpt", IconName::AiOpenAi),
+        ("openai", IconName::AiOpenAi),
+        ("deepseek", IconName::AiDeepSeek),
+        ("minimax", IconName::AiMiniMax),
+        ("kimi", IconName::AiKimi),
+        ("moonshot", IconName::AiKimi),
+        ("qwen", IconName::AiQwen),
+        ("gemini", IconName::AiGemini),
+        ("google", IconName::AiGoogle),
+        ("mistral", IconName::AiMistral),
+        ("llama", IconName::AiLlamaCpp),
+        ("ollama", IconName::AiOllama),
+        ("xai", IconName::AiXAi),
+        ("grok", IconName::AiXAi),
+        ("router", IconName::AiOpenRouter),
+    ];
+    pick.iter().find(|(needle, _)| lane.contains(needle)).map(|(_, icon)| *icon)
+}
+
 /// The mark and colour of a run state.
 pub fn state_mark(state: &str) -> (&'static str, u32) {
     match state {
