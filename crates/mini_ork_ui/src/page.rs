@@ -522,7 +522,14 @@ impl MiniOrkPage {
             "code" => self.render_code(index, s, cx),
             "pills" => self.render_pills(s, cx),
             "chips" => self.render_chips(index, s, cx),
-            "markdown" => self.texts.markdown(format!("s{index}-md"), str_of(s, "text"), Look::new(13., c(p::BODY)), cx),
+            // Full document, capped in height and scrolled inside.
+            "markdown" => div()
+                .id(SharedString::from(format!("s{index}-md-box")))
+                .max_h(px(640.))
+                .overflow_y_scroll()
+                .pr(px(6.))
+                .child(self.texts.markdown(format!("s{index}-md"), str_of(s, "text"), Look::new(13., c(p::BODY)), cx))
+                .into_any_element(),
             _ => div().into_any_element(),
         };
         let has_head = !title.is_empty() || !actions.is_empty();
@@ -1112,9 +1119,12 @@ fn card() -> Div {
 }
 
 /// A monospace block; every line selectable, and a Copy button for all of it.
-pub(crate) fn code_box<T: 'static>(texts: &Texts, key: &str, lines: Vec<Value>, cx: &mut Context<T>) -> Div {
+pub(crate) fn code_box<T: 'static>(texts: &Texts, key: &str, lines: Vec<Value>, cx: &mut Context<T>) -> gpui::Stateful<Div> {
     let all = lines.iter().map(|l| str_of(l, "t")).collect::<Vec<_>>().join("\n");
     v_flex()
+        .id(SharedString::from(format!("{key}-box")))
+        .max_h(px(480.))
+        .overflow_y_scroll()
         .relative()
         .px(px(10.))
         .py(px(8.))

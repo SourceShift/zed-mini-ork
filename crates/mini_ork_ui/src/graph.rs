@@ -1316,6 +1316,49 @@ impl MiniOrkGraph {
                                 cx,
                             ))
                     })))
+                    .when_some(detail.get("markdown").filter(|m| !str_of(m, "text").is_empty()).cloned(), |this, doc| {
+                        let path = str_of(&doc, "path");
+                        let workspace = self.workspace.clone();
+                        this.child(
+                            v_flex()
+                                .gap(px(4.))
+                                .child(
+                                    h_flex()
+                                        .child(p::text(str_of(&doc, "title").to_uppercase(), 11., p::SUB))
+                                        .child(div().flex_1())
+                                        .when(!path.is_empty(), |this| {
+                                            this.child(p::button(
+                                                "fact-md-open",
+                                                "Open",
+                                                "ghost",
+                                                22.,
+                                                11.5,
+                                                Some(Box::new(move |_, window, cx| {
+                                                    let (workspace, path) = (workspace.clone(), path.clone());
+                                                    window.defer(cx, move |window, cx| {
+                                                        if let Some(workspace) = workspace.upgrade() {
+                                                            store::perform(&serde_json::json!({ "path": path }), &workspace, Origin::Page(WeakEntity::new_invalid()), window, cx);
+                                                        }
+                                                    });
+                                                })),
+                                            ))
+                                        }),
+                                )
+                                .child(
+                                    div()
+                                        .id("fact-md")
+                                        .max_h(px(480.))
+                                        .overflow_y_scroll()
+                                        .px(px(10.))
+                                        .py(px(8.))
+                                        .rounded(px(6.))
+                                        .bg(c(p::BG))
+                                        .border_1()
+                                        .border_color(c(p::BORDER))
+                                        .child(self.texts.markdown("fact-md-doc", str_of(&doc, "text"), Look::new(12.5, c(p::BODY)), cx)),
+                                ),
+                        )
+                    })
                     .when(!block.is_empty(), |this| {
                         this.child(
                             v_flex()
@@ -1656,12 +1699,20 @@ impl MiniOrkGraph {
                             .items_start()
                             .gap(px(6.))
                             .child(p::text(">", 12.5, if steer { p::YELLOW } else { p::SUB }))
-                            .child(div().flex_1().min_w_0().child(self.texts.text(
-                                key("box"),
-                                format!("{head}{arg}"),
-                                Look::new(12.5, c(if steer { p::YELLOW } else { p::TEXT })).mono(true),
-                                cx,
-                            ))),
+                            .child(
+                                div()
+                                    .id(SharedString::from(key("box-scroll")))
+                                    .flex_1()
+                                    .min_w_0()
+                                    .max_h(px(360.))
+                                    .overflow_y_scroll()
+                                    .child(if steer {
+                                        self.texts.text(key("box"), format!("{head}{arg}"), Look::new(12.5, c(p::YELLOW)).mono(true), cx)
+                                    } else {
+                                        // The prompt is a markdown document: render it whole.
+                                        self.texts.markdown(key("box"), format!("{head}{arg}"), Look::new(12.5, c(p::TEXT)), cx)
+                                    }),
+                            ),
                     )
                     .into_any_element()
             }
@@ -1728,8 +1779,24 @@ impl MiniOrkGraph {
                 }
                 let head_el = (!head.is_empty())
                     .then(|| self.texts.text(key("head"), &head, Look::new(12.5, c(p::TEXT)).mono(true).bold(true).italic(italic), cx));
-                let arg_el = (!arg_text.is_empty())
-                    .then(|| self.texts.text(key("arg"), &arg_text, Look::new(12.5, c(p::MUTED)).mono(true).italic(italic), cx));
+                let arg_el = (!arg_text.is_empty()).then(|| {
+                    if kind == "text" {
+                        // Agent text is markdown: whole, capped, scrollable.
+                        div()
+                            .id(SharedString::from(key("text-scroll")))
+                            .w_full()
+                            .max_h(px(360.))
+                            .overflow_y_scroll()
+                            .child(self.texts.markdown(key("arg"), &arg_text, Look::new(12.5, c(p::TEXT)), cx))
+                            .into_any_element()
+                    } else {
+                        div()
+                            .w_full()
+                            .min_w_0()
+                            .child(self.texts.text(key("arg"), &arg_text, Look::new(12.5, c(p::MUTED)).mono(true).italic(italic), cx))
+                            .into_any_element()
+                    }
+                });
                 v_flex()
                     .when(kind != "out", |this| {
                         this.child(
@@ -1737,7 +1804,7 @@ impl MiniOrkGraph {
                                 .items_start()
                                 .gap(px(9.))
                                 .child(div().flex_none().w(px(12.)).text_size(px(11.)).text_color(c(dot_colour)).child(dot))
-                                .child(h_flex().flex_1().min_w_0().flex_wrap().items_start().children(head_el).children(arg_el)),
+                                .child(v_flex().flex_1().min_w_0().children(head_el).children(arg_el)),
                         )
                     })
                     .when(!line_els.is_empty(), |this| {
