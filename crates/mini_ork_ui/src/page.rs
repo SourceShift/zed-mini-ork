@@ -509,7 +509,10 @@ impl MiniOrkPage {
         }
         let title = str_of(s, "title");
         let note = str_of(s, "note");
-        let actions = arr(s, "actions");
+        let mut actions = arr(s, "actions");
+        if kind == "markdown" && !str_of(s, "path").is_empty() {
+            actions.push(serde_json::json!({ "label": "Open", "kind": "ghost", "do": { "path": str_of(s, "path") } }));
+        }
         let body = match kind.as_str() {
             "table" => self.render_table(index, s, cx),
             "kv" => self.render_kv(index, s, cx),
@@ -519,6 +522,7 @@ impl MiniOrkPage {
             "code" => self.render_code(index, s, cx),
             "pills" => self.render_pills(s, cx),
             "chips" => self.render_chips(index, s, cx),
+            "markdown" => self.texts.markdown(format!("s{index}-md"), str_of(s, "text"), Look::new(13., c(p::BODY)), cx),
             _ => div().into_any_element(),
         };
         let has_head = !title.is_empty() || !actions.is_empty();
@@ -909,7 +913,7 @@ impl MiniOrkPage {
             .w_full()
             .overflow_x_scroll()
             .track_scroll(&self.dag_scroll)
-            .pt(px(14.))
+            .pt(px(36.))
             .pb(px(12.))
             .child(row);
         let full_screen = div()

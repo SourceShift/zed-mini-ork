@@ -4,15 +4,18 @@
 //! it sits left of the docks, full height. Its top strip continues the title
 //! bar (project, branch, worktrees) under the window's traffic lights.
 
+use std::{sync::Arc, time::Duration};
+
 use gpui::{
     AnyElement, App, Context, Entity, EntityId, EventEmitter, FocusHandle, Focusable, Pixels,
-    Render, SharedString, Subscription, WeakEntity, Window, WindowControlArea, px,
+    Render, ScrollHandle, SharedString, Subscription, Task, WeakEntity, Window, WindowControlArea, px,
 };
+use ui_input::{ERASED_EDITOR_FACTORY, ErasedEditor, ErasedEditorEvent};
 use ui::{Tooltip, prelude::*, utils::{TRAFFIC_LIGHT_PADDING, platform_title_bar_height}};
 use workspace::{MultiWorkspace, MultiWorkspaceEvent, Sidebar, SidebarEvent, SidebarSide, Workspace};
 
 use crate::{
-    board::Board,
+    board::{self, Board, Run},
     page::{self, MiniOrkPage},
     palette::{self as p, c},
     store::{self, BoardStore},
@@ -45,6 +48,17 @@ pub struct MiniOrkSidebar {
     board_width: f32,
     selected_run: Option<String>,
     bound: Option<(EntityId, EntityId)>,
+    /// Full-text search over runs, and runs paged in beyond the board's first 50.
+    search: Arc<dyn ErasedEditor>,
+    query: String,
+    results: Option<Vec<Run>>,
+    extra: Vec<Run>,
+    total: Option<u64>,
+    has_more: bool,
+    loading_more: bool,
+    list_scroll: ScrollHandle,
+    _search: Task<()>,
+    _search_sub: Subscription,
     _store: Option<Subscription>,
     _workspace: Option<Subscription>,
     _multi: Subscription,
@@ -53,9 +67,26 @@ pub struct MiniOrkSidebar {
 impl MiniOrkSidebar {
     pub fn new(
         multi_workspace: Entity<MultiWorkspace>,
-        _window: &mut Window,
+        window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
+        let factory = ERASED_EDITOR_FACTORY.get().expect("editor factory is set at start-up");
+        let search = factory(window, cx);
+        search.set_placeholder_text("Search runs — feature, kickoff, results…", window, cx);
+        let search_sub = search.subscribe(
+            Box::new({
+                let this = cx.entity().downgrade();
+                let editor = search.clone();
+                move |event, _window, cx| {
+                    if event == ErasedEditorEvent::BufferEdited {
+                        let text = editor.text(cx);
+                        this.update(cx, |this, cx| this.set_query(text, cx)).ok();
+                    }
+                }
+            }),
+            window,
+            cx,
+        );
         let multi = cx.subscribe(&multi_workspace, |this, _, event: &MultiWorkspaceEvent, cx| {
             if matches!(event, MultiWorkspaceEvent::ActiveWorkspaceChanged { .. }) {
                 this.bound = None;
@@ -80,10 +111,119 @@ impl MiniOrkSidebar {
             board_width: BOARD_WIDTH,
             selected_run: None,
             bound: None,
+            search,
+            query: String::new(),
+            results: None,
+            extra: Vec::new(),
+            total: None,
+            has_more: true,
+            loading_more: false,
+            list_scroll: ScrollHandle::new(),
+            _search: Task::ready(()),
+            _search_sub: search_sub,
             _store: None,
             _workspace: None,
             _multi: multi,
         }
+    }
+
+    fn target(&self, cx: &App) -> Option<(std::path::PathBuf, std::path::PathBuf)> {
+        let workspace = self.workspace(cx)?;
+        let store = BoardStore::for_workspace(&workspace, cx)?;
+        let store = store.read(cx);
+        Some((store.bin.clone(), store.home.clone()?))
+    }
+
+    /// A new search: debounce, then fetch the first page.
+    fn set_query(&mut self, text: String, cx: &mut Context<Self>) {
+        let query = text.trim().to_string();
+        if query == self.query {
+            return;
+        }
+        self.query = query.clone();
+        self.extra.clear();
+        self.has_more = true;
+        self.total = None;
+        if query.is_empty() {
+            self.results = None;
+            self._search = Task::ready(());
+            cx.notify();
+            return;
+        }
+        let Some((bin, home)) = self.target(cx) else {
+            return;
+        };
+        self.loading_more = true;
+        cx.notify();
+        self._search = cx.spawn(async move |this, cx| {
+            cx.background_executor().timer(Duration::from_millis(300)).await;
+            let page = cx.background_spawn(board::fetch_runs(bin, home, query.clone(), 0, 50)).await;
+            this.update(cx, |this, cx| {
+                if this.query != query {
+                    return;
+                }
+                this.loading_more = false;
+                match page {
+                    Ok(page) => {
+                        this.has_more = page.has_more;
+                        this.total = page.total;
+                        this.results = Some(page.runs);
+                    }
+                    Err(error) => {
+                        this.has_more = false;
+                        this.results = Some(Vec::new());
+                        log::warn!("mini-ork run search: {error}");
+                    }
+                }
+                cx.notify();
+            })
+            .ok();
+        });
+    }
+
+    /// The next 50 — of the search results, or of all runs past the board's first page.
+    fn load_more(&mut self, cx: &mut Context<Self>) {
+        if self.loading_more || !self.has_more {
+            return;
+        }
+        let Some((bin, home)) = self.target(cx) else {
+            return;
+        };
+        let base = BoardStore::for_workspace(&match self.workspace(cx) { Some(w) => w, None => return }, cx)
+            .and_then(|s| s.read(cx).board.as_ref().map(|b| b.runs.len()))
+            .unwrap_or(0);
+        let offset = match &self.results {
+            Some(results) => results.len(),
+            None => base + self.extra.len(),
+        };
+        let query = self.query.clone();
+        self.loading_more = true;
+        cx.notify();
+        self._search = cx.spawn(async move |this, cx| {
+            let page = cx.background_spawn(board::fetch_runs(bin, home, query.clone(), offset, 50)).await;
+            this.update(cx, |this, cx| {
+                this.loading_more = false;
+                if this.query != query {
+                    return;
+                }
+                match page {
+                    Ok(page) => {
+                        this.has_more = page.has_more && !page.runs.is_empty();
+                        this.total = page.total.or(this.total);
+                        match &mut this.results {
+                            Some(results) => results.extend(page.runs),
+                            None => this.extra.extend(page.runs),
+                        }
+                    }
+                    Err(error) => {
+                        this.has_more = false;
+                        log::warn!("mini-ork runs page: {error}");
+                    }
+                }
+                cx.notify();
+            })
+            .ok();
+        });
     }
 
     pub fn board_open(&self) -> bool {
@@ -248,10 +388,19 @@ impl MiniOrkSidebar {
         board: Option<&Board>,
         error: Option<String>,
         workspace: &Option<Entity<Workspace>>,
+        window: &mut Window,
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let mono = p::mono_font(cx);
-        let runs = board.map(|b| b.runs.clone()).unwrap_or_default();
+        let runs: Vec<Run> = match &self.results {
+            Some(results) => results.clone(),
+            None => {
+                let mut runs = board.map(|b| b.runs.clone()).unwrap_or_default();
+                let seen: std::collections::HashSet<String> = runs.iter().map(|r| r.id.clone()).collect();
+                runs.extend(self.extra.iter().filter(|r| !seen.contains(&r.id)).cloned());
+                runs
+            }
+        };
         let counts = board.map(|b| b.counts.clone()).unwrap_or_default();
         let header = {
             let workspace = workspace.clone();
@@ -270,7 +419,14 @@ impl MiniOrkSidebar {
                         .text_color(c(p::TEXT))
                         .child("Threads"),
                 )
-                .child(p::text(runs.len().to_string(), 12., p::SUB))
+                .child(p::text(
+                    match (self.total, self.results.is_some()) {
+                        (Some(total), _) => format!("{} of {total}", runs.len()),
+                        _ => runs.len().to_string(),
+                    },
+                    12.,
+                    p::SUB,
+                ))
                 .child(div().flex_1())
                 .child(
                     div()
@@ -293,6 +449,19 @@ impl MiniOrkSidebar {
                         }),
                 )
         };
+        let search_row = h_flex()
+            .flex_none()
+            .h(px(30.))
+            .mx(px(10.))
+            .mt(px(8.))
+            .px(px(8.))
+            .gap(px(6.))
+            .rounded(px(5.))
+            .border_1()
+            .border_color(c(p::BORDER2))
+            .bg(c(p::BG))
+            .child(p::text("⌕", 12., p::SUB))
+            .child(div().flex_1().min_w_0().text_size(px(12.5)).child(self.search.render(window, cx)));
         let tiles = [
             (counts.needs_you, "need you", p::YELLOW),
             (counts.working, "working", p::BLUE),
@@ -336,7 +505,9 @@ impl MiniOrkSidebar {
             list = list.child(p::text(error, 12., p::SUB).p(px(8.)));
         } else if board.is_none() {
             list = list.child(p::text("Loading…", 12., p::SUB).p(px(8.)));
-        } else if runs.is_empty() {
+        } else if runs.is_empty() && self.results.is_some() && !self.loading_more {
+            list = list.child(p::text(format!("No runs match “{}”.", self.query), 12., p::SUB).p(px(8.)));
+        } else if runs.is_empty() && self.results.is_none() {
             list = list.child(
                 p::text("No threads yet. Press + and say what you want done.", 12., p::SUB).p(px(8.)),
             );
@@ -426,6 +597,28 @@ impl MiniOrkSidebar {
                 );
             }
         }
+        if self.loading_more {
+            list = list.child(p::text("Loading…", 11.5, p::SUB).px(px(8.)).py(px(6.)));
+        } else if self.has_more && !runs.is_empty() {
+            list = list.child(
+                div()
+                    .id("board-load-more")
+                    .mx(px(8.))
+                    .my(px(6.))
+                    .py(px(5.))
+                    .rounded(px(5.))
+                    .border_1()
+                    .border_color(c(p::BORDER2))
+                    .text_center()
+                    .text_size(px(11.5))
+                    .text_color(c(p::MUTED))
+                    .cursor_pointer()
+                    .hover(|s| s.bg(c(p::HOVER)).text_color(c(p::TEXT)))
+                    .child("Load more")
+                    .on_click(cx.listener(|this, _, _, cx| this.load_more(cx))),
+            );
+        }
+        let scroll = self.list_scroll.clone();
         v_flex()
             .flex_none()
             .w(px(self.board_width))
@@ -434,12 +627,21 @@ impl MiniOrkSidebar {
             .border_r_1()
             .border_color(c(p::BORDER))
             .child(header)
+            .child(search_row)
             .child(count_grid)
             .child(
                 div()
                     .id("board-list")
                     .flex_1()
                     .overflow_y_scroll()
+                    .track_scroll(&self.list_scroll)
+                    // Near the bottom, fetch the next page.
+                    .on_scroll_wheel(cx.listener(move |this, _, _, cx| {
+                        let (offset, max) = (scroll.offset().y, scroll.max_offset().y);
+                        if f32::from(max) > 0. && f32::from(-offset) >= f32::from(max) - 240. {
+                            this.load_more(cx);
+                        }
+                    }))
                     .child(list),
             )
             .into_any_element()
@@ -576,7 +778,7 @@ impl Render for MiniOrkSidebar {
         let activity = self.render_activity_bar(&workspace, needs_you, active_key, cx);
         let board_column = self
             .board_open
-            .then(|| self.render_board(board.as_ref(), error, &workspace, cx));
+            .then(|| self.render_board(board.as_ref(), error, &workspace, window, cx));
         v_flex()
             .id("mini-ork-sidebar")
             .track_focus(&self.focus_handle)

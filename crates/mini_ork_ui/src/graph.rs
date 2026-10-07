@@ -35,8 +35,9 @@ const NH: f32 = 76.;
 const GX: f32 = 74.;
 const GY: f32 = 18.;
 const STREAM_POLL: Duration = Duration::from_millis(1500);
-const TABS: [(&str, &str); 5] = [
+const TABS: [(&str, &str); 6] = [
     ("stream", "Stream"),
+    ("changes", "Changes"),
     ("output", "Output"),
     ("prompt", "Prompt"),
     ("telemetry", "Telemetry"),
@@ -181,6 +182,8 @@ pub struct MiniOrkGraph {
     filter: Arc<dyn ErasedEditor>,
     query: String,
     canvas_scroll: ScrollHandle,
+    /// Where a canvas drag started (mouse, scroll offset), while panning.
+    drag: std::rc::Rc<std::cell::Cell<Option<(Point<Pixels>, Point<Pixels>)>>>,
     selected: Option<String>,
     tab: String,
     /// Detail per (node, tab), so switching back is instant.
@@ -252,6 +255,7 @@ impl MiniOrkGraph {
             filter,
             query: String::new(),
             canvas_scroll: ScrollHandle::new(),
+            drag: Default::default(),
             selected: None,
             tab: "stream".into(),
             detail: HashMap::new(),
@@ -851,8 +855,32 @@ impl MiniOrkGraph {
                     .size_full()
                     .overflow_scroll()
                     .track_scroll(&self.canvas_scroll)
+                    // Drag the canvas to pan; the wheel/trackpad scrolls both ways.
+                    .on_mouse_down(gpui::MouseButton::Left, {
+                        let drag = self.drag.clone();
+                        let scroll = self.canvas_scroll.clone();
+                        move |event: &gpui::MouseDownEvent, _, _| drag.set(Some((event.position, scroll.offset())))
+                    })
+                    .on_mouse_up(gpui::MouseButton::Left, {
+                        let drag = self.drag.clone();
+                        move |_, _, _| drag.set(None)
+                    })
+                    .on_mouse_move({
+                        let drag = self.drag.clone();
+                        let scroll = self.canvas_scroll.clone();
+                        move |event: &gpui::MouseMoveEvent, window, _| {
+                            if let Some((start, offset)) = drag.get() {
+                                if event.pressed_button != Some(gpui::MouseButton::Left) {
+                                    drag.set(None);
+                                    return;
+                                }
+                                scroll.set_offset(point(offset.x + (event.position.x - start.x), offset.y + (event.position.y - start.y)));
+                                window.refresh();
+                            }
+                        }
+                    })
                     .child(
-                        div().p(px(28.)).child(
+                        div().flex_none().w(px(w + 56.)).h(px(h + 56.)).p(px(28.)).child(
                             div()
                                 .relative()
                                 .w(px(w))
@@ -1026,6 +1054,14 @@ impl MiniOrkGraph {
             .child(tabs);
 
         let body = match (&detail, &self.detail_error) {
+            (_, Some(error)) if error.contains("invalid choice") => div()
+                .p(px(14.))
+                .child(p::text(
+                    format!("This mini-ork can't show “{}” for a node yet — it arrives with the next mini-ork update.", self.tab),
+                    12.5,
+                    p::SUB,
+                ))
+                .into_any_element(),
             (_, Some(error)) => div()
                 .p(px(14.))
                 .child(self.texts.text("node-error", error, Look::new(12.5, c(p::RED)).mono(true), cx))
@@ -1035,6 +1071,7 @@ impl MiniOrkGraph {
                 .child(crate::loading::loading_line(format!("board node {} {} --view {}", self.model.run_id, node.id, self.tab), cx))
                 .into_any_element(),
             (Some(detail), None) if is_stream => self.render_stream(node, detail, live, window, cx),
+            (Some(detail), None) if self.tab == "changes" => self.render_changes(node, detail, cx),
             (Some(detail), None) => self.render_facts(detail, cx),
         };
 
@@ -1076,6 +1113,174 @@ impl MiniOrkGraph {
                     .border_t_1()
                     .border_color(c(p::BORDER))
                     .children(acts),
+            )
+            .into_any_element()
+    }
+
+    /// What the node did to the code and what it decided: its result
+    /// (verdict and findings, checks, plan, what a rollback reverted), the files
+    /// changed after it, the diff, and the run's commits.
+    fn render_changes(&self, node: &Node, detail: &Value, cx: &mut Context<Self>) -> AnyElement {
+        let mono = p::mono_font(cx);
+        let workspace = self.workspace.clone();
+        let open_path = move |path: String| {
+            let workspace = workspace.clone();
+            move |_: &ClickEvent, window: &mut Window, cx: &mut App| {
+                let (workspace, path) = (workspace.clone(), path.clone());
+                window.defer(cx, move |window, cx| {
+                    if let Some(workspace) = workspace.upgrade() {
+                        store::perform(&serde_json::json!({ "path": path }), &workspace, Origin::Page(WeakEntity::new_invalid()), window, cx);
+                    }
+                });
+            }
+        };
+        let heading = |text: String| p::text(text.to_uppercase(), 11., p::SUB);
+        let result = detail.get("result").cloned().unwrap_or(Value::Null);
+        let result_items = arr(&result, "items");
+        let files = arr(detail, "files");
+        let commits = arr(detail, "commits");
+        let diff = str_of(detail, "diff");
+        let diff_note = str_of(detail, "diff_note");
+        let commits_note = str_of(detail, "commits_note");
+
+        let result_section = (!result_items.is_empty()).then(|| {
+            v_flex()
+                .gap(px(4.))
+                .child(heading(if str_of(&result, "title").is_empty() { "Result".into() } else { str_of(&result, "title") }))
+                .children(result_items.iter().enumerate().map(|(i, it)| {
+                    let sub = str_of(it, "sub");
+                    let path = str_of(it, "path");
+                    let row = h_flex()
+                        .id(SharedString::from(format!("result-{i}")))
+                        .items_start()
+                        .gap(px(8.))
+                        .py(px(4.))
+                        .border_b_1()
+                        .border_color(c(0x353a44))
+                        .child(p::text(str_of(it, "m"), 12.5, p::SUB).text_color(p::named(&str_of(it, "mc"))).w(px(12.)).flex_none())
+                        .child(
+                            v_flex()
+                                .min_w_0()
+                                .child(self.texts.text(format!("res-{i}"), str_of(it, "t"), Look::new(12.5, p::named(&str_of(it, "tc"))), cx))
+                                .when(!sub.is_empty(), |this| {
+                                    this.child(self.texts.text(format!("res-s{i}"), &sub, Look::new(11.5, c(p::SUB)).mono(true), cx))
+                                }),
+                        );
+                    if path.is_empty() {
+                        row.into_any_element()
+                    } else {
+                        row.cursor_pointer().on_click(open_path(path)).into_any_element()
+                    }
+                }))
+        });
+
+        let files_section = v_flex()
+            .gap(px(2.))
+            .child(heading(format!("Files changed after {}", node.label)))
+            .when(files.is_empty(), |this| {
+                this.child(p::text(if diff_note.is_empty() { "No code changed by this point.".to_string() } else { diff_note.clone() }, 12., p::SUB))
+            })
+            .children(files.iter().enumerate().map(|(i, f)| {
+                let abs = str_of(f, "abs");
+                let row = h_flex()
+                    .id(SharedString::from(format!("changed-{i}")))
+                    .gap(px(10.))
+                    .px(px(6.))
+                    .py(px(4.))
+                    .rounded(px(4.))
+                    .hover(|s| s.bg(c(p::HOVER)))
+                    .child(div().flex_1().min_w_0().text_size(px(12.)).font(mono.clone()).text_color(c(p::TEXT)).truncate().child(str_of(f, "path")))
+                    .child(p::text(format!("+{}", str_of(f, "added")), 11.5, p::GREEN).font(mono.clone()))
+                    .child(p::text(format!("−{}", str_of(f, "removed")), 11.5, p::RED).font(mono.clone()));
+                if abs.is_empty() {
+                    row.into_any_element()
+                } else {
+                    row.cursor_pointer().on_click(open_path(abs)).into_any_element()
+                }
+            }));
+
+        let diff_section = (!diff.is_empty()).then(|| {
+            let lines: Vec<Value> = diff
+                .lines()
+                .take(800)
+                .map(|l| {
+                    let colour = if l.starts_with("+++") || l.starts_with("---") {
+                        "text"
+                    } else if l.starts_with('+') {
+                        "green"
+                    } else if l.starts_with('-') {
+                        "red"
+                    } else if l.starts_with("@@") {
+                        "blue"
+                    } else {
+                        "muted"
+                    };
+                    serde_json::json!({ "t": l, "c": colour })
+                })
+                .collect();
+            let patch = diff.clone();
+            let name = format!("mini-ork-{}-{}.patch", self.model.run_id, node.id);
+            let workspace = self.workspace.clone();
+            v_flex()
+                .gap(px(4.))
+                .child(
+                    h_flex()
+                        .child(heading("Diff".into()))
+                        .child(div().flex_1())
+                        .child(p::button(
+                            "open-patch",
+                            "Open as patch",
+                            "ghost",
+                            22.,
+                            11.5,
+                            Some(Box::new(move |_, window, cx| {
+                                let path = std::env::temp_dir().join(&name);
+                                if std::fs::write(&path, &patch).is_ok() {
+                                    let (workspace, path) = (workspace.clone(), path.to_string_lossy().to_string());
+                                    window.defer(cx, move |window, cx| {
+                                        if let Some(workspace) = workspace.upgrade() {
+                                            store::perform(&serde_json::json!({ "path": path }), &workspace, Origin::Page(WeakEntity::new_invalid()), window, cx);
+                                        }
+                                    });
+                                }
+                            })),
+                        )),
+                )
+                .child(crate::page::code_box(&self.texts, "node-diff", lines, cx))
+        });
+
+        let commits_section = v_flex()
+            .gap(px(2.))
+            .child(heading("Commits".into()))
+            .when(commits.is_empty(), |this| {
+                this.child(p::text(if commits_note.is_empty() { "No commits from this run.".to_string() } else { commits_note.clone() }, 12., p::SUB))
+            })
+            .children(commits.iter().enumerate().map(|(i, cm)| {
+                let sha = str_of(cm, "sha");
+                let short: String = sha.chars().take(8).collect();
+                h_flex()
+                    .gap(px(10.))
+                    .px(px(6.))
+                    .py(px(4.))
+                    .child(p::text(short, 12., p::YELLOW).font(mono.clone()).flex_none())
+                    .child(div().flex_1().min_w_0().child(self.texts.text(format!("commit-{i}"), str_of(cm, "subject"), Look::new(12.5, c(p::TEXT)), cx)))
+                    .child(p::text(str_of(cm, "when"), 11.5, p::SUB).flex_none())
+            }));
+
+        div()
+            .id("node-changes")
+            .flex_1()
+            .min_h_0()
+            .overflow_y_scroll()
+            .px(px(14.))
+            .py(px(12.))
+            .child(
+                v_flex()
+                    .gap(px(14.))
+                    .children(result_section)
+                    .child(files_section)
+                    .children(diff_section)
+                    .child(commits_section),
             )
             .into_any_element()
     }
