@@ -25,6 +25,7 @@ mod select;
 mod sidebar;
 mod status;
 mod store;
+mod thumb;
 mod title_bar;
 
 pub use sidebar::MiniOrkSidebar;

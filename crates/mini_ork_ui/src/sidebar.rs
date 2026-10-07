@@ -4,7 +4,11 @@
 //! it sits left of the docks, full height. Its top strip continues the title
 //! bar (project, branch) under the window's traffic lights.
 
-use std::{sync::Arc, time::Duration};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+    time::{Duration, Instant},
+};
 
 use gpui::{
     AnyElement, App, Context, Entity, EntityId, EventEmitter, FocusHandle, Focusable, Pixels,
@@ -19,11 +23,17 @@ use crate::{
     page::{self, MiniOrkPage},
     palette::{self as p, c},
     store::{self, BoardStore},
+    thumb,
 };
 
 pub const ACTIVITY_WIDTH: f32 = 42.;
 const BOARD_WIDTH: f32 = 272.;
 const BOARD_MIN: f32 = 200.;
+/// How long a failed `board page dags` read waits before it is tried again.
+/// Long enough that a page the engine does not know cannot spawn a subprocess
+/// on every render, short enough that a transient failure repairs itself
+/// within a poll or two.
+const THUMBS_RETRY: Duration = Duration::from_secs(10);
 
 /// The activity bar, top to bottom: key, glyph, tooltip.
 const ACTIVITIES: [(&str, &str, &str); 10] = [
@@ -55,6 +65,20 @@ pub struct MiniOrkSidebar {
     has_more: bool,
     loading_more: bool,
     list_scroll: ScrollHandle,
+    /// One mini-DAG per visible run, straight from `board page dags`.
+    thumbs: HashMap<String, thumb::Thumb>,
+    /// What the last thumbnail read was *for* — the visible run ids plus (only
+    /// while something is working) the store generation. A working run keeps
+    /// its id while it grows nodes, so id equality alone would freeze the DAG
+    /// at its first frame.
+    thumbs_sig: Option<(Vec<String>, u64)>,
+    loading_thumbs: bool,
+    /// Not before this instant, after a read that failed. A `board page dags`
+    /// that is broken for the session (an engine too old to know the key) must
+    /// not spawn a subprocess on every render, but a single hiccup must not
+    /// leave the board without DAGs until the run set happens to change.
+    thumbs_retry_at: Option<Instant>,
+    _thumbs: Task<()>,
     _search: Task<()>,
     _search_sub: Subscription,
     _store: Option<Subscription>,
@@ -88,6 +112,13 @@ impl MiniOrkSidebar {
         let multi = cx.subscribe(&multi_workspace, |this, _, event: &MultiWorkspaceEvent, cx| {
             if matches!(event, MultiWorkspaceEvent::ActiveWorkspaceChanged { .. }) {
                 this.bound = None;
+                // Drop the other workspace's DAGs, or they render over this
+                // one's rows until the next read lands. Clearing the signature
+                // is also what makes an in-flight read's answer get discarded
+                // rather than written back — see `ensure_thumbs`.
+                this.thumbs.clear();
+                this.thumbs_sig = None;
+                this.thumbs_retry_at = None;
                 cx.notify();
             }
         });
@@ -117,6 +148,11 @@ impl MiniOrkSidebar {
             has_more: true,
             loading_more: false,
             list_scroll: ScrollHandle::new(),
+            thumbs: HashMap::new(),
+            thumbs_sig: None,
+            loading_thumbs: false,
+            thumbs_retry_at: None,
+            _thumbs: Task::ready(()),
             _search: Task::ready(()),
             _search_sub: search_sub,
             _store: None,
@@ -216,6 +252,100 @@ impl MiniOrkSidebar {
                     Err(error) => {
                         this.has_more = false;
                         log::warn!("mini-ork runs page: {error}");
+                    }
+                }
+                cx.notify();
+            })
+            .ok();
+        });
+    }
+
+    /// The runs the board is showing, in order: search results when a query is
+    /// live, otherwise the board's first page plus whatever "load more" added.
+    fn visible_runs(&self, board: Option<&Board>) -> Vec<Run> {
+        match &self.results {
+            Some(results) => results.clone(),
+            None => {
+                let mut runs = board.map(|b| b.runs.clone()).unwrap_or_default();
+                let seen: HashSet<String> = runs.iter().map(|r| r.id.clone()).collect();
+                runs.extend(self.extra.iter().filter(|r| !seen.contains(&r.id)).cloned());
+                runs
+            }
+        }
+    }
+
+    fn store_generation(&self, cx: &App) -> u64 {
+        self.workspace(cx)
+            .and_then(|workspace| BoardStore::for_workspace(&workspace, cx))
+            .map(|store| store.read(cx).generation)
+            .unwrap_or(0)
+    }
+
+    /// Fetch the thumbnails for what the board is showing, if that has changed
+    /// since the last read. Called from `render`, so the store's own notify is
+    /// the trigger and the cadence is the store's (`MIN_GAP`, 1.5s while a run
+    /// is live) — one extra subprocess per read, never one per row.
+    fn ensure_thumbs(&mut self, board: Option<&Board>, cx: &mut Context<Self>) {
+        // A read that failed recently is not retried on every render — see
+        // `thumbs_retry_at`.
+        if self.thumbs_retry_at.is_some_and(|at| Instant::now() < at) {
+            return;
+        }
+        let runs = self.visible_runs(board);
+        if runs.is_empty() {
+            if !self.thumbs.is_empty() {
+                self.thumbs.clear();
+            }
+            self.thumbs_sig = None;
+            return;
+        }
+        let mut ids: Vec<String> = runs.iter().map(|run| run.id.clone()).collect();
+        ids.sort_unstable();
+        // A working run keeps its id while it adds nodes, so fold in the store
+        // generation — but only then, or every cost tick would re-read the
+        // whole board.
+        let generation = if runs.iter().any(|run| run.state == "working") {
+            self.store_generation(cx)
+        } else {
+            0
+        };
+        let signature = (ids.clone(), generation);
+        if self.loading_thumbs || self.thumbs_sig.as_ref() == Some(&signature) {
+            return;
+        }
+        let Some((bin, home)) = self.target(cx) else {
+            // The store has no `home` until its first poll resolves. Leave the
+            // signature unset so this render's work is not lost.
+            return;
+        };
+        // Set before the spawn: a render while the fetch is in flight must not
+        // start a second one.
+        self.thumbs_sig = Some(signature.clone());
+        self.loading_thumbs = true;
+        self._thumbs = cx.spawn(async move |this, cx| {
+            let fetched = cx.background_spawn(board::fetch_thumbs(bin, home, ids)).await;
+            this.update(cx, |this, cx| {
+                this.loading_thumbs = false;
+                // The signature is the guard against an answer that is no
+                // longer wanted: a workspace switch clears it, and a newer read
+                // replaces it. Either way this result is for a board that is
+                // not on screen, and writing it would put the wrong runs' DAGs
+                // on the rows.
+                if this.thumbs_sig.as_ref() != Some(&signature) {
+                    return;
+                }
+                match fetched {
+                    Ok(thumbs) => {
+                        this.thumbs = thumbs;
+                        this.thumbs_retry_at = None;
+                    }
+                    Err(error) => {
+                        // Keep the previous map — a failed poll must never
+                        // blank a board that already had its DAGs — but let a
+                        // later read try again.
+                        log::warn!("mini-ork dags page: {error}");
+                        this.thumbs_sig = None;
+                        this.thumbs_retry_at = Some(Instant::now() + THUMBS_RETRY);
                     }
                 }
                 cx.notify();
@@ -397,15 +527,12 @@ impl MiniOrkSidebar {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let mono = p::mono_font(cx);
-        let runs: Vec<Run> = match &self.results {
-            Some(results) => results.clone(),
-            None => {
-                let mut runs = board.map(|b| b.runs.clone()).unwrap_or_default();
-                let seen: std::collections::HashSet<String> = runs.iter().map(|r| r.id.clone()).collect();
-                runs.extend(self.extra.iter().filter(|r| !seen.contains(&r.id)).cloned());
-                runs
-            }
-        };
+        let runs: Vec<Run> = self.visible_runs(board);
+        // The row's own padding (8) plus the list's (6) each side, so the
+        // strip spans the row exactly. `thumb::render_thumb` positions from
+        // this same width — reading the painted bounds instead would misalign
+        // every edge.
+        let thumb_w = (self.board_width - 28.).max(thumb::MIN_W);
         let counts = board.map(|b| b.counts.clone()).unwrap_or_default();
         let header = {
             let workspace = workspace.clone();
@@ -552,39 +679,55 @@ impl MiniOrkSidebar {
                 let (id, title) = (run.id.clone(), run.display_title());
                 let workspace = workspace.clone();
                 list = list.child(
-                    h_flex()
+                    // A column, not a row: a full-width thumbnail cannot be a
+                    // fourth child of the three-column strip at BOARD_WIDTH.
+                    v_flex()
                         .id(SharedString::from(format!("board-run-{}", run.id)))
-                        .items_start()
-                        .gap(px(8.))
                         .w_full()
                         .px(px(8.))
                         .py(px(6.))
                         .rounded(px(6.))
+                        .gap(px(4.))
                         .when(selected, |this| this.bg(c(p::SELECTED)))
                         .hover(|s| s.bg(c(p::HOVER)))
                         .cursor_pointer()
-                        .child(p::text(mark, 12., colour).w(px(14.)).flex_none().mt(px(1.)))
                         .child(
-                            v_flex()
-                                .flex_1()
-                                .min_w_0()
-                                .gap(px(1.))
-                                .child(p::text(title.clone(), 13., p::TEXT).truncate())
-                                .child(p::text(sub, 11.5, sub_colour).truncate())
-                                .children(span_line(run.started_at, run.ended_at, state).map(|line| {
-                                    p::text(line, 10.5, p::DIM).font(mono.clone()).truncate()
-                                })),
+                            h_flex()
+                                .items_start()
+                                .gap(px(8.))
+                                .w_full()
+                                .child(p::text(mark, 12., colour).w(px(14.)).flex_none().mt(px(1.)))
+                                .child(
+                                    v_flex()
+                                        .flex_1()
+                                        .min_w_0()
+                                        .gap(px(1.))
+                                        .child(p::text(title.clone(), 13., p::TEXT).truncate())
+                                        .child(p::text(sub, 11.5, sub_colour).truncate())
+                                        .children(
+                                            span_line(run.started_at, run.ended_at, state).map(|line| {
+                                                p::text(line, 10.5, p::DIM).font(mono.clone()).truncate()
+                                            }),
+                                        ),
+                                )
+                                .child(
+                                    v_flex()
+                                        .flex_none()
+                                        .items_end()
+                                        .gap(px(1.))
+                                        .text_size(px(11.))
+                                        .text_color(c(p::SUB))
+                                        .font(mono.clone())
+                                        .child(format!("${:.2}", run.cost_usd))
+                                        .child(age(run.started_at, now)),
+                                ),
                         )
-                        .child(
-                            v_flex()
-                                .flex_none()
-                                .items_end()
-                                .gap(px(1.))
-                                .text_size(px(11.))
-                                .text_color(c(p::SUB))
-                                .font(mono.clone())
-                                .child(format!("${:.2}", run.cost_usd))
-                                .child(age(run.started_at, now)),
+                        // No thumbnail until the dags page has answered for
+                        // this run — the row keeps today's height until then.
+                        .children(
+                            self.thumbs
+                                .get(&run.id)
+                                .map(|dag| thumb::render_thumb(dag, thumb_w)),
                         )
                         .when_some(span_tooltip(run.started_at, run.ended_at), |this, tip| {
                             this.tooltip(Tooltip::text(tip))
@@ -777,6 +920,9 @@ impl Render for MiniOrkSidebar {
             }
             None => (None, None, None),
         };
+        // Render is the trigger the store's notify reaches: the board re-reads
+        // on a filesystem change, so the DAGs follow it at the same cadence.
+        self.ensure_thumbs(board.as_ref(), cx);
         let active_key = workspace.as_ref().and_then(|w| Self::active_page_key(w, cx));
         let needs_you = board.as_ref().map_or(0, |b| b.counts.needs_you);
         let strip = self.render_strip(board.as_ref(), workspace.clone(), window);
