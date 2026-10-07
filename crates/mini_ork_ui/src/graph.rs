@@ -1,12 +1,16 @@
 //! A run's graph, full screen (the design's "Run graph · full screen"): every
 //! node on a dotted canvas with its edges, a Graph/List switch, a filter, zoom
 //! and fit — and, for the selected node, an inspector whose Stream tab shows
-//! the agent's session the way Claude Code's terminal does: replayable when the
+//! the agent's session the way Claude Code's terminal does: navigable when the
 //! node is done, followed live while it works, with steering.
 //!
 //! Node data comes from `mini-ork board node <run> <node> --view …`.
 
-use std::{collections::HashMap, sync::Arc, time::Duration};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+    time::Duration,
+};
 
 use gpui::{
     AnimationExt as _, AnyElement, App, Bounds, ClickEvent, ClipboardItem, Context, DismissEvent, EventEmitter,
@@ -138,6 +142,17 @@ impl Model {
     }
 }
 
+#[derive(Clone, Copy)]
+enum NavTo {
+    First,
+    Prev,
+    Next,
+    Last,
+}
+
+/// Tool results longer than this show their first lines and "+N lines".
+const COLLAPSED_LINES: usize = 4;
+
 fn mark(state: &str) -> (&'static str, u32) {
     match state {
         "done" => ("✓", p::GREEN),
@@ -175,13 +190,15 @@ pub struct MiniOrkGraph {
     stream: Vec<Value>,
     stream_offset: u64,
     stream_scroll: ScrollHandle,
-    /// Replay: how many stream entries are shown (None = all).
-    replay: Option<usize>,
+    /// Stream navigation: which kinds are shown, the selected entry (an index
+    /// into `stream`), and tool results expanded past their first lines.
+    stream_filter: &'static str,
+    stream_cursor: Option<usize>,
+    expanded: HashSet<usize>,
     steer: Arc<dyn ErasedEditor>,
     severity: &'static str,
     texts: Texts,
     _load: Task<()>,
-    _replay: Task<()>,
     _subs: Vec<Subscription>,
 }
 
@@ -243,12 +260,13 @@ impl MiniOrkGraph {
             stream: Vec::new(),
             stream_offset: 0,
             stream_scroll: ScrollHandle::new(),
-            replay: None,
+            stream_filter: "all",
+            stream_cursor: None,
+            expanded: HashSet::new(),
             steer,
             severity: "info",
             texts: Texts::default(),
             _load: Task::ready(()),
-            _replay: Task::ready(()),
             _subs: vec![filter_sub],
         };
         if let Some(node) = selected {
@@ -283,7 +301,8 @@ impl MiniOrkGraph {
         if self.selected.as_deref() != Some(node.as_str()) {
             self.stream.clear();
             self.stream_offset = 0;
-            self.replay = None;
+            self.stream_cursor = None;
+            self.expanded.clear();
         }
         self.selected = Some(node);
         self.load_detail(cx);
@@ -292,7 +311,6 @@ impl MiniOrkGraph {
 
     fn set_tab(&mut self, tab: &str, cx: &mut Context<Self>) {
         self.tab = tab.to_string();
-        self.replay = None;
         self.load_detail(cx);
         cx.notify();
     }
@@ -372,7 +390,7 @@ impl MiniOrkGraph {
                                 this.stream = entries;
                             }
                             this.stream_offset = value.get("offset").and_then(Value::as_u64).unwrap_or(this.stream_offset);
-                            if grew && live {
+                            if grew && live && this.stream_cursor.is_none() {
                                 this.stream_scroll.scroll_to_bottom();
                             }
                         }
@@ -395,32 +413,42 @@ impl MiniOrkGraph {
         });
     }
 
-    fn start_replay(&mut self, cx: &mut Context<Self>) {
-        self.replay = Some(1);
-        let total = self.stream.len();
-        self._replay = cx.spawn(async move |this, cx| {
-            loop {
-                cx.background_executor().timer(Duration::from_millis(110)).await;
-                let more = this
-                    .update(cx, |this, cx| match this.replay {
-                        Some(n) if n < total => {
-                            this.replay = Some(n + 1);
-                            this.stream_scroll.scroll_to_bottom();
-                            cx.notify();
-                            true
-                        }
-                        _ => {
-                            this.replay = None;
-                            cx.notify();
-                            false
-                        }
-                    })
-                    .unwrap_or(false);
-                if !more {
-                    break;
-                }
-            }
-        });
+    /// Stream entries shown under the current kind filter (indices into `stream`).
+    fn visible(&self) -> Vec<usize> {
+        self.stream
+            .iter()
+            .enumerate()
+            .filter(|(_, e)| match self.stream_filter {
+                "all" => true,
+                "text" => matches!(str_of(e, "k").as_str(), "text" | "user" | "note"),
+                kind => str_of(e, "k") == kind,
+            })
+            .map(|(i, _)| i)
+            .collect()
+    }
+
+    /// Move the selection among visible entries and scroll it to the top.
+    fn navigate(&mut self, to: NavTo, cx: &mut Context<Self>) {
+        let visible = self.visible();
+        if visible.is_empty() {
+            return;
+        }
+        let at = self.stream_cursor.and_then(|c| visible.iter().position(|&i| i == c));
+        let pos = match to {
+            NavTo::First => 0,
+            NavTo::Last => visible.len() - 1,
+            NavTo::Next => at.map_or(0, |p| (p + 1).min(visible.len() - 1)),
+            NavTo::Prev => at.map_or(visible.len() - 1, |p| p.saturating_sub(1)),
+        };
+        self.stream_cursor = Some(visible[pos]);
+        self.stream_scroll.scroll_to_top_of_item(pos);
+        cx.notify();
+    }
+
+    fn set_filter(&mut self, filter: &'static str, cx: &mut Context<Self>) {
+        self.stream_filter = filter;
+        self.stream_cursor = None;
+        self.stream_scroll.scroll_to_top_of_item(0);
         cx.notify();
     }
 
@@ -1019,24 +1047,6 @@ impl MiniOrkGraph {
                 p::button(SharedString::from(format!("node-act-{i}")), str_of(b, "label"), if kind.is_empty() { "default" } else { &kind }, 26., 12.5, handler)
             })
             .collect();
-        if is_stream && !live && !self.stream.is_empty() && node.state != "pending" {
-            acts.insert(
-                0,
-                p::button(
-                    "node-replay",
-                    "▶ Replay stream",
-                    "primary",
-                    26.,
-                    12.5,
-                    Some(Box::new({
-                        let this = cx.entity().downgrade();
-                        move |_, _, cx| {
-                            this.update(cx, |this, cx| this.start_replay(cx)).ok();
-                        }
-                    })),
-                ),
-            );
-        }
         let copy_id = format!("{}/{}", self.model.run_id, node.id);
         acts.push(p::button(
             "node-copy",
@@ -1141,116 +1151,183 @@ impl MiniOrkGraph {
     /// The agent's session, rendered the way Claude Code's terminal shows it.
     fn render_stream(&self, node: &Node, detail: &Value, live: bool, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
         let mono = p::mono_font(cx);
-        let shown = match self.replay {
-            Some(n) => &self.stream[..n.min(self.stream.len())],
-            None => &self.stream[..],
+        let status = str_of(detail, "status");
+        let status_colour = match str_of(detail, "status_c").as_str() {
+            "green" => p::GREEN,
+            "yellow" => p::YELLOW,
+            _ => p::SUB,
         };
-        let status = if let Some(n) = self.replay {
-            format!("replaying {} / {}", n, self.stream.len())
-        } else {
-            str_of(detail, "status")
-        };
-        let status_colour = if self.replay.is_some() {
-            p::BLUE
-        } else {
-            match str_of(detail, "status_c").as_str() {
-                "green" => p::GREEN,
-                "yellow" => p::YELLOW,
-                _ => p::SUB,
-            }
-        };
-        let entries: Vec<AnyElement> = shown.iter().enumerate().map(|(i, e)| self.stream_entry(i, e, cx)).collect();
-        let transcript_text = shown.iter().map(entry_text).collect::<Vec<_>>().join("\n");
+        let visible = self.visible();
+        let position = self
+            .stream_cursor
+            .and_then(|c| visible.iter().position(|&i| i == c))
+            .map(|p| p + 1);
+        let transcript_text = self.stream.iter().map(entry_text).collect::<Vec<_>>().join("\n");
         let running = live && node.state == "running";
         let source = str_of(detail, "source");
-        let header = h_flex()
+        let count = |kind: &str| -> usize {
+            self.stream
+                .iter()
+                .filter(|e| match kind {
+                    "all" => true,
+                    "text" => matches!(str_of(e, "k").as_str(), "text" | "user" | "note"),
+                    k => str_of(e, "k") == k,
+                })
+                .count()
+        };
+        let filters = [("all", "All"), ("tool", "Tools"), ("think", "Thinking"), ("text", "Text"), ("steer", "Steering")]
+            .into_iter()
+            .filter(|(key, _)| *key == "all" || count(key) > 0)
+            .map(|(key, label)| {
+                let on = self.stream_filter == key;
+                div()
+                    .id(SharedString::from(format!("stream-filter-{key}")))
+                    .h(px(20.))
+                    .px(px(7.))
+                    .flex()
+                    .items_center()
+                    .rounded(px(10.))
+                    .border_1()
+                    .border_color(c(if on { p::DIM } else { p::BORDER2 }))
+                    .when(on, |this| this.bg(c(p::SELECTED)))
+                    .text_size(px(11.))
+                    .text_color(c(if on { p::TEXT } else { p::MUTED }))
+                    .cursor_pointer()
+                    .child(format!("{label} {}", count(key)))
+                    .on_click(cx.listener(move |this, _, _, cx| this.set_filter(key, cx)))
+            });
+        let nav = |id: &'static str, glyph: &'static str, tip: &'static str, to: NavTo| {
+            div()
+                .id(id)
+                .size(px(22.))
+                .flex()
+                .items_center()
+                .justify_center()
+                .rounded(px(4.))
+                .text_color(c(p::MUTED))
+                .cursor_pointer()
+                .hover(|s| s.bg(c(p::HOVER)).text_color(c(p::TEXT)))
+                .tooltip(ui::Tooltip::text(tip))
+                .child(glyph)
+                .on_click(cx.listener(move |this, _, _, cx| this.navigate(to, cx)))
+        };
+        let header = v_flex()
             .flex_none()
-            .gap(px(8.))
-            .px(px(14.))
-            .py(px(7.))
             .border_b_1()
             .border_color(c(p::ROW_RULE))
-            .text_size(px(11.5))
-            .font(mono.clone())
-            .child(p::text("●", 11.5, status_colour))
-            .child(p::text(status, 11.5, status_colour))
-            .child(p::text(str_of(detail, "meta"), 11.5, p::DIM).truncate().min_w_0())
-            .child(div().flex_1())
-            .when(!shown.is_empty(), |this| {
-                this.child(p::button(
-                    "stream-copy",
-                    "⧉ Copy",
-                    "ghost",
-                    22.,
-                    11.5,
-                    Some(Box::new(move |_, _, cx| cx.write_to_clipboard(ClipboardItem::new_string(transcript_text.clone())))),
-                ))
+            .child(
+                h_flex()
+                    .gap(px(8.))
+                    .px(px(14.))
+                    .pt(px(7.))
+                    .text_size(px(11.5))
+                    .font(mono.clone())
+                    .child(p::text("●", 11.5, status_colour))
+                    .child(p::text(status, 11.5, status_colour))
+                    .child(p::text(str_of(detail, "meta"), 11.5, p::DIM).truncate().min_w_0())
+                    .child(div().flex_1())
+                    .when(!self.stream.is_empty(), |this| {
+                        this.child(p::button(
+                            "stream-copy",
+                            "⧉ Copy",
+                            "ghost",
+                            22.,
+                            11.5,
+                            Some(Box::new(move |_, _, cx| cx.write_to_clipboard(ClipboardItem::new_string(transcript_text.clone())))),
+                        ))
+                    }),
+            )
+            .child(
+                h_flex()
+                    .gap(px(5.))
+                    .px(px(14.))
+                    .py(px(6.))
+                    .children(filters)
+                    .child(div().flex_1())
+                    .child(nav("stream-first", "⤒", "First entry", NavTo::First))
+                    .child(nav("stream-prev", "↑", "Previous entry", NavTo::Prev))
+                    .child(
+                        div()
+                            .min_w(px(52.))
+                            .text_center()
+                            .text_size(px(11.))
+                            .font(mono.clone())
+                            .text_color(c(p::SUB))
+                            .child(match position {
+                                Some(p) => format!("{p} / {}", visible.len()),
+                                None => format!("– / {}", visible.len()),
+                            }),
+                    )
+                    .child(nav("stream-next", "↓", "Next entry", NavTo::Next))
+                    .child(nav("stream-last", "⤓", "Last entry", NavTo::Last)),
+            );
+        let entries: Vec<AnyElement> = visible
+            .iter()
+            .map(|&i| {
+                let on = self.stream_cursor == Some(i);
+                div()
+                    .id(SharedString::from(format!("stream-entry-{i}")))
+                    .pl(px(8.))
+                    .py(px(2.))
+                    .border_l_2()
+                    .border_color(if on { c(p::BLUE) } else { p::ca(0x00000000) })
+                    .when(on, |this| this.bg(p::ca(0x74ade80f)))
+                    .child(self.stream_entry(i, &self.stream[i], cx))
+                    .on_click(cx.listener(move |this, _, _, cx| {
+                        this.stream_cursor = Some(i);
+                        cx.notify();
+                    }))
+                    .into_any_element()
             })
-            .when(self.replay.is_some(), |this| {
-                this.child(p::button(
-                    "stream-skip",
-                    "Skip to end",
-                    "ghost",
-                    22.,
-                    11.5,
-                    Some(Box::new({
-                        let this = cx.entity().downgrade();
-                        move |_, _, cx| {
-                            this.update(cx, |this, cx| {
-                                this.replay = None;
-                                cx.notify();
-                            })
-                            .ok();
-                        }
-                    })),
-                ))
-            });
+            .collect();
         let transcript = div()
             .id("node-stream")
             .flex_1()
             .min_h_0()
             .overflow_y_scroll()
             .track_scroll(&self.stream_scroll)
-            .px(px(16.))
-            .pt(px(14.))
+            .flex()
+            .flex_col()
+            .gap(px(9.))
+            .px(px(12.))
+            .pt(px(12.))
             .pb(px(18.))
-            .child(
-                v_flex()
-                    .gap(px(11.))
-                    .font(mono.clone())
-                    .text_size(px(12.5))
-                    .line_height(px(20.))
-                    .text_color(c(p::TEXT))
-                    .children(entries)
-                    .when(shown.is_empty(), |this| {
-                        this.child(
-                            div()
-                                .py(px(30.))
-                                .w_full()
-                                .text_center()
-                                .child(p::text(
-                                    if node.state == "pending" { "Not dispatched yet." } else { "No stream yet." },
-                                    12.5,
-                                    p::DIM,
-                                )),
+            .font(mono.clone())
+            .text_size(px(12.5))
+            .line_height(px(20.))
+            .text_color(c(p::TEXT))
+            .children(entries)
+            .when(visible.is_empty(), |this| {
+                this.child(
+                    div().py(px(30.)).w_full().text_center().child(p::text(
+                        if node.state == "pending" {
+                            "Not dispatched yet."
+                        } else if self.stream.is_empty() {
+                            "No stream yet."
+                        } else {
+                            "Nothing of this kind."
+                        },
+                        12.5,
+                        p::DIM,
+                    )),
+                )
+            })
+            .when(running, |this| {
+                this.child(
+                    h_flex()
+                        .gap(px(9.))
+                        .pl(px(10.))
+                        .text_color(c(p::ORANGE))
+                        .child(
+                            Icon::new(IconName::LoadCircle)
+                                .size(IconSize::Small)
+                                .color(Color::Custom(c(p::ORANGE)))
+                                .with_rotate_animation(1),
                         )
-                    })
-                    .when(running && self.replay.is_none(), |this| {
-                        this.child(
-                            h_flex()
-                                .gap(px(9.))
-                                .text_color(c(p::ORANGE))
-                                .child(
-                                    Icon::new(IconName::LoadCircle)
-                                        .size(IconSize::Small)
-                                        .color(Color::Custom(c(p::ORANGE)))
-                                        .with_rotate_animation(1),
-                                )
-                                .child("Working…")
-                                .child(p::text(format!("· streaming from {source}"), 12.5, p::DIM)),
-                        )
-                    }),
-            );
+                        .child("Working…")
+                        .child(p::text(format!("· streaming from {source}"), 12.5, p::DIM)),
+                )
+            });
         let footer = if running {
             let sevs = ["info", "warn", "critical"].map(|sev| {
                 let on = self.severity == sev;
@@ -1398,8 +1475,11 @@ impl MiniOrkGraph {
                     _ => ("⏺", p::TEXT, false),
                 };
                 let arg_text = if kind == "tool" && !arg.is_empty() { format!("({arg})") } else { arg };
-                let line_els: Vec<AnyElement> = lines
+                let expanded = self.expanded.contains(&index);
+                let hidden = if !expanded && lines.len() > COLLAPSED_LINES + 1 { lines.len() - COLLAPSED_LINES } else { 0 };
+                let mut line_els: Vec<AnyElement> = lines
                     .iter()
+                    .take(if hidden > 0 { COLLAPSED_LINES } else { lines.len() })
                     .enumerate()
                     .map(|(i, l)| {
                         let bg = match str_of(l, "bg").as_str() {
@@ -1421,6 +1501,26 @@ impl MiniOrkGraph {
                             .into_any_element()
                     })
                     .collect();
+                if hidden > 0 || (expanded && lines.len() > COLLAPSED_LINES + 1) {
+                    let label = if hidden > 0 { format!("… +{hidden} lines") } else { "show less".to_string() };
+                    line_els.push(
+                        div()
+                            .id(SharedString::from(format!("e{index}-more")))
+                            .px(px(6.))
+                            .text_size(px(11.5))
+                            .text_color(c(p::BLUE))
+                            .cursor_pointer()
+                            .hover(|s| s.underline())
+                            .child(label)
+                            .on_click(cx.listener(move |this, _, _, cx| {
+                                if !this.expanded.insert(index) {
+                                    this.expanded.remove(&index);
+                                }
+                                cx.notify();
+                            }))
+                            .into_any_element(),
+                    );
+                }
                 let head_el = (!head.is_empty())
                     .then(|| self.texts.text(key("head"), &head, Look::new(12.5, c(p::TEXT)).mono(true).bold(true).italic(italic), cx));
                 let arg_el = (!arg_text.is_empty())
