@@ -37,6 +37,10 @@ impl Texts {
     }
 
     fn entity<T: 'static>(&self, key: &str, text: &str, cx: &mut Context<T>) -> Entity<Markdown> {
+        self.entity_with(key, text, false, cx)
+    }
+
+    fn entity_with<T: 'static>(&self, key: &str, text: &str, rich: bool, cx: &mut Context<T>) -> Entity<Markdown> {
         self.used.borrow_mut().insert(key.to_string());
         let existing = self.map.borrow().get(key).cloned();
         match existing {
@@ -49,11 +53,22 @@ impl Texts {
             }
             None => {
                 let text: SharedString = text.to_string().into();
-                let markdown = cx.new(|cx| Markdown::new_text(text.clone(), cx));
+                let markdown = if rich {
+                    cx.new(|cx| Markdown::new(text.clone(), None, None, cx))
+                } else {
+                    cx.new(|cx| Markdown::new_text(text.clone(), cx))
+                };
                 self.map.borrow_mut().insert(key.to_string(), (text, markdown.clone()));
                 markdown
             }
         }
+    }
+
+    /// `text` parsed as markdown (headings, lists, code), selectable.
+    pub fn markdown<T: 'static>(&self, key: impl AsRef<str>, text: impl AsRef<str>, look: Look, cx: &mut Context<T>) -> AnyElement {
+        let key = format!("md:{}", key.as_ref());
+        let markdown = self.entity_with(&key, text.as_ref(), true, cx);
+        element(markdown, look, cx)
     }
 
     /// `text` as a selectable element with this look.
@@ -122,10 +137,22 @@ fn element(markdown: Entity<Markdown>, look: Look, cx: &App) -> AnyElement {
     if look.italic {
         text.font_style = FontStyle::Italic;
     }
+    let mut code_block = gpui::StyleRefinement::default();
+    code_block.background = Some(p::c(p::BG).into());
+    code_block.padding.left = Some(px(10.).into());
+    code_block.padding.right = Some(px(10.).into());
+    code_block.padding.top = Some(px(8.).into());
+    code_block.padding.bottom = Some(px(8.).into());
     let style = MarkdownStyle {
         base_text_style: text,
         selection_background_color: p::ca(0x74ade859),
-        paragraph_spacing: px(0.),
+        paragraph_spacing: px(if look.nowrap { 0. } else { 6. }),
+        code_block,
+        inline_code: gpui::TextStyleRefinement {
+            background_color: Some(p::c(p::BG)),
+            ..Default::default()
+        },
+        rule_color: p::c(p::BORDER),
         ..Default::default()
     };
     MarkdownElement::new(markdown, style).into_any_element()

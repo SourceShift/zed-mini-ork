@@ -172,6 +172,32 @@ async fn run_json(bin: &Path, args: &[String], home: &Path) -> Result<Value> {
     Ok(value)
 }
 
+/// A page of runs (`mini-ork board runs [--query Q] --offset N --limit M`): full-text
+/// search over runs' titles, kickoffs and main artifacts, newest first without a query.
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct RunsPage {
+    #[serde(default)]
+    pub runs: Vec<Run>,
+    #[serde(default)]
+    pub total: Option<u64>,
+    #[serde(default)]
+    pub has_more: bool,
+}
+
+pub async fn fetch_runs(bin: PathBuf, home: PathBuf, query: String, offset: usize, limit: usize) -> Result<RunsPage> {
+    let mut argv = vec!["board".to_string(), "runs".into(), "--json".into()];
+    if !query.trim().is_empty() {
+        argv.push("--query".into());
+        argv.push(query.trim().to_string());
+    }
+    argv.extend(["--offset".into(), offset.to_string(), "--limit".into(), limit.to_string()]);
+    let value = run_json(&bin, &argv, &home).await?;
+    if value.get("ok").and_then(Value::as_bool) == Some(false) {
+        return Err(anyhow!("{}", value.get("error").and_then(Value::as_str).unwrap_or("search failed")));
+    }
+    serde_json::from_value(value).context("reading the runs page")
+}
+
 /// One node's detail view (`mini-ork board node <run> <node> --view V`):
 /// stream, output, prompt, telemetry or learning. `offset` asks the stream
 /// view for the entries after the ones already shown.
