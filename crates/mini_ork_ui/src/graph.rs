@@ -2236,14 +2236,21 @@ fn human_size(bytes: u64) -> String {
 }
 
 /// A unified diff split per file: a section starts at `diff --git`, or at a
-/// `--- ` header that no `diff --git` line introduced (plain patches).
+/// `--- ` header that no `diff --git` line introduced (plain patches). A bare
+/// `--- ` only counts as a header when the next line is `+++ `: inside a hunk,
+/// a removed line that began with `-- ` (an SQL or Lua comment) also reads
+/// `--- …` and must not split the file.
 fn diff_sections(diff: &str) -> Vec<String> {
     let mut sections = Vec::new();
     let mut current = String::new();
     let mut in_git_header = false;
-    for line in diff.lines() {
+    let mut lines = diff.lines().peekable();
+    while let Some(line) = lines.next() {
         let git = line.starts_with("diff --git ");
-        let starts = git || (line.starts_with("--- ") && !in_git_header);
+        let plain_header = line.starts_with("--- ")
+            && !in_git_header
+            && lines.peek().is_some_and(|next| next.starts_with("+++ "));
+        let starts = git || plain_header;
         if starts && !current.is_empty() {
             sections.push(std::mem::take(&mut current));
         }
