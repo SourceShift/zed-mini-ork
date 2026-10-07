@@ -330,6 +330,9 @@ impl MiniOrkGraph {
         self.loading = true;
         self.detail_error = None;
         self._load = cx.spawn(async move |this, cx| {
+            // When a followed node stops being live, read it once more in full:
+            // the final note and state only come with a full read.
+            let mut was_live = false;
             loop {
                 let offset = this
                     .update(cx, |this, _| (tab == "stream" && this.stream_offset > 0).then_some(this.stream_offset))
@@ -379,8 +382,14 @@ impl MiniOrkGraph {
                     })
                     .unwrap_or(false);
                 if !live {
+                    if was_live && tab == "stream" {
+                        was_live = false;
+                        this.update(cx, |this, _| this.stream_offset = 0).ok();
+                        continue;
+                    }
                     break;
                 }
+                was_live = true;
                 cx.background_executor().timer(STREAM_POLL).await;
             }
         });
