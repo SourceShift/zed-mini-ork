@@ -182,6 +182,10 @@ enum NavTo {
 
 /// Tool results longer than this show their first lines and "+N lines".
 const COLLAPSED_LINES: usize = 4;
+/// How many stream entries render at once. A live agent's transcript grows
+/// for hours, and every frame lays out every entry on screen — the window
+/// keeps that bounded, with "show earlier" to extend it.
+const STREAM_WINDOW: usize = 400;
 
 fn mark(state: &str) -> (&'static str, u32) {
     match state {
@@ -221,6 +225,9 @@ pub struct MiniOrkGraph {
     loading: bool,
     stream: Vec<Value>,
     stream_offset: u64,
+    /// How many of the visible entries render, counted from the end. The
+    /// stream's window: `STREAM_WINDOW` unless the user asked for more.
+    stream_shown: usize,
     stream_scroll: ScrollHandle,
     /// Stream navigation: which kinds are shown, the selected entry (an index
     /// into `stream`), and tool results expanded past their first lines.
@@ -296,6 +303,7 @@ impl MiniOrkGraph {
             loading: false,
             stream: Vec::new(),
             stream_offset: 0,
+            stream_shown: STREAM_WINDOW,
             stream_scroll: ScrollHandle::new(),
             stream_filter: "all",
             stream_cursor: None,
@@ -340,6 +348,7 @@ impl MiniOrkGraph {
         if self.selected.as_deref() != Some(node.as_str()) {
             self.stream.clear();
             self.stream_offset = 0;
+            self.stream_shown = STREAM_WINDOW;
             self.stream_cursor = None;
             self.expanded.clear();
         }
@@ -487,7 +496,13 @@ impl MiniOrkGraph {
             NavTo::Prev => at.map_or(visible.len() - 1, |p| p.saturating_sub(1)),
         };
         self.stream_cursor = Some(visible[pos]);
-        self.stream_scroll.scroll_to_top_of_item(pos);
+        // A jump above the window extends it rather than scrolling nowhere.
+        let render_from = visible.len() - visible.len().min(self.stream_shown);
+        if pos < render_from {
+            self.stream_shown = visible.len() - pos;
+        }
+        let render_from = visible.len() - visible.len().min(self.stream_shown);
+        self.stream_scroll.scroll_to_top_of_item(pos - render_from);
         cx.notify();
     }
 
@@ -1823,7 +1838,11 @@ impl MiniOrkGraph {
                     .child(nav("stream-next", "↓", "Next entry", NavTo::Next))
                     .child(nav("stream-last", "⤓", "Last entry", NavTo::Last)),
             );
-        let entries: Vec<AnyElement> = visible
+        // The window: render only the last `stream_shown` visible entries, so a
+        // hours-long transcript lays out a bounded list, not the whole session.
+        let shown = visible.len().min(self.stream_shown);
+        let render_from = visible.len() - shown;
+        let entries: Vec<AnyElement> = visible[render_from..]
             .iter()
             .map(|&i| {
                 let on = self.stream_cursor == Some(i);
@@ -1858,6 +1877,25 @@ impl MiniOrkGraph {
             .text_size(px(12.5))
             .line_height(px(20.))
             .text_color(c(p::TEXT))
+            .when(render_from > 0, |this| {
+                let hidden = render_from;
+                this.child(
+                    div()
+                        .id("stream-earlier")
+                        .flex_none()
+                        .py(px(6.))
+                        .text_center()
+                        .text_size(px(11.5))
+                        .text_color(c(p::BLUE))
+                        .cursor_pointer()
+                        .hover(|s| s.underline())
+                        .child(format!("▲ {hidden} earlier entries — show more"))
+                        .on_click(cx.listener(move |this, _, _, cx| {
+                            this.stream_shown = this.stream_shown.saturating_add(hidden);
+                            cx.notify();
+                        })),
+                )
+            })
             .children(entries)
             .when(visible.is_empty(), |this| {
                 this.child(

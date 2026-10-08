@@ -21,7 +21,7 @@ pub(crate) const ANIM_FPS: f32 = 8.;
 /// which cannot be throttled (they hard-code `repeat_synced()` without a
 /// `max_fps`).
 pub(crate) trait ThrottledSpinExt:
-    gpui::AnimationExt + ui::traits::transformable::Transformable + Sized
+    gpui::AnimationExt + ui::Transformable + Sized
 {
     fn with_throttled_rotate(
         self,
@@ -38,7 +38,7 @@ pub(crate) trait ThrottledSpinExt:
     }
 }
 
-impl<T: gpui::AnimationExt + ui::traits::transformable::Transformable + Sized> ThrottledSpinExt for T {}
+impl<T: gpui::AnimationExt + ui::Transformable + Sized> ThrottledSpinExt for T {}
 
 /// An Orca card: 1px border, 10px corners, CARD background, 12px inset.
 pub fn card() -> Div {
