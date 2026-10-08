@@ -120,6 +120,9 @@ pub struct MiniOrkPage {
     pub(crate) args: BTreeMap<String, String>,
     tab: Option<String>,
     title_hint: String,
+    /// True when the page is hosted in the right-hand Run panel: it hides the
+    /// page header and its outer padding, so the panel's own chrome shows.
+    dock: bool,
     workspace: WeakEntity<Workspace>,
     focus_handle: FocusHandle,
     data: Option<Result<Value, String>>,
@@ -182,6 +185,7 @@ impl MiniOrkPage {
             args,
             tab,
             title_hint,
+            dock: false,
             workspace,
             focus_handle: cx.focus_handle(),
             data: None,
@@ -208,6 +212,36 @@ impl MiniOrkPage {
         };
         this.reload(cx);
         this
+    }
+
+    /// The right-hand Run panel's page: the run's `view=dock` view, with the
+    /// page header and outer padding hidden. `tab` picks the dock tab
+    /// (`changes`, `checks`, `agents`, `cost`, `learned`), defaulting to
+    /// `changes` at the server.
+    pub fn new_dock(
+        run: String,
+        tab: Option<String>,
+        workspace: WeakEntity<Workspace>,
+        cx: &mut Context<Self>,
+    ) -> Self {
+        let mut args = BTreeMap::new();
+        args.insert("run".to_string(), run);
+        args.insert("view".to_string(), "dock".to_string());
+        let mut this = Self::new("run".into(), tab, args, String::new(), workspace, cx);
+        this.dock = true;
+        this
+    }
+
+    /// Point a dock page at another run (the panel follows the active run).
+    /// A no-op when it already shows that run.
+    pub fn set_run(&mut self, run: String, cx: &mut Context<Self>) {
+        if self.args.get("run").map(String::as_str) == Some(run.as_str()) {
+            return;
+        }
+        let mut args = BTreeMap::new();
+        args.insert("run".to_string(), run);
+        args.insert("view".to_string(), "dock".to_string());
+        self.set_args(args, cx);
     }
 
     fn label(&self) -> String {
@@ -295,6 +329,13 @@ impl MiniOrkPage {
         self.tab = Some(tab);
         self.begin_switch();
         self.reload(cx);
+    }
+
+    /// Whether a fresh fetch is worth starting now: not mid-fetch, and not
+    /// within two seconds of the last one. Board bumps can arrive in bursts
+    /// during a live run, and each reload cancels the fetch in flight.
+    pub(crate) fn may_reload(&self) -> bool {
+        !self.loading && self.last_reload.elapsed() >= Duration::from_secs(2)
     }
 
     /// Fetch the page again; while it is live, keep refreshing it.
@@ -1257,10 +1298,7 @@ impl MiniOrkPage {
                 .upgrade()
                 .and_then(|w| w.read(cx).active_item(cx))
                 .is_some_and(|item| item.item_id() == cx.entity_id());
-            if (in_front || this.graph.is_some())
-                && !this.loading
-                && this.last_reload.elapsed() >= Duration::from_secs(2)
-            {
+            if (in_front || this.graph.is_some()) && this.may_reload() {
                 this.reload(cx);
             }
         }));
@@ -1393,20 +1431,22 @@ impl Render for MiniOrkPage {
         let content = match self.data.clone() {
             None => v_flex()
                 .gap(px(14.))
-                .child(
-                    div()
-                        .text_size(px(17.))
-                        .font_weight(gpui::FontWeight::SEMIBOLD)
-                        .text_color(c(p::TEXT))
-                        .child(self.label()),
-                )
+                .when(!self.dock, |this| {
+                    this.child(
+                        div()
+                            .text_size(px(17.))
+                            .font_weight(gpui::FontWeight::SEMIBOLD)
+                            .text_color(c(p::TEXT))
+                            .child(self.label()),
+                    )
+                })
                 .children(bar)
                 .child(loading::loading_line(source, cx))
                 .child(loading::skeleton(&self.skeleton_shapes()))
                 .into_any_element(),
             Some(Ok(page)) if self.switching => v_flex()
                 .gap(px(14.))
-                .child(self.render_header(&page, cx))
+                .when(!self.dock, |this| this.child(self.render_header(&page, cx)))
                 .child(v_flex().children(self.render_tabs(&page, cx)).children(bar.map(|b| div().mt(px(-2.)).child(b))))
                 .child(loading::loading_line(source, cx))
                 .child(loading::skeleton(&self.skeleton_shapes()))
@@ -1428,7 +1468,7 @@ impl Render for MiniOrkPage {
                 let hide_dag = flow_map.is_some();
                 v_flex()
                     .gap(px(14.))
-                    .child(self.render_header(&page, cx))
+                    .when(!self.dock, |this| this.child(self.render_header(&page, cx)))
                     .child(v_flex().children(self.render_tabs(&page, cx)).children(bar.map(|b| div().mt(px(-2.)).child(b))))
                     .children(flow_map)
                     .child(
@@ -1449,13 +1489,17 @@ impl Render for MiniOrkPage {
             .bg(c(p::BG))
             .text_color(c(p::TEXT))
             .overflow_y_scroll()
-            .child(
+            .child(if self.dock {
+                // The Run panel draws its own chrome: a small inset instead of
+                // the page's wide padding and centred, max-width column.
+                div().px(px(10.)).py(px(8.)).child(content)
+            } else {
                 div()
                     .px(px(20.))
                     .pt(px(16.))
                     .pb(px(48.))
-                    .child(div().max_w(px(1080.)).mx_auto().child(content)),
-            )
+                    .child(div().max_w(px(1080.)).mx_auto().child(content))
+            })
             .when_some(self.graph.clone(), |this, graph| {
                 this.child(
                     deferred(
