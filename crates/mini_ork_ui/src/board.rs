@@ -47,6 +47,9 @@ pub struct Header {
     pub contextnest: bool,
     #[serde(default)]
     pub nodes: Nodes,
+    /// Per-lane health for the last 24 h; empty on an engine that predates it.
+    #[serde(default)]
+    pub lanes: Vec<Lane>,
     #[serde(default)]
     pub version: String,
 }
@@ -55,6 +58,22 @@ pub struct Header {
 pub struct Nodes {
     #[serde(default)]
     pub configured: u64,
+}
+
+/// One model lane's health over the last 24 h (`board --json` → `header.lanes`).
+/// Every field defaults so an older engine that never sends `lanes` still parses.
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct Lane {
+    #[serde(default)]
+    pub lane: String,
+    #[serde(default)]
+    pub calls: u64,
+    #[serde(default)]
+    pub failed: u64,
+    #[serde(default)]
+    pub usd: f64,
+    #[serde(default)]
+    pub last_error: String,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
