@@ -3,7 +3,7 @@
 //! A run's tab is the `run` page with `args.run`.
 
 use std::{
-    collections::{BTreeMap, HashMap},
+    collections::{BTreeMap, HashMap, HashSet},
     time::Duration,
 };
 
@@ -116,6 +116,13 @@ pub struct MiniOrkPage {
     last_reload: std::time::Instant,
     _store_sub: Option<Subscription>,
     generation: u64,
+    /// Expansion state for `story` step rows and per-file/per-check cards,
+    /// keyed `"<section>-<id>"` (e.g. `"story-planner"`,
+    /// `"s0-files-0:crates/mini_ork_ui/src/sections.rs"`).
+    pub(crate) expanded: HashSet<String>,
+    /// Whether `seed_step_expansion` has run for the current run (initial
+    /// `open: true` steps have been added to `expanded`). Reset on run change.
+    seed_done: bool,
     _load: Task<()>,
 }
 
@@ -150,6 +157,8 @@ impl MiniOrkPage {
             last_reload: std::time::Instant::now(),
             _store_sub: None,
             generation: 0,
+            expanded: HashSet::new(),
+            seed_done: false,
             _load: Task::ready(()),
         };
         this.reload(cx);
@@ -169,6 +178,7 @@ impl MiniOrkPage {
     }
 
     pub fn set_args(&mut self, args: BTreeMap<String, String>, cx: &mut Context<Self>) {
+        let prev_run = self.args.get("run").cloned();
         for (k, v) in args {
             if k == "tab" {
                 self.tab = Some(v);
@@ -177,6 +187,13 @@ impl MiniOrkPage {
             } else {
                 self.args.insert(k, v);
             }
+        }
+        // Expansion state is per-run: a different run gets a fresh `expanded`
+        // set, and the next load will seed it from the new run's `step.open`
+        // defaults (per the kickoff).
+        if prev_run != self.args.get("run").cloned() {
+            self.expanded.clear();
+            self.seed_done = false;
         }
         self.begin_switch();
         self.reload(cx);
@@ -294,6 +311,10 @@ impl MiniOrkPage {
                             if !shapes.is_empty() {
                                 this.shapes.insert(tab, shapes);
                             }
+                            // Seed initial expansion state from `step.open`
+                            // on the first load of this run. Subsequent
+                            // refreshes leave it alone; a run change resets it.
+                            this.seed_step_expansion(value);
                         }
                         this.data = Some(result.map_err(|e| e.to_string()));
                         cx.notify();
@@ -314,7 +335,7 @@ impl MiniOrkPage {
 
     /// A button/row/chip action: `set` and tab switches stay in this page;
     /// everything else goes through `store::perform` after this update ends.
-    fn action_handler(
+    pub(crate) fn action_handler(
         &self,
         action: Option<&Value>,
         cx: &mut Context<Self>,
@@ -508,6 +529,8 @@ impl MiniOrkPage {
             "triage" => return self.render_triage(index, s, cx),
             "callout" => return self.render_callout(index, s, cx),
             "hero" => return self.render_hero(index, s, cx),
+            // `story` draws its own rows full-width without a card header.
+            "story" => return self.render_story(index, s, cx),
             _ => {}
         }
         let title = str_of(s, "title");
@@ -525,6 +548,12 @@ impl MiniOrkPage {
             "code" => self.render_code(index, s, cx),
             "pills" => self.render_pills(s, cx),
             "chips" => self.render_chips(index, s, cx),
+            // Section renderers share their body code with their block
+            // renderers (used inside a story step's body).
+            "files" => self.render_files(index, s, cx),
+            "findings" => self.render_findings(index, s, cx),
+            "checks" => self.render_checks(index, s, cx),
+            "agents" => self.render_agents(index, s, cx),
             // Full document, capped in height and scrolled inside.
             "markdown" => self
                 .texts
@@ -1059,6 +1088,38 @@ impl MiniOrkPage {
 }
 
 impl MiniOrkPage {
+    /// Flip the expansion state for a section's item (e.g. `"story-planner"`).
+    pub(crate) fn toggle_step_expanded(&mut self, section: &str, step_id: &str, cx: &mut Context<Self>) {
+        let key = format!("{section}-{step_id}");
+        if !self.expanded.remove(&key) {
+            self.expanded.insert(key);
+        }
+        cx.notify();
+    }
+
+    /// Seed `expanded` with the initial `open: true` steps of the run's
+    /// story, once. `set_args` clears the seed marker when the run changes,
+    /// so each new run gets a fresh default-state.
+    pub(crate) fn seed_step_expansion(&mut self, value: &Value) {
+        if self.seed_done {
+            return;
+        }
+        for section in arr(value, "sections") {
+            if str_of(&section, "type") != "story" {
+                continue;
+            }
+            for step in arr(&section, "steps") {
+                if bool_of(&step, "open") {
+                    let id = str_of(&step, "id");
+                    if !id.is_empty() {
+                        self.expanded.insert(format!("story-{id}"));
+                    }
+                }
+            }
+        }
+        self.seed_done = true;
+    }
+
     /// Open the run graph full screen, optionally on one node's stream.
     /// A DAG node opens in its own tab (the full-screen graph is the
     /// "⤢ Full screen" button).
@@ -1203,7 +1264,7 @@ pub(crate) fn str_of(v: &Value, key: &str) -> String {
     }
 }
 
-fn bool_of(v: &Value, key: &str) -> bool {
+pub(crate) fn bool_of(v: &Value, key: &str) -> bool {
     v.get(key).and_then(Value::as_bool).unwrap_or(false)
 }
 
