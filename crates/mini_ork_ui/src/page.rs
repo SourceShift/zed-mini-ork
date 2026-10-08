@@ -25,7 +25,7 @@ use workspace::{
 };
 
 use crate::{
-    board,
+    board, components,
     loading::{self, Shape},
     select::{Look, Texts},
     palette::{self as p, c},
@@ -656,6 +656,12 @@ impl MiniOrkPage {
             "composer" => return self.render_composer(index, s, window, cx),
             // `story` draws its own rows full-width without a card header.
             "story" => return self.render_story(index, s, cx),
+            // `table` / `kv` / `list` draw their own Orca card, with a
+            // `components::section_head` and the section's own actions in
+            // place of the generic title row.
+            "table" => return self.render_table(index, s, cx),
+            "kv" => return self.render_kv(index, s, cx),
+            "list" => return self.render_list(index, s, cx),
             _ => {}
         }
         let title = str_of(s, "title");
@@ -665,9 +671,6 @@ impl MiniOrkPage {
             actions.push(serde_json::json!({ "label": "Open", "kind": "ghost", "do": { "path": str_of(s, "path") } }));
         }
         let body = match kind.as_str() {
-            "table" => self.render_table(index, s, cx),
-            "kv" => self.render_kv(index, s, cx),
-            "list" => self.render_list(index, s, cx),
             "bars" => self.render_bars(s, cx),
             "flow" => self.render_flow(index, s, cx),
             "code" => self.render_code(index, s, cx),
@@ -755,26 +758,29 @@ impl MiniOrkPage {
             .border_color(c(p::BORDER))
             .children(head.iter().enumerate().map(|(i, h)| {
                 sized(div(), i)
-                    .text_size(px(11.))
+                    .text_size(px(10.5))
                     .text_color(c(p::SUB))
                     .whitespace_nowrap()
                     .overflow_hidden()
-                    .child(h.as_str().unwrap_or_default().to_string())
+                    .child(h.as_str().unwrap_or_default().to_ascii_uppercase())
             }));
-        let body = rows.iter().enumerate().map(|(r, row)| {
+        let row_count = rows.len();
+        let body: Vec<AnyElement> = rows.iter().enumerate().map(|(r, row)| {
             let handler = self.action_handler(row.get("do"), cx);
             let selected = row.get("sel").and_then(Value::as_bool).unwrap_or(false);
             let cells = arr(row, "cells");
             let clickable = handler.is_some();
             let row_text = cells.iter().map(|cell| str_of(cell, "t")).collect::<Vec<_>>().join("\t");
+            // A single 1px rule between rows only; hover is a clickable row's
+            // affordance, so a plain row does not light up under the pointer.
             let line = h_flex()
                 .id(SharedString::from(format!("s{index}-r{r}")))
+                .h(px(30.))
                 .gap(px(10.))
                 .px(px(6.))
-                .py(px(5.))
-                .rounded(px(5.))
+                .when(r + 1 < row_count, |this| this.border_b_1().border_color(c(p::BORDER)))
                 .when(selected, |this| this.bg(c(p::ROW_SELECTED)))
-                .hover(|style| style.bg(c(p::HOVER)))
+                .when(clickable, |this| this.hover(|style| style.bg(c(p::HOVER))))
                 // Right-click copies the row, wherever it is.
                 .on_mouse_down(gpui::MouseButton::Right, move |_, _, cx| {
                     cx.write_to_clipboard(gpui::ClipboardItem::new_string(row_text.clone()));
@@ -782,11 +788,13 @@ impl MiniOrkPage {
                 .children(cells.iter().enumerate().map(|(i, cell)| {
                     let colour = p::named(&str_of(cell, "c"));
                     let text = str_of(cell, "t");
+                    let mono_cell = bool_of(cell, "mono");
+                    let size = if mono_cell { 11.5 } else { 12.5 };
                     if clickable {
                         // A row that opens something keeps plain text, so a
                         // click is a click; right-click copies it.
-                        let mut el = sized(div(), i).text_size(px(12.5)).text_color(colour).truncate().child(text);
-                        if bool_of(cell, "mono") {
+                        let mut el = sized(div(), i).text_size(px(size)).text_color(colour).truncate().child(text);
+                        if mono_cell {
                             el = el.font(mono.clone());
                         }
                         if bool_of(cell, "b") {
@@ -799,7 +807,7 @@ impl MiniOrkPage {
                             .child(self.texts.text(
                                 format!("s{index}-r{r}-c{i}"),
                                 &text,
-                                Look::new(12.5, colour).mono(bool_of(cell, "mono")).bold(bool_of(cell, "b")).nowrap(),
+                                Look::new(size, colour).mono(mono_cell).bold(bool_of(cell, "b")).nowrap(),
                                 cx,
                             ))
                             .into_any_element()
@@ -809,45 +817,60 @@ impl MiniOrkPage {
                 Some(handler) => line.cursor_pointer().on_click(handler).into_any_element(),
                 None => line.into_any_element(),
             }
-        });
-        v_flex().mx(px(-6.)).child(header).children(body).into_any_element()
+        }).collect();
+        self.orca_section(index, s, Some(row_count), cx, v_flex().child(header).children(body).into_any_element())
     }
 
     fn render_kv(&self, index: usize, s: &Value, cx: &mut Context<Self>) -> AnyElement {
-        h_flex()
-            .flex_wrap()
-            .gap(px(8.))
-            .children(arr(s, "items").iter().enumerate().map(|(i, item)| {
+        let items = arr(s, "items");
+        let body = v_flex()
+            .gap(px(6.))
+            .children(items.iter().enumerate().map(|(i, item)| {
                 let sub = str_of(item, "sub");
-                v_flex()
-                    .w(px(150.))
-                    .flex_grow(1.)
-                    .max_w(px(260.))
-                    .gap(px(1.))
-                    .px(px(10.))
-                    .py(px(8.))
-                    .rounded(px(6.))
-                    .bg(c(p::BG))
-                    .border_1()
-                    .border_color(c(p::BORDER))
-                    .child(self.texts.text(format!("s{index}-k{i}"), str_of(item, "k"), Look::new(11., c(p::SUB)), cx))
-                    .child(self.texts.text(
-                        format!("s{index}-v{i}"),
-                        str_of(item, "v"),
-                        Look::new(14., p::named(&str_of(item, "c"))).bold(true),
-                        cx,
-                    ))
-                    .when(!sub.is_empty(), |this| {
-                        this.child(self.texts.text(format!("s{index}-ks{i}"), &sub, Look::new(11., c(p::SUB)).mono(true), cx))
-                    })
+                let mono = bool_of(item, "mono");
+                h_flex()
+                    .items_start()
+                    .gap(px(12.))
+                    .child(
+                        // Right-aligned keys, so the values form a column.
+                        h_flex()
+                            .w(px(120.))
+                            .flex_none()
+                            .justify_end()
+                            .text_size(px(11.5))
+                            .text_color(c(p::SUB))
+                            .child(str_of(item, "k")),
+                    )
+                    .child(
+                        v_flex()
+                            .flex_1()
+                            .min_w_0()
+                            .gap(px(1.))
+                            .child(self.texts.text(
+                                format!("s{index}-v{i}"),
+                                str_of(item, "v"),
+                                Look::new(12.5, p::named(&str_of(item, "c"))).mono(mono),
+                                cx,
+                            ))
+                            .when(!sub.is_empty(), |this| {
+                                this.child(self.texts.text(
+                                    format!("s{index}-ks{i}"),
+                                    &sub,
+                                    Look::new(11., c(p::SUB)).mono(true),
+                                    cx,
+                                ))
+                            }),
+                    )
             }))
-            .into_any_element()
+            .into_any_element();
+        self.orca_section(index, s, None, cx, body)
     }
 
     fn render_list(&self, index: usize, s: &Value, cx: &mut Context<Self>) -> AnyElement {
-        v_flex()
-            .gap(px(2.))
-            .children(arr(s, "items").iter().enumerate().map(|(i, item)| {
+        let items = arr(s, "items");
+        let body = v_flex()
+            .gap(px(8.))
+            .children(items.iter().enumerate().map(|(i, item)| {
                 let sub = str_of(item, "sub");
                 let acts = arr(item, "acts");
                 let title = self.texts.text(
@@ -859,10 +882,6 @@ impl MiniOrkPage {
                 h_flex()
                     .items_start()
                     .gap(px(9.))
-                    .px(px(2.))
-                    .py(px(5.))
-                    .border_b_1()
-                    .border_color(c(p::ROW_RULE))
                     .child(
                         div()
                             .flex_none()
@@ -879,15 +898,68 @@ impl MiniOrkPage {
                             .gap(px(1.))
                             .child(title)
                             .when(!sub.is_empty(), |this| {
-                                this.child(self.texts.text(format!("s{index}-is{i}"), &sub, Look::new(11.5, c(p::SUB)), cx))
+                                this.child(self.texts.text(format!("s{index}-is{i}"), &sub, Look::new(11., c(p::SUB)), cx))
                             }),
                     )
                     .when(!acts.is_empty(), |this| {
+                        // The row's actions are all ghost buttons: the Orca
+                        // list keeps its weight in the title, not the chrome.
                         this.child(h_flex().flex_none().gap(px(5.)).children(acts.iter().enumerate().map(
-                            |(a, b)| self.button(SharedString::from(format!("s{index}-i{i}-a{a}")), b, 22., 11.5, cx),
+                            |(a, b)| {
+                                let handler = self.action_handler(b.get("do"), cx);
+                                p::button(
+                                    SharedString::from(format!("s{index}-i{i}-a{a}")),
+                                    str_of(b, "label"),
+                                    "ghost",
+                                    22.,
+                                    11.5,
+                                    handler,
+                                )
+                            },
                         )))
                     })
             }))
+            .into_any_element();
+        self.orca_section(index, s, Some(items.len()), cx, body)
+    }
+
+    /// The Orca card the restyled `table` / `kv` / `list` sections share:
+    /// `components::card()`, headed by a `components::section_head` carrying
+    /// the section's own actions, the note under the head, then the body.
+    fn orca_section(
+        &self,
+        index: usize,
+        s: &Value,
+        count: Option<usize>,
+        cx: &mut Context<Self>,
+        body: AnyElement,
+    ) -> AnyElement {
+        let title = str_of(s, "title");
+        let note = str_of(s, "note");
+        let actions = arr(s, "actions");
+        components::card()
+            .flex_1()
+            .min_w_0()
+            .gap(px(10.))
+            .child(
+                h_flex()
+                    .gap(px(10.))
+                    .flex_wrap()
+                    .items_center()
+                    .child(div().flex_1().min_w(px(120.)).child(components::section_head(&title, count)))
+                    .children(actions.iter().enumerate().map(|(i, b)| {
+                        self.button(SharedString::from(format!("s{index}-a{i}")), b, 24., 12., cx)
+                    })),
+            )
+            .when(!note.is_empty(), |this| {
+                this.child(self.texts.text(
+                    format!("s{index}-note"),
+                    &note,
+                    Look::new(11., c(p::SUB)),
+                    cx,
+                ))
+            })
+            .child(body)
             .into_any_element()
     }
 
