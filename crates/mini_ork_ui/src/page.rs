@@ -120,9 +120,11 @@ pub struct MiniOrkPage {
     /// keyed `"<section>-<id>"` (e.g. `"story-planner"`,
     /// `"s0-files-0:crates/mini_ork_ui/src/sections.rs"`).
     pub(crate) expanded: HashSet<String>,
-    /// Whether `seed_step_expansion` has run for the current run (initial
-    /// `open: true` steps have been added to `expanded`). Reset on run change.
-    seed_done: bool,
+    /// Story step ids whose `open` default has been applied for the current
+    /// run. Each step is seeded once, the first time a load carries it: a
+    /// step that appears later (a live run) still gets its default, and a step
+    /// the user collapsed stays collapsed on refresh. Reset on run change.
+    seeded: HashSet<String>,
     _load: Task<()>,
 }
 
@@ -158,7 +160,7 @@ impl MiniOrkPage {
             _store_sub: None,
             generation: 0,
             expanded: HashSet::new(),
-            seed_done: false,
+            seeded: HashSet::new(),
             _load: Task::ready(()),
         };
         this.reload(cx);
@@ -193,7 +195,7 @@ impl MiniOrkPage {
         // defaults (per the kickoff).
         if prev_run != self.args.get("run").cloned() {
             self.expanded.clear();
-            self.seed_done = false;
+            self.seeded.clear();
         }
         self.begin_switch();
         self.reload(cx);
@@ -311,9 +313,8 @@ impl MiniOrkPage {
                             if !shapes.is_empty() {
                                 this.shapes.insert(tab, shapes);
                             }
-                            // Seed initial expansion state from `step.open`
-                            // on the first load of this run. Subsequent
-                            // refreshes leave it alone; a run change resets it.
+                            // Seed expansion from `step.open` for steps not
+                            // seen before in this run; a run change resets it.
                             this.seed_step_expansion(value);
                         }
                         this.data = Some(result.map_err(|e| e.to_string()));
@@ -1097,27 +1098,25 @@ impl MiniOrkPage {
         cx.notify();
     }
 
-    /// Seed `expanded` with the initial `open: true` steps of the run's
-    /// story, once. `set_args` clears the seed marker when the run changes,
-    /// so each new run gets a fresh default-state.
+    /// Apply each story step's `open` default the first time a load carries
+    /// that step. A load without a story section (another tab) seeds nothing,
+    /// so opening Story later still gets its defaults. `set_args` clears
+    /// `seeded` when the run changes.
     pub(crate) fn seed_step_expansion(&mut self, value: &Value) {
-        if self.seed_done {
-            return;
-        }
         for section in arr(value, "sections") {
             if str_of(&section, "type") != "story" {
                 continue;
             }
             for step in arr(&section, "steps") {
+                let id = str_of(&step, "id");
+                if id.is_empty() || !self.seeded.insert(id.to_string()) {
+                    continue;
+                }
                 if bool_of(&step, "open") {
-                    let id = str_of(&step, "id");
-                    if !id.is_empty() {
-                        self.expanded.insert(format!("story-{id}"));
-                    }
+                    self.expanded.insert(format!("story-{id}"));
                 }
             }
         }
-        self.seed_done = true;
     }
 
     /// Open the run graph full screen, optionally on one node's stream.
