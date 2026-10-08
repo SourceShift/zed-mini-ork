@@ -4,6 +4,7 @@
 
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
+    sync::Arc,
     time::Duration,
 };
 
@@ -17,6 +18,7 @@ use gpui::{
     deferred, point,
 };
 use ui::{ScrollAxes, Scrollbars, WithScrollbar as _, prelude::*};
+use ui_input::{ERASED_EDITOR_FACTORY, ErasedEditor, ErasedEditorEvent};
 use workspace::{
     Workspace,
     item::{Item, TabContentParams},
@@ -115,6 +117,15 @@ impl Default for Replay {
     }
 }
 
+/// A `composer` section's editor and its buffer subscription. One per
+/// composer section of the loaded page (see [`MiniOrkPage::composers`]); a
+/// keystroke re-renders the page so the Send button's enabled state tracks
+/// the buffer.
+pub(crate) struct Composer {
+    pub(crate) editor: Arc<dyn ErasedEditor>,
+    _sub: Subscription,
+}
+
 pub struct MiniOrkPage {
     pub(crate) key: String,
     pub(crate) args: BTreeMap<String, String>,
@@ -123,7 +134,7 @@ pub struct MiniOrkPage {
     /// True when the page is hosted in the right-hand Run panel: it hides the
     /// page header and its outer padding, so the panel's own chrome shows.
     dock: bool,
-    workspace: WeakEntity<Workspace>,
+    pub(crate) workspace: WeakEntity<Workspace>,
     focus_handle: FocusHandle,
     data: Option<Result<Value, String>>,
     loading: bool,
@@ -163,6 +174,9 @@ pub struct MiniOrkPage {
     /// keyed `"<section>-<id>"` (e.g. `"story-planner"`,
     /// `"s0-files-0:crates/mini_ork_ui/src/sections.rs"`).
     pub(crate) expanded: HashSet<String>,
+    /// Editors for the loaded page's `composer` sections, keyed by the
+    /// section's index in `sections` (the index `render_section` is given).
+    pub(crate) composers: HashMap<usize, Composer>,
     /// Story step ids whose `open` default has been applied for the current
     /// run. Each step is seeded once, the first time a load carries it: a
     /// step that appears later (a live run) still gets its default, and a step
@@ -207,6 +221,7 @@ impl MiniOrkPage {
             _store_sub: None,
             generation: 0,
             expanded: HashSet::new(),
+            composers: HashMap::new(),
             seeded: HashSet::new(),
             _load: Task::ready(()),
         };
@@ -637,6 +652,8 @@ impl MiniOrkPage {
             "triage" => return self.render_triage(index, s, cx),
             "callout" => return self.render_callout(index, s, cx),
             "hero" => return self.render_hero(index, s, cx),
+            "columns" => return self.render_columns(index, s, cx),
+            "composer" => return self.render_composer(index, s, window, cx),
             // `story` draws its own rows full-width without a card header.
             "story" => return self.render_story(index, s, cx),
             _ => {}
@@ -1226,6 +1243,43 @@ impl MiniOrkPage {
         }
     }
 
+    /// Create one editor per `composer` section of `page`: reuse the editor of
+    /// a section that is unchanged and drop those whose section is gone. Run
+    /// from `render` before the sections are drawn.
+    fn ensure_composers(&mut self, page: &Value, window: &mut Window, cx: &mut Context<Self>) {
+        let wanted: Vec<(usize, Value)> = arr(page, "sections")
+            .into_iter()
+            .enumerate()
+            .filter(|(_, section)| str_of(section, "type") == "composer")
+            .collect();
+        let indices: Vec<usize> = wanted.iter().map(|(index, _)| *index).collect();
+        self.composers.retain(|index, _| indices.contains(index));
+        for (index, section) in wanted {
+            if self.composers.contains_key(&index) {
+                continue;
+            }
+            let factory = ERASED_EDITOR_FACTORY.get().expect("editor factory is set at start-up");
+            let editor = factory(window, cx);
+            let placeholder = str_of(&section, "placeholder");
+            if !placeholder.is_empty() {
+                editor.set_placeholder_text(&placeholder, window, cx);
+            }
+            let _sub = editor.subscribe(
+                Box::new({
+                    let this = cx.entity().downgrade();
+                    move |event, _window, cx| {
+                        if event == ErasedEditorEvent::BufferEdited {
+                            this.update(cx, |_, cx| cx.notify()).ok();
+                        }
+                    }
+                }),
+                window,
+                cx,
+            );
+            self.composers.insert(index, Composer { editor, _sub });
+        }
+    }
+
     /// Open the run graph full screen, optionally on one node's stream.
     /// A DAG node opens in its own tab (the full-screen graph is the
     /// "⤢ Full screen" button).
@@ -1457,6 +1511,9 @@ impl Render for MiniOrkPage {
                 .child(self.texts.text("page-error", &error, Look::new(12.5, c(p::RED)).mono(true), cx))
                 .into_any_element(),
             Some(Ok(page)) => {
+                // The composer sections' editors are keyed by section index;
+                // sync them before the sections are drawn.
+                self.ensure_composers(&page, window, cx);
                 // On the Graph tab the flow map leads and the older column DAG
                 // below it is retired: the map carries its own full-screen
                 // button, so nothing is lost by dropping the section.

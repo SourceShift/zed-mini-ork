@@ -4,7 +4,9 @@
 //! its own rows full-width without a card header) and `agents` (rows separated
 //! by `ROW_RULE`).
 
-use gpui::{AnyElement, App, ClickEvent, Context, SharedString, Window, px};
+use std::sync::Arc;
+
+use gpui::{AnyElement, App, ClickEvent, Context, KeyDownEvent, SharedString, Window, px};
 use serde_json::Value;
 use ui::prelude::*;
 
@@ -13,6 +15,7 @@ use crate::{
     page::{arr, code_box, str_of, MiniOrkPage},
     palette::{self as p, c, named},
     select::Look,
+    store::{self, Origin},
 };
 
 impl MiniOrkPage {
@@ -290,6 +293,228 @@ impl MiniOrkPage {
         }
 
         card().p(px(14.)).flex_1().min_w_0().child(content).into_any_element()
+    }
+
+    /// `columns` `{cols:[…]}`: the kanban board. A horizontal band of fixed
+    /// 260px columns that scrolls sideways; each column is a header (colour
+    /// dot, title, count) over a vertically scrolling stack of cards. A whole
+    /// card runs its `do` through the page's action path.
+    pub(crate) fn render_columns(&self, index: usize, s: &Value, cx: &mut Context<Self>) -> AnyElement {
+        let cols = arr(s, "cols");
+        let mono_font = p::mono_font(cx);
+        let band = h_flex()
+            .gap(px(12.))
+            .items_start()
+            .children(cols.iter().enumerate().map(|(ci, column)| {
+                let title = str_of(column, "title");
+                let colour = named(&str_of(column, "c"));
+                let count = column.get("count").and_then(Value::as_u64).unwrap_or(0);
+                let cards = arr(column, "cards");
+
+                let header = h_flex()
+                    .flex_none()
+                    .gap(px(6.))
+                    .items_center()
+                    .child(div().flex_none().size(px(8.)).rounded_full().bg(colour))
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w(px(0.))
+                            .truncate()
+                            .text_size(px(13.))
+                            .font_weight(gpui::FontWeight::SEMIBOLD)
+                            .text_color(c(p::TEXT))
+                            .child(SharedString::from(title)),
+                    )
+                    .child(
+                        div()
+                            .flex_none()
+                            .text_size(px(11.))
+                            .text_color(c(p::SUB))
+                            .child(SharedString::from(count.to_string())),
+                    );
+
+                let body = v_flex()
+                    .id(SharedString::from(format!("s{index}-col{ci}-body")))
+                    .max_h(px(520.))
+                    .gap(px(8.))
+                    .overflow_y_scroll()
+                    .when(cards.is_empty(), |this| {
+                        this.child(
+                            div()
+                                .text_size(px(11.5))
+                                .text_color(c(p::DIM))
+                                .child(SharedString::from("Nothing here.")),
+                        )
+                    })
+                    .children(cards.iter().enumerate().map(|(ki, card_data)| {
+                        let card_title = str_of(card_data, "title");
+                        let sub = str_of(card_data, "sub");
+                        let state = str_of(card_data, "state");
+                        let mark = str_of(card_data, "mark");
+                        let meta = arr(card_data, "meta");
+                        let (state_glyph, mark_colour) = p::state_mark(&state);
+                        let glyph = if mark.is_empty() { state_glyph.to_string() } else { mark.clone() };
+
+                        let top = h_flex()
+                            .gap(px(8.))
+                            .items_start()
+                            .child(
+                                div()
+                                    .flex_none()
+                                    .text_size(px(13.))
+                                    .text_color(c(mark_colour))
+                                    .child(SharedString::from(glyph)),
+                            )
+                            .child(
+                                div()
+                                    .flex_1()
+                                    .min_w(px(0.))
+                                    .line_clamp(2)
+                                    .text_size(px(12.5))
+                                    .text_color(c(p::TEXT))
+                                    .child(SharedString::from(card_title)),
+                            );
+
+                        let mut card_el = card()
+                            .id(SharedString::from(format!("s{index}-col{ci}-card{ki}")))
+                            .flex_none()
+                            .gap(px(6.))
+                            .child(top)
+                            .when(!sub.is_empty(), |this| {
+                                this.child(
+                                    div()
+                                        .truncate()
+                                        .text_size(px(11.))
+                                        .text_color(c(p::SUB))
+                                        .child(SharedString::from(sub)),
+                                )
+                            })
+                            .when(!meta.is_empty(), |this| {
+                                this.child(h_flex().flex_wrap().gap(px(8.)).items_center().children(
+                                    meta.iter().map(|item| {
+                                        let mut el = div()
+                                            .flex_none()
+                                            .text_size(px(10.5))
+                                            .text_color(named(&str_of(item, "c")))
+                                            .child(SharedString::from(str_of(item, "t")));
+                                        if item.get("mono").and_then(Value::as_bool).unwrap_or(false) {
+                                            el = el.font(mono_font.clone());
+                                        }
+                                        el
+                                    }),
+                                ))
+                            });
+                        if let Some(handler) = self.action_handler(card_data.get("do"), cx) {
+                            card_el = card_el
+                                .cursor_pointer()
+                                .hover(|this| this.border_color(c(p::BORDER2)))
+                                .on_click(handler);
+                        }
+                        card_el
+                    }));
+
+                v_flex().flex_none().w(px(260.)).gap(px(8.)).child(header).child(body)
+            }));
+
+        card()
+            .flex_1()
+            .min_w_0()
+            .child(
+                div()
+                    .id(SharedString::from(format!("s{index}-columns-scroll")))
+                    .w_full()
+                    .overflow_x_scroll()
+                    .child(band),
+            )
+            .into_any_element()
+    }
+
+    /// `composer` `{placeholder, cli}`: a single-line editor and a `Send`
+    /// button. Enter (or `Send`) appends the text to `cli` as its last
+    /// argument, runs it through the page's action path, and clears the
+    /// editor. The button is dimmed while the editor is empty. The editor is
+    /// created per section by `MiniOrkPage::ensure_composers`.
+    pub(crate) fn render_composer(&self, index: usize, s: &Value, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
+        let Some(composer) = self.composers.get(&index) else {
+            return div().into_any_element();
+        };
+        let title = str_of(s, "title");
+        let cli: Vec<String> =
+            arr(s, "cli").iter().map(|a| a.as_str().unwrap_or_default().to_string()).collect();
+        let editor = composer.editor.clone();
+        let empty = editor.text(cx).trim().is_empty();
+
+        // A single send path shared by Enter and the button.
+        let send: Arc<dyn Fn(&mut Window, &mut App)> = {
+            let editor = editor.clone();
+            let workspace = self.workspace.clone();
+            let page = cx.entity().downgrade();
+            Arc::new(move |window: &mut Window, cx: &mut App| {
+                let text = editor.text(cx).trim().to_string();
+                if text.is_empty() {
+                    return;
+                }
+                editor.clear(window, cx);
+                let mut argv = cli.clone();
+                argv.push(text);
+                let action = serde_json::json!({ "cli": argv });
+                let Some(workspace) = workspace.upgrade() else {
+                    return;
+                };
+                let page = page.clone();
+                window.defer(cx, move |window, cx| {
+                    store::perform(&action, &workspace, Origin::Page(page), window, cx);
+                });
+            })
+        };
+
+        let mut content = v_flex().gap(px(8.));
+        if !title.is_empty() {
+            content = content.child(self.texts.text(
+                format!("s{index}-composer-title"),
+                &title,
+                Look::new(13., c(p::TEXT)).bold(true),
+                cx,
+            ));
+        }
+
+        let enter = send.clone();
+        let field = h_flex()
+            .flex_1()
+            .min_w(px(0.))
+            .px(px(10.))
+            .py(px(6.))
+            .rounded(px(6.))
+            .border_1()
+            .border_color(c(p::BORDER2))
+            .bg(c(p::BG))
+            .capture_key_down(cx.listener(move |_this, event: &KeyDownEvent, window, cx| {
+                if event.keystroke.key == "enter" {
+                    enter(window, cx);
+                    cx.stop_propagation();
+                }
+            }))
+            .child(div().flex_1().min_w(px(0.)).text_size(px(12.5)).child(editor.render(window, cx)));
+
+        let on_send: Option<Box<dyn Fn(&ClickEvent, &mut Window, &mut App) + 'static>> = if empty {
+            None
+        } else {
+            let send = send.clone();
+            Some(Box::new(move |_event: &ClickEvent, window: &mut Window, cx: &mut App| send(window, cx)))
+        };
+        let send_button = p::button(
+            SharedString::from(format!("s{index}-composer-send")),
+            "Send",
+            "primary",
+            26.,
+            12.,
+            on_send,
+        );
+
+        content = content.child(h_flex().gap(px(8.)).items_center().child(field).child(send_button));
+
+        card().flex_1().min_w_0().child(content).into_any_element()
     }
 
     /// `story` `{steps:[…]}`: a vertical list of step rows. The section draws

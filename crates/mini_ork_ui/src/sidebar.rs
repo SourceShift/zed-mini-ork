@@ -38,8 +38,10 @@ const BOARD_MIN: f32 = 200.;
 const THUMBS_RETRY: Duration = Duration::from_secs(10);
 
 /// The activity bar, top to bottom: key, glyph, tooltip.
-const ACTIVITIES: [(&str, &str, &str); 10] = [
+const ACTIVITIES: [(&str, &str, &str); 12] = [
     ("threads", "▤", "Threads (task board)"),
+    ("inbox", "✉", "Inbox — what needs you"),
+    ("kanban", "▦", "Board"),
     ("orch", "✦", "Orchestrator & intake"),
     ("verify", "✓", "Verification & safety"),
     ("recipes", "▥", "Recipes, specs & epics"),
@@ -483,7 +485,7 @@ impl MiniOrkSidebar {
                 .hover(|style| style.bg(c(p::HOVER)).text_color(c(p::TEXT)))
                 .tooltip(Tooltip::text(*tooltip))
                 .child(*glyph)
-                .when(key == "threads" && needs_you > 0, |this| {
+                .when((key == "threads" || key == "inbox") && needs_you > 0, |this| {
                     this.child(
                         div()
                             .absolute()
