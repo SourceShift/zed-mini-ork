@@ -104,6 +104,8 @@ pub struct MiniOrkPage {
     fade: u64,
     /// The DAG card scrolls sideways, as in the design.
     dag_scroll: ScrollHandle,
+    /// The run flow map scrolls sideways over its own track.
+    flow_scroll: ScrollHandle,
     /// Selectable text for everything this page shows.
     pub(crate) texts: Texts,
     /// The run graph, full screen, when open.
@@ -151,6 +153,7 @@ impl MiniOrkPage {
             shapes: HashMap::new(),
             fade: 0,
             dag_scroll: ScrollHandle::new(),
+            flow_scroll: ScrollHandle::new(),
             texts: Texts::default(),
             graph: None,
             pending_graph: None,
@@ -1350,18 +1353,33 @@ impl Render for MiniOrkPage {
                 .child(p::text("This page could not be read", 15., p::TEXT))
                 .child(self.texts.text("page-error", &error, Look::new(12.5, c(p::RED)).mono(true), cx))
                 .into_any_element(),
-            Some(Ok(page)) => v_flex()
-                .gap(px(14.))
-                .child(self.render_header(&page, cx))
-                .child(v_flex().children(self.render_tabs(&page, cx)).children(bar.map(|b| div().mt(px(-2.)).child(b))))
-                .child(
-                    div().child(self.render_sections(&page, window, cx)).with_animation(
-                        ("page-fade", self.fade as usize),
-                        Animation::new(Duration::from_millis(280)),
-                        |el, delta| el.opacity(delta),
-                    ),
-                )
-                .into_any_element(),
+            Some(Ok(page)) => {
+                // On the Graph tab the flow map leads, and the older column DAG
+                // below it is kept under a "Detailed DAG" heading until part B
+                // retires it.
+                let flow_map = (str_of(&page, "tab") == "graph")
+                    .then(|| page.get("flow"))
+                    .flatten()
+                    .filter(|flow| flow.is_object())
+                    .map(|flow| crate::flow::render_flow_part_a(self, flow, &self.flow_scroll, window, cx));
+                let detailed_dag_title = flow_map.is_some().then(|| {
+                    self.texts.text("dag-title", "Detailed DAG", Look::new(13., c(p::TEXT)).bold(true), cx)
+                });
+                v_flex()
+                    .gap(px(14.))
+                    .child(self.render_header(&page, cx))
+                    .child(v_flex().children(self.render_tabs(&page, cx)).children(bar.map(|b| div().mt(px(-2.)).child(b))))
+                    .children(flow_map)
+                    .children(detailed_dag_title)
+                    .child(
+                        div().child(self.render_sections(&page, window, cx)).with_animation(
+                            ("page-fade", self.fade as usize),
+                            Animation::new(Duration::from_millis(280)),
+                            |el, delta| el.opacity(delta),
+                        ),
+                    )
+                    .into_any_element()
+            }
         };
         self.texts.end();
         div()

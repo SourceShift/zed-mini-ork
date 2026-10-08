@@ -17,6 +17,7 @@
 
 mod board;
 mod components;
+mod flow;
 mod graph;
 mod loading;
 mod node_tab;
