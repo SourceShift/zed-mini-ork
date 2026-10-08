@@ -18,3 +18,7 @@ pub use components::*;
 pub use prelude::*;
 pub use styles::*;
 pub use traits::animation_ext::*;
+// mini-ork: hooks — mini_ork_ui's throttled spinner needs the `Transformable`
+// trait (rotate) outside this crate; `with_keyed_rotate_animation` cannot be
+// given a `max_fps`.
+pub use traits::transformable::*;

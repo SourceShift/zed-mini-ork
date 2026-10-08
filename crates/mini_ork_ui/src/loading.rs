@@ -10,6 +10,7 @@ use gpui::{
 };
 use ui::{CommonAnimationExt as _, prelude::*};
 
+use crate::components::ThrottledSpinExt as _;
 use crate::palette::{self as p, c};
 
 /// A section shape for a skeleton card: its type and whether it spans both columns.
@@ -60,7 +61,12 @@ pub fn sweep_bar(id: impl Into<ElementId>) -> AnyElement {
                 .child(glow(blue, clear))
                 .with_animation(
                     id,
-                    Animation::new(Duration::from_millis(1000)).repeat().with_easing(ease_in_out),
+                    Animation::new(Duration::from_millis(1000))
+                        .repeat()
+                        .with_easing(ease_in_out)
+                        // The sweep only shows while a tab loads, but it still
+                        // repaints the whole window per frame — cap it.
+                        .with_max_fps(24.),
                     |el, delta| el.left(relative(-0.35 + 1.35 * delta)),
                 ),
         )
@@ -78,7 +84,7 @@ pub fn loading_line(source: String, cx: &App) -> AnyElement {
             Icon::new(IconName::LoadCircle)
                 .size(IconSize::Custom(rems(11. / 16.)))
                 .color(Color::Custom(c(p::BLUE)))
-                .with_rotate_animation(1),
+                .with_throttled_rotate("loading-icon", 1),
         )
         .child(div().flex_none().child("Loading"))
         .child(p::text(source, 11.5, p::DIM).font(p::mono_font(cx)).truncate().min_w_0())
@@ -97,7 +103,11 @@ fn bar(id: SharedString, width: gpui::DefiniteLength, height: f32, radius: f32, 
         .bg(low)
         .with_animation(
             id,
-            Animation::new(Duration::from_millis(1300)).repeat(),
+            Animation::new(Duration::from_millis(1300))
+                .repeat()
+                // A skeleton shows dozens of shimmering bars; a slow pulse
+                // reads the same at a fraction of the repaint cost.
+                .with_max_fps(6.),
             move |el, delta| {
                 let phase = (delta + delay).fract();
                 let t = 0.5 - 0.5 * (phase * std::f32::consts::TAU).cos();
