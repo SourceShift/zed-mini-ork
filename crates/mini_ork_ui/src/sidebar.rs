@@ -20,6 +20,7 @@ use workspace::{MultiWorkspace, MultiWorkspaceEvent, Sidebar, SidebarEvent, Side
 
 use crate::{
     board::{self, Board, Run},
+    components::ThrottledSpinExt as _,
     page::{self, MiniOrkPage},
     palette::{self as p, c},
     projects,
@@ -990,7 +991,7 @@ pub(crate) fn status_mark(state: &str, key: &str) -> AnyElement {
         return Icon::new(IconName::LoadCircle)
             .size(IconSize::XSmall)
             .color(Color::Custom(c(p::YELLOW)))
-            .with_keyed_rotate_animation(SharedString::from(format!("run-spin-{key}")), 2)
+            .with_throttled_rotate(SharedString::from(format!("run-spin-{key}")), 2)
             .into_any_element();
     }
     let colour = match state {
@@ -1019,7 +1020,7 @@ pub(crate) fn node_mark(state: &str, key: &str) -> AnyElement {
         "running" => Icon::new(IconName::LoadCircle)
             .size(IconSize::XSmall)
             .color(Color::Custom(c(p::YELLOW)))
-            .with_keyed_rotate_animation(SharedString::from(format!("node-spin-{key}")), 2)
+            .with_throttled_rotate(SharedString::from(format!("node-spin-{key}")), 2)
             .into_any_element(),
         "done" => ring(p::GREEN)
             .child(gpui::svg().path(IconName::Check.path()).size(px(8.)).text_color(c(p::GREEN)))
