@@ -1,14 +1,16 @@
-//! `triage` / `callout` / `hero` section renderers (MINI_ORK_IDE_SPEC=2).
-//! They draw their own chrome so the generic card+title header in
-//! `MiniOrkPage::render_section` doesn't wrap them.
+//! Section renderers (MINI_ORK_IDE_SPEC=2). Each renderer is called from
+//! `MiniOrkPage::render_section`, which already supplies the section chrome
+//! (a card with title and notes) for everything except `story` (which draws
+//! its own rows full-width without a card header) and `agents` (rows separated
+//! by `ROW_RULE`).
 
-use gpui::{AnyElement, Context, SharedString, px};
+use gpui::{AnyElement, App, ClickEvent, Context, SharedString, Window, px};
 use serde_json::Value;
 use ui::prelude::*;
 
 use crate::{
-    components::card,
-    page::{arr, str_of, MiniOrkPage},
+    components::{card, diff_lines, diff_sections, section_for, status_mark},
+    page::{arr, code_box, str_of, MiniOrkPage},
     palette::{self as p, c, named},
     select::Look,
 };
@@ -288,5 +290,773 @@ impl MiniOrkPage {
         }
 
         card().p(px(14.)).flex_1().min_w_0().child(content).into_any_element()
+    }
+
+    /// `story` `{steps:[…]}`: a vertical list of step rows. The section draws
+    /// its own rows full-width without a card header (`render_section` early-
+    /// returns here). Each row is a 32px header; the title text is clickable
+    /// for the step's `do`, the rest of the header toggles expansion.
+    pub(crate) fn render_story(&self, index: usize, s: &Value, cx: &mut Context<Self>) -> AnyElement {
+        let steps = arr(s, "steps");
+        let mut content = v_flex().gap(px(6.));
+        for (i, step) in steps.iter().enumerate() {
+            let step_id = str_of(step, "id");
+            let step_key = format!("story-{step_id}");
+            let is_open = self.expanded.contains(&step_key);
+            let state = str_of(step, "state");
+            let title = str_of(step, "title");
+            let lane = str_of(step, "lane");
+            let dur = str_of(step, "dur");
+            let cost = str_of(step, "cost");
+            let headline_obj = step.get("headline").cloned().unwrap_or(Value::Null);
+            let headline_t = str_of(&headline_obj, "t");
+            let headline_c = str_of(&headline_obj, "c");
+
+            // ── header row ────────────────────────────────────────────────
+            let do_handler = self.action_handler(step.get("do"), cx);
+            let step_id_for_toggle = step_id.clone();
+
+            // The title sub-region: runs the step's `do` and stops the click
+            // from also toggling the row.
+            let title_el = {
+                let mut el = div()
+                    .id(SharedString::from(format!("{step_key}-title")))
+                    .min_w(px(0.))
+                    .flex_1()
+                    .truncate()
+                    .text_size(px(13.))
+                    .font_weight(gpui::FontWeight::SEMIBOLD)
+                    .text_color(c(p::TEXT))
+                    .child(SharedString::from(title.clone()));
+                if let Some(handler) = do_handler {
+                    let wrapped: Box<dyn Fn(&ClickEvent, &mut Window, &mut App) + 'static> =
+                        Box::new(move |event, window, app| {
+                            app.stop_propagation();
+                            handler(event, window, app);
+                        });
+                    el = el.cursor_pointer().on_click(wrapped);
+                }
+                el
+            };
+
+            let mut header = h_flex()
+                .id(SharedString::from(format!("{step_key}-header")))
+                .h(px(32.))
+                .gap(px(8.))
+                .items_center()
+                .px(px(10.))
+                .rounded(px(p::RADIUS_CARD))
+                .border_1()
+                .border_color(c(p::BORDER))
+                .bg(c(p::CARD))
+                .when(!is_open, |this| this.cursor_pointer())
+                .child(status_mark(
+                    &state,
+                    13.,
+                    &format!("{step_key}-mark"),
+                ))
+                .child(p::lane_mark(&lane, 13.))
+                .child(title_el)
+                .when(!headline_t.is_empty(), |this| {
+                    this.child(
+                        div()
+                            .min_w(px(0.))
+                            .max_w(px(220.))
+                            .truncate()
+                            .text_size(px(12.))
+                            .text_color(p::named(&headline_c))
+                            .child(SharedString::from(headline_t)),
+                    )
+                })
+                .child(div().flex_1())
+                .when(!dur.is_empty() || !cost.is_empty(), |this| {
+                    let mono = p::mono_font(cx);
+                    let mut meta = h_flex().flex_none().gap(px(8.)).items_baseline();
+                    if !dur.is_empty() {
+                        meta = meta.child(
+                            div()
+                                .text_size(px(11.))
+                                .text_color(c(p::SUB))
+                                .font(mono.clone())
+                                .child(SharedString::from(dur.clone())),
+                        );
+                    }
+                    if !cost.is_empty() {
+                        meta = meta.child(
+                            div()
+                                .text_size(px(11.))
+                                .text_color(c(p::SUB))
+                                .font(mono.clone())
+                                .child(SharedString::from(cost.clone())),
+                        );
+                    }
+                    this.child(meta)
+                })
+                .child(
+                    div()
+                        .flex_none()
+                        .text_size(px(13.))
+                        .text_color(c(p::MUTED))
+                        .child(SharedString::from(if is_open { "⌄" } else { "›" })),
+                );
+            // The header always toggles expansion on click; the title
+            // sub-region above stops propagation when it has its own `do`.
+            header = header.on_click(cx.listener(move |this, _, _, cx| {
+                this.toggle_step_expanded("story", &step_id_for_toggle, cx);
+            }));
+
+            let mut row_el = v_flex().gap(px(6.)).child(header);
+
+            if is_open {
+                let body = self.render_step_body(index, i, step, cx);
+                row_el = row_el.child(
+                    div()
+                        .pl(px(20.))
+                        .pt(px(2.))
+                        .child(body),
+                );
+            }
+
+            content = content.child(row_el);
+        }
+        content.into_any_element()
+    }
+
+    /// The expanded body of a story step: each block by `kind`.
+    fn render_step_body(&self, section_index: usize, step_index: usize, step: &Value, cx: &mut Context<Self>) -> AnyElement {
+        let key_prefix = format!("s{section_index}-step{step_index}");
+        let blocks = arr(step, "body");
+        let mut col = v_flex().gap(px(8.));
+        for (bi, block) in blocks.iter().enumerate() {
+            let key = format!("{key_prefix}-b{bi}");
+            col = col.child(self.render_block_body(&key, block, cx));
+        }
+        col.into_any_element()
+    }
+
+    /// A single block by `kind`. The `md`, `lines`, `files`, `findings`,
+    /// `checks` block kinds are also section types (files / findings / checks
+    /// render with a card around this body in their section renderers); the
+    /// same code path here is reused inside `story` step bodies.
+    fn render_block_body(&self, key: &str, block: &Value, cx: &mut Context<Self>) -> AnyElement {
+        let kind = str_of(block, "kind");
+        match kind.as_str() {
+            "md" => self.texts.markdown(
+                format!("{key}-md"),
+                str_of(block, "text"),
+                Look::new(12.5, c(p::BODY)),
+                cx,
+            ),
+            "lines" => {
+                let lines = arr(block, "lines");
+                code_box(&self.texts, key, lines, cx).into_any_element()
+            }
+            "files" => self.render_files_body_inner(key, block, cx),
+            "findings" => self.render_findings_body_inner(key, block, cx),
+            "checks" => self.render_checks_body_inner(key, block, cx),
+            _ => self.texts.text(
+                format!("{key}-unk"),
+                &format!("This block ({kind}) needs a newer mini-ork IDE."),
+                Look::new(12., c(p::MUTED)),
+                cx,
+            ),
+        }
+    }
+
+    /// `files` body: one diff card per file. Used both by the `files` section
+    /// (render_section routes through here) and by a `files` block in a story
+    /// step. Reuses `diff_sections` and `section_for` from `components.rs`.
+    fn render_files_body_inner(&self, key: &str, block: &Value, cx: &mut Context<Self>) -> AnyElement {
+        let files = arr(block, "files");
+        let diff = str_of(block, "diff");
+        let commits = arr(block, "commits");
+        let sections = diff_sections(&diff);
+        let mono = p::mono_font(cx);
+
+        let mut col = v_flex().gap(px(4.));
+        if files.is_empty() && commits.is_empty() && diff.is_empty() {
+            let note = str_of(block, "diff_note");
+            let text = if note.is_empty() { "No files changed.".to_string() } else { note };
+            return col.child(self.texts.text(format!("{key}-empty"), &text, Look::new(12., c(p::MUTED)), cx)).into_any_element();
+        }
+        for (i, f) in files.iter().enumerate() {
+            let path = str_of(f, "path");
+            let abs = str_of(f, "abs");
+            let status = str_of(f, "status");
+            let added = f.get("added").and_then(Value::as_u64).unwrap_or(0);
+            let removed = f.get("removed").and_then(Value::as_u64).unwrap_or(0);
+            let open_key = format!("{key}:{path}");
+            let is_open = self.expanded.contains(&open_key);
+
+            let (verb, verb_colour) = match status.as_str() {
+                "A" => ("A", p::c(p::GIT_ADD)),
+                "D" => ("D", p::c(p::GIT_DEL)),
+                _ => ("M", p::c(p::GIT_MOD)),
+            };
+
+            let row = h_flex()
+                .id(SharedString::from(format!("{key}-file-{i}")))
+                .items_center()
+                .gap(px(8.))
+                .px(px(8.))
+                .py(px(5.))
+                .rounded(px(5.))
+                .border_1()
+                .border_color(c(p::BORDER2))
+                .bg(c(p::CHROME))
+                .cursor_pointer()
+                .on_click(cx.listener({
+                    let open_key = open_key.clone();
+                    move |this, _, _, cx| {
+                        let open_key = open_key.clone();
+                        if !this.expanded.remove(&open_key) {
+                            this.expanded.insert(open_key);
+                        }
+                        cx.notify();
+                    }
+                }))
+                .child(
+                    div()
+                        .flex_none()
+                        .w(px(14.))
+                        .text_size(px(11.5))
+                        .font_weight(gpui::FontWeight::SEMIBOLD)
+                        .text_color(verb_colour)
+                        .child(SharedString::from(verb)),
+                )
+                .child(
+                    div()
+                        .flex_1()
+                        .min_w(px(0.))
+                        .truncate()
+                        .text_size(px(12.))
+                        .font(mono.clone())
+                        .text_color(c(p::TEXT))
+                        .child(SharedString::from(path.clone())),
+                )
+                .when(added > 0, |this| {
+                    this.child(
+                        div()
+                            .flex_none()
+                            .text_size(px(11.5))
+                            .font(mono.clone())
+                            .text_color(c(p::GIT_ADD))
+                            .child(SharedString::from(format!("+{added}"))),
+                    )
+                })
+                .when(removed > 0, |this| {
+                    this.child(
+                        div()
+                            .flex_none()
+                            .text_size(px(11.5))
+                            .font(mono.clone())
+                            .text_color(c(p::GIT_DEL))
+                            .child(SharedString::from(format!("−{removed}"))),
+                    )
+                })
+                .when(!abs.is_empty(), |this| {
+                    let opener_value = serde_json::json!({ "path": abs.clone() });
+                    let h = self.action_handler(Some(&opener_value), cx);
+                    this.child(p::button(
+                        SharedString::from(format!("{key}-open-{i}")),
+                        "Open",
+                        "ghost",
+                        22.,
+                        11.5,
+                        match h {
+                            Some(handler) => {
+                                let wrapped: Box<dyn Fn(&ClickEvent, &mut Window, &mut gpui::App) + 'static> =
+                                    Box::new(move |event, window, app| {
+                                        app.stop_propagation();
+                                        handler(event, window, app);
+                                    });
+                                Some(wrapped)
+                            }
+                            None => None,
+                        },
+                    ))
+                })
+                .child(
+                    div()
+                        .flex_none()
+                        .text_size(px(13.))
+                        .text_color(c(p::MUTED))
+                        .child(SharedString::from(if is_open { "⌄" } else { "›" })),
+                );
+
+            col = col.child(row);
+
+            if is_open {
+                let slice = section_for(&sections, &path);
+                let body_text = slice.unwrap_or_default();
+                let lines = if body_text.is_empty() {
+                    diff_lines(&diff, 400)
+                } else {
+                    diff_lines(&body_text, 400)
+                };
+                let lines_key = format!("{key}-diff-{i}");
+                col = col.child(
+                    div()
+                        .pl(px(16.))
+                        .child(code_box(&self.texts, &lines_key, lines, cx)),
+                );
+            }
+        }
+
+        if !commits.is_empty() {
+            col = col.child(
+                v_flex()
+                    .gap(px(2.))
+                    .mt(px(4.))
+                    .children(commits.iter().enumerate().map(|(ci, cm)| {
+                        let sha = str_of(cm, "sha");
+                        let short: String = sha.chars().take(8).collect();
+                        h_flex()
+                            .id(SharedString::from(format!("{key}-commit-{ci}")))
+                            .gap(px(8.))
+                            .px(px(6.))
+                            .py(px(3.))
+                            .child(
+                                div()
+                                    .flex_none()
+                                    .text_size(px(12.))
+                                    .font(mono.clone())
+                                    .text_color(c(p::YELLOW))
+                                    .child(SharedString::from(short)),
+                            )
+                            .child(
+                                div()
+                                    .flex_1()
+                                    .min_w(px(0.))
+                                    .truncate()
+                                    .text_size(px(12.5))
+                                    .text_color(c(p::TEXT))
+                                    .child(SharedString::from(str_of(cm, "subject"))),
+                            )
+                    })),
+            );
+        }
+
+        col.into_any_element()
+    }
+
+    /// `findings` body: verdict pill, then rows per item with severity badge,
+    /// file:line, issue, snippet; then `•` reasons. Used by the section and by
+    /// a `findings` block in a story step.
+    fn render_findings_body_inner(&self, key: &str, block: &Value, cx: &mut Context<Self>) -> AnyElement {
+        let verdict_obj = block.get("verdict").cloned().unwrap_or(Value::Null);
+        let items = arr(block, "items");
+        let reasons = arr(block, "reasons");
+        let mono = p::mono_font(cx);
+
+        let mut col = v_flex().gap(px(8.));
+
+        if !str_of(&verdict_obj, "t").is_empty() {
+            let t = str_of(&verdict_obj, "t");
+            let color = p::named(&str_of(&verdict_obj, "c"));
+            let tint = color.opacity(0.15);
+            col = col.child(
+                h_flex()
+                    .flex_none()
+                    .h(px(20.))
+                    .px(px(9.))
+                    .items_center()
+                    .rounded_full()
+                    .bg(tint)
+                    .text_size(px(p::PILL))
+                    .text_color(color)
+                    .child(SharedString::from(t.to_uppercase())),
+            );
+        }
+
+        for (i, item) in items.iter().enumerate() {
+            let severity = str_of(item, "severity");
+            let sev_lower = severity.to_ascii_lowercase();
+            let sev_color = match sev_lower.as_str() {
+                "high" | "critical" | "blocker" => p::c(p::RED),
+                "medium" => p::c(p::YELLOW),
+                _ => p::c(p::SUB),
+            };
+            let line = item.get("line").and_then(|v| match v {
+                Value::Number(n) => n.as_u64().map(|n| n.to_string()),
+                Value::String(s) => Some(s.clone()),
+                _ => None,
+            });
+            let file = str_of(item, "file");
+            let file_line = if !file.is_empty() {
+                match &line {
+                    Some(l) => format!("{file}:{l}"),
+                    None => file.clone(),
+                }
+            } else {
+                String::new()
+            };
+            let abs = str_of(item, "abs");
+            let issue = str_of(item, "issue");
+            let snippet = str_of(item, "snippet");
+
+            let file_line_el = if !file_line.is_empty() {
+                let open_handler: Option<Box<dyn Fn(&ClickEvent, &mut Window, &mut gpui::App) + 'static>> =
+                    if !abs.is_empty() {
+                        self.action_handler(Some(&serde_json::json!({ "path": abs.clone() })), cx)
+                    } else {
+                        None
+                    };
+                let mut el = div()
+                    .id(SharedString::from(format!("{key}-f{i}-loc")))
+                    .text_size(px(11.5))
+                    .font(mono.clone())
+                    .text_color(c(p::BLUE))
+                    .truncate()
+                    .child(SharedString::from(file_line.clone()));
+                if let Some(handler) = open_handler {
+                    el = el.cursor_pointer().on_click(handler);
+                }
+                el
+            } else {
+                div().id(SharedString::from(format!("{key}-f{i}-loc")))
+            };
+
+            col = col.child(
+                v_flex()
+                    .id(SharedString::from(format!("{key}-find-{i}")))
+                    .gap(px(2.))
+                    .px(px(8.))
+                    .py(px(5.))
+                    .rounded(px(5.))
+                    .border_1()
+                    .border_color(c(p::BORDER2))
+                    .bg(c(p::CHROME))
+                    .child(
+                        h_flex()
+                            .gap(px(8.))
+                            .items_center()
+                            .when(!severity.is_empty(), |this| {
+                                this.child(
+                                    h_flex()
+                                        .flex_none()
+                                        .h(px(16.))
+                                        .px(px(6.))
+                                        .items_center()
+                                        .rounded(px(4.))
+                                        .bg(sev_color.opacity(0.18))
+                                        .text_size(px(p::BADGE))
+                                        .text_color(sev_color)
+                                        .child(SharedString::from(severity.to_uppercase())),
+                                )
+                            })
+                            .child(file_line_el)
+                            .child(div().flex_1()),
+                    )
+                    .child(self.texts.text(
+                        format!("{key}-find-{i}-issue"),
+                        &issue,
+                        Look::new(12.5, c(p::TEXT)),
+                        cx,
+                    ))
+                    .when(!snippet.is_empty(), |this| {
+                        this.child(
+                            div()
+                                .text_size(px(11.))
+                                .font(mono.clone())
+                                .text_color(c(p::DIM))
+                                .truncate()
+                                .child(SharedString::from(snippet)),
+                        )
+                    }),
+            );
+        }
+
+        if !reasons.is_empty() {
+            col = col.child(
+                v_flex()
+                    .gap(px(2.))
+                    .children(reasons.iter().enumerate().map(|(ri, r)| {
+                        let text = r.as_str().unwrap_or_default().to_string();
+                        h_flex()
+                            .id(SharedString::from(format!("{key}-reason-{ri}")))
+                            .gap(px(6.))
+                            .items_start()
+                            .child(
+                                div()
+                                    .flex_none()
+                                    .text_size(px(12.5))
+                                    .text_color(c(p::MUTED))
+                                    .child(SharedString::from("•")),
+                            )
+                            .child(
+                                div()
+                                    .flex_1()
+                                    .min_w(px(0.))
+                                    .text_size(px(12.))
+                                    .text_color(c(p::BODY))
+                                    .child(SharedString::from(text)),
+                            )
+                    })),
+            );
+        }
+
+        if items.is_empty() && reasons.is_empty() && str_of(&verdict_obj, "t").is_empty() {
+            col = col.child(self.texts.text(format!("{key}-empty"), "No findings.", Look::new(12., c(p::MUTED)), cx));
+        }
+
+        col.into_any_element()
+    }
+
+    /// `checks` body: a summary row (`✓ n passing  ✗ n failing  ● n pending`),
+    /// then rows with a status glyph, name and detail. A failing row expands to
+    /// its `log` lines (mono). Reused by the `checks` section and a `checks`
+    /// block inside a story step.
+    fn render_checks_body_inner(&self, key: &str, block: &Value, cx: &mut Context<Self>) -> AnyElement {
+        let summary_obj = block.get("summary").cloned().unwrap_or(Value::Null);
+        let rows = arr(block, "rows");
+
+        let mut col = v_flex().gap(px(6.));
+
+        let passing = summary_obj.get("passing").and_then(Value::as_u64).unwrap_or(0);
+        let failing = summary_obj.get("failing").and_then(Value::as_u64).unwrap_or(0);
+        let pending = summary_obj.get("pending").and_then(Value::as_u64).unwrap_or(0);
+        col = col.child(
+            h_flex()
+                .gap(px(14.))
+                .items_center()
+                .px(px(8.))
+                .child(
+                    div()
+                        .flex_none()
+                        .text_size(px(12.))
+                        .text_color(c(p::GREEN))
+                        .child(SharedString::from(format!("✓ {passing} passing"))),
+                )
+                .child(
+                    div()
+                        .flex_none()
+                        .text_size(px(12.))
+                        .text_color(c(p::RED))
+                        .child(SharedString::from(format!("✗ {failing} failing"))),
+                )
+                .child(
+                    div()
+                        .flex_none()
+                        .text_size(px(12.))
+                        .text_color(c(p::YELLOW))
+                        .child(SharedString::from(format!("● {pending} pending"))),
+                ),
+        );
+
+        for (i, row) in rows.iter().enumerate() {
+            let state = str_of(row, "state");
+            let state_lc = state.to_ascii_lowercase();
+            let name = str_of(row, "name");
+            let detail = str_of(row, "detail");
+            let log = arr(row, "log");
+            let is_failing = matches!(state_lc.as_str(), "fail" | "failed" | "error");
+            let open_key = format!("{key}-check-{i}");
+            let is_open = self.expanded.contains(&open_key);
+
+            let (glyph, glyph_color) = match state_lc.as_str() {
+                "pass" | "done" | "ok" => ("✓", p::c(p::GREEN)),
+                "fail" | "failed" | "error" => ("✗", p::c(p::RED)),
+                "pending" | "running" => ("●", p::c(p::YELLOW)),
+                _ => ("○", p::c(p::SUB)),
+            };
+
+            let r = h_flex()
+                .id(SharedString::from(format!("{key}-check-{i}")))
+                .items_center()
+                .gap(px(8.))
+                .px(px(8.))
+                .py(px(5.))
+                .rounded(px(5.))
+                .border_1()
+                .border_color(c(p::BORDER2))
+                .bg(c(p::CHROME))
+                .when(is_failing && !log.is_empty(), |this| {
+                    this.cursor_pointer().on_click(cx.listener({
+                        let open_key = open_key.clone();
+                        move |this, _, _, cx| {
+                            let open_key = open_key.clone();
+                            if !this.expanded.remove(&open_key) {
+                                this.expanded.insert(open_key);
+                            }
+                            cx.notify();
+                        }
+                    }))
+                })
+                .child(
+                    div()
+                        .flex_none()
+                        .text_size(px(12.5))
+                        .text_color(glyph_color)
+                        .child(SharedString::from(glyph)),
+                )
+                .child(
+                    div()
+                        .flex_1()
+                        .min_w(px(0.))
+                        .truncate()
+                        .text_size(px(12.))
+                        .text_color(c(p::TEXT))
+                        .child(SharedString::from(name.clone())),
+                )
+                .child(
+                    div()
+                        .flex_none()
+                        .text_size(px(11.5))
+                        .text_color(c(p::SUB))
+                        .truncate()
+                        .child(SharedString::from(detail)),
+                );
+            col = col.child(r);
+
+            if is_open && is_failing {
+                let lines_key = format!("{key}-check-{i}-log");
+                col = col.child(
+                    div()
+                        .pl(px(20.))
+                        .child(code_box(&self.texts, &lines_key, log, cx)),
+                );
+            }
+        }
+
+        if rows.is_empty() {
+            col = col.child(self.texts.text(format!("{key}-empty"), "No checks recorded.", Look::new(12., c(p::MUTED)), cx));
+        }
+
+        col.into_any_element()
+    }
+
+    /// `files` section: the section's normal card with title and a body made
+    /// from the same code path as a `files` block.
+    pub(crate) fn render_files(&self, index: usize, s: &Value, cx: &mut Context<Self>) -> AnyElement {
+        self.render_files_body_inner(&format!("s{index}-files"), s, cx)
+    }
+
+    /// `findings` section: the section's normal card with title and a body made
+    /// from the same code path as a `findings` block.
+    pub(crate) fn render_findings(&self, index: usize, s: &Value, cx: &mut Context<Self>) -> AnyElement {
+        self.render_findings_body_inner(&format!("s{index}-findings"), s, cx)
+    }
+
+    /// `checks` section: the section's normal card with title and a body made
+    /// from the same code path as a `checks` block.
+    pub(crate) fn render_checks(&self, index: usize, s: &Value, cx: &mut Context<Self>) -> AnyElement {
+        self.render_checks_body_inner(&format!("s{index}-checks"), s, cx)
+    }
+
+    /// `agents` section: rows of agent data without the normal card header.
+    /// Orca's three-line rows: status + lane + id + model + cost + dur on line
+    /// 1; step on line 2; last on line 3. Each row is clickable via its `do`.
+    pub(crate) fn render_agents(&self, index: usize, s: &Value, cx: &mut Context<Self>) -> AnyElement {
+        let rows = arr(s, "rows");
+        let mono = p::mono_font(cx);
+        let mut col = v_flex().gap(px(0.));
+        for (i, row) in rows.iter().enumerate() {
+            let id = str_of(row, "id");
+            let state = str_of(row, "state");
+            let lane = str_of(row, "lane");
+            let model = str_of(row, "model");
+            let step = str_of(row, "step");
+            let last = str_of(row, "last");
+            let cost = str_of(row, "cost");
+            let dur = str_of(row, "dur");
+            let do_handler = self.action_handler(row.get("do"), cx);
+
+            let card_el = h_flex()
+                .id(SharedString::from(format!("s{index}-agent-{i}")))
+                .items_center()
+                .gap(px(8.))
+                .px(px(8.))
+                .py(px(7.))
+                .border_b_1()
+                .border_color(c(p::ROW_RULE))
+                .child(status_mark(&state, 13., &format!("s{index}-agent-{i}-mark")))
+                .child(p::lane_mark(&lane, 13.))
+                .child(
+                    div()
+                        .flex_1()
+                        .min_w(px(0.))
+                        .truncate()
+                        .text_size(px(12.5))
+                        .font_weight(gpui::FontWeight::SEMIBOLD)
+                        .text_color(c(p::TEXT))
+                        .child(SharedString::from(id.clone())),
+                )
+                .when(!model.is_empty(), |this| {
+                    this.child(
+                        div()
+                            .flex_none()
+                            .text_size(px(10.5))
+                            .font(mono.clone())
+                            .text_color(c(p::SUB))
+                            .child(SharedString::from(model.clone())),
+                    )
+                })
+                .child(div().flex_1())
+                .when(!dur.is_empty() || !cost.is_empty(), |this| {
+                    let mut meta = h_flex().flex_none().gap(px(8.)).items_baseline();
+                    if !dur.is_empty() {
+                        meta = meta.child(
+                            div()
+                                .text_size(px(11.))
+                                .text_color(c(p::SUB))
+                                .font(mono.clone())
+                                .child(SharedString::from(dur.clone())),
+                        );
+                    }
+                    if !cost.is_empty() {
+                        meta = meta.child(
+                            div()
+                                .text_size(px(11.))
+                                .text_color(c(p::SUB))
+                                .font(mono.clone())
+                                .child(SharedString::from(cost.clone())),
+                        );
+                    }
+                    this.child(meta)
+                });
+
+            let mut stack = v_flex()
+                .id(SharedString::from(format!("s{index}-agent-{i}-stack")))
+                .gap(px(2.))
+                .py(px(7.))
+                .px(px(8.))
+                .when(i < rows.len().saturating_sub(1), |this| {
+                    this.border_b_1().border_color(c(p::ROW_RULE))
+                })
+                .child(card_el)
+                .when(!step.is_empty(), |this| {
+                    this.child(
+                        div()
+                            .pl(px(22.))
+                            .text_size(px(11.5))
+                            .text_color(c(p::BODY))
+                            .truncate()
+                            .child(SharedString::from(step.clone())),
+                    )
+                })
+                .when(!last.is_empty(), |this| {
+                    this.child(
+                        div()
+                            .pl(px(22.))
+                            .text_size(px(11.))
+                            .font(mono.clone())
+                            .text_color(c(p::DIM))
+                            .truncate()
+                            .child(SharedString::from(last.clone())),
+                    )
+                });
+
+            // Apply the click handler on the whole stack (line 1 + step +
+            // last), so the entire row acts as the trigger.
+            if let Some(handler) = do_handler {
+                stack = stack.cursor_pointer().on_click(handler);
+            }
+            col = col.child(stack);
+        }
+        if rows.is_empty() {
+            col = col.child(self.texts.text(format!("s{index}-agents-empty"), "No agents recorded.", Look::new(12., c(p::MUTED)), cx));
+        }
+        col.into_any_element()
     }
 }

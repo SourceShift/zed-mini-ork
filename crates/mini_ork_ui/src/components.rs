@@ -2,9 +2,43 @@
 //! app context; the callers compose them with their own data.
 
 use gpui::{AnyElement, ClickEvent, Div, SharedString, Window, div, px, App};
+use serde_json::Value;
 use ui::prelude::*;
 
 use crate::palette::{self as p, c, state_mark};
+
+/// Frames per second for repeating mini-ork UI animations. GPUI re-renders an
+/// animation on EVERY frame by default (`Animation::max_fps: None`) and any
+/// running animation repaints the whole window each time — with the board's
+/// full (not yet virtualized) tree that pinned a core (ram-sentinel killed the
+/// app at 137% CPU). A single-digit frame rate keeps spinners legible at a
+/// fraction of the cost.
+pub(crate) const ANIM_FPS: f32 = 8.;
+
+/// A repeating, phase-synced rotate animation throttled to [`ANIM_FPS`].
+///
+/// Drop-in for `ui`'s `with_rotate_animation` / `with_keyed_rotate_animation`,
+/// which cannot be throttled (they hard-code `repeat_synced()` without a
+/// `max_fps`).
+pub(crate) trait ThrottledSpinExt:
+    gpui::AnimationExt + ui::traits::transformable::Transformable + Sized
+{
+    fn with_throttled_rotate(
+        self,
+        id: impl Into<gpui::ElementId>,
+        period_s: u64,
+    ) -> gpui::AnimationElement<Self> {
+        self.with_animation(
+            id,
+            gpui::Animation::new(std::time::Duration::from_secs(period_s))
+                .repeat_synced()
+                .with_max_fps(ANIM_FPS),
+            |el, delta| el.transform(gpui::Transformation::rotate(gpui::percentage(delta))),
+        )
+    }
+}
+
+impl<T: gpui::AnimationExt + ui::traits::transformable::Transformable + Sized> ThrottledSpinExt for T {}
 
 /// An Orca card: 1px border, 10px corners, CARD background, 12px inset.
 pub fn card() -> Div {
@@ -117,4 +151,83 @@ pub fn split_button(
         .child(caret)
         .children(extras)
         .into_any_element()
+}
+
+// ── diff helpers (moved from graph.rs) ────────────────────────────────────
+//
+// A run's diff is one big text blob; both the run-page `files`/`story` blocks
+// (`sections.rs`) and the run-graph's file rows (`graph.rs`) need to read it.
+// Splitting it per file and colouring the lines used to live on the graph,
+// duplicated would be tempting; moved here once so both callers import.
+
+/// A unified diff split per file: a section starts at `diff --git`, or at a
+/// `--- ` header that no `diff --git` line introduced (plain patches). A bare
+/// `--- ` only counts as a header when the next line is `+++ `: inside a hunk,
+/// a removed line that began with `-- ` (an SQL or Lua comment) also reads
+/// `--- …` and must not split the file.
+pub(crate) fn diff_sections(diff: &str) -> Vec<String> {
+    let mut sections = Vec::new();
+    let mut current = String::new();
+    let mut in_git_header = false;
+    let mut lines = diff.lines().peekable();
+    while let Some(line) = lines.next() {
+        let git = line.starts_with("diff --git ");
+        let plain_header = line.starts_with("--- ")
+            && !in_git_header
+            && lines.peek().is_some_and(|next| next.starts_with("+++ "));
+        let starts = git || plain_header;
+        if starts && !current.is_empty() {
+            sections.push(std::mem::take(&mut current));
+        }
+        in_git_header = git
+            || (in_git_header
+                && ["index ", "new file", "deleted file", "similarity", "rename ", "old mode", "new mode"]
+                    .iter()
+                    .any(|p| line.starts_with(p)));
+        current.push_str(line);
+        current.push('\n');
+    }
+    if !current.is_empty() {
+        sections.push(current);
+    }
+    sections
+}
+
+/// The section of `path` (a repo-relative path or a bare file name).
+pub(crate) fn section_for(sections: &[String], path: &str) -> Option<String> {
+    if path.is_empty() {
+        return None;
+    }
+    let needle = format!("/{}", path.trim_start_matches('/'));
+    sections
+        .iter()
+        .find(|section| {
+            section.lines().take(4).any(|line| {
+                (line.starts_with("diff --git ") || line.starts_with("--- ") || line.starts_with("+++ "))
+                    && (line.contains(&needle) || line.ends_with(&format!(" {path}")))
+            })
+        })
+        .cloned()
+}
+
+/// A diff as coloured lines for `code_box` (`+`/add green, `-`/del red,
+/// `@@` cyan, `+++`/`---` text, the rest muted).
+pub(crate) fn diff_lines(diff: &str, limit: usize) -> Vec<Value> {
+    diff.lines()
+        .take(limit)
+        .map(|l| {
+            let colour = if l.starts_with("+++") || l.starts_with("---") {
+                "text"
+            } else if l.starts_with('+') {
+                "green"
+            } else if l.starts_with('-') {
+                "red"
+            } else if l.starts_with("@@") {
+                "blue"
+            } else {
+                "muted"
+            };
+            serde_json::json!({ "t": l, "c": colour })
+        })
+        .collect()
 }

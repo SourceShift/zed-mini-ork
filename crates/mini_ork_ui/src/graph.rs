@@ -24,6 +24,7 @@ use workspace::Workspace;
 
 use crate::{
     board,
+    components::{ThrottledSpinExt as _, diff_lines, diff_sections, section_for},
     page::{MiniOrkPage, arr, str_of},
     select::{Look, Texts},
     palette::{self as p, c},
@@ -1239,7 +1240,7 @@ impl MiniOrkGraph {
             rows.push(row.into_any_element());
             if let (true, Some(text)) = (open, slice) {
                 let total = text.lines().count();
-                let mut lines = Self::diff_lines(&text, 400);
+                let mut lines = diff_lines(&text, 400);
                 if total > 400 {
                     lines.push(serde_json::json!({ "t": format!("… +{} more lines", total - 400), "c": "muted" }));
                 }
@@ -1247,27 +1248,6 @@ impl MiniOrkGraph {
             }
         }
         rows
-    }
-
-    /// A diff as coloured lines for `code_box`.
-    fn diff_lines(diff: &str, limit: usize) -> Vec<Value> {
-        diff.lines()
-            .take(limit)
-            .map(|l| {
-                let colour = if l.starts_with("+++") || l.starts_with("---") {
-                    "text"
-                } else if l.starts_with('+') {
-                    "green"
-                } else if l.starts_with('-') {
-                    "red"
-                } else if l.starts_with("@@") {
-                    "blue"
-                } else {
-                    "muted"
-                };
-                serde_json::json!({ "t": l, "c": colour })
-            })
-            .collect()
     }
 
     /// What the node did, at a glance: one headline, its facts, its result
@@ -1433,7 +1413,7 @@ impl MiniOrkGraph {
                     let preview = str_of(a, "preview");
                     let kind = str_of(a, "kind");
                     let lines: Vec<Value> = if kind == "diff" {
-                        Self::diff_lines(&preview, 400)
+                        diff_lines(&preview, 400)
                     } else {
                         preview.lines().map(|l| serde_json::json!({ "t": l, "c": "body" })).collect()
                     };
@@ -1502,7 +1482,7 @@ impl MiniOrkGraph {
                             .child(p::text(format!("+{}", str_of(e, "added")), 11.5, p::GREEN).font(mono.clone()))
                             .child(p::text(format!("−{}", str_of(e, "removed")), 11.5, p::RED).font(mono.clone())),
                     )
-                    .child(crate::page::code_box(&self.texts, &format!("edit-diff-{i}"), Self::diff_lines(&str_of(e, "diff"), 400), cx));
+                    .child(crate::page::code_box(&self.texts, &format!("edit-diff-{i}"), diff_lines(&str_of(e, "diff"), 400), cx));
             }
             col
         });
@@ -1547,24 +1527,7 @@ impl MiniOrkGraph {
             .children(changed_rows);
 
         let diff_section = (!diff.is_empty()).then(|| {
-            let lines: Vec<Value> = diff
-                .lines()
-                .take(800)
-                .map(|l| {
-                    let colour = if l.starts_with("+++") || l.starts_with("---") {
-                        "text"
-                    } else if l.starts_with('+') {
-                        "green"
-                    } else if l.starts_with('-') {
-                        "red"
-                    } else if l.starts_with("@@") {
-                        "blue"
-                    } else {
-                        "muted"
-                    };
-                    serde_json::json!({ "t": l, "c": colour })
-                })
-                .collect();
+            let lines = diff_lines(&diff, 800);
             let patch = diff.clone();
             let name = format!("mini-ork-{}-{}.patch", self.model.run_id, node.id);
             let workspace = self.workspace.clone();
@@ -1921,7 +1884,7 @@ impl MiniOrkGraph {
                             Icon::new(IconName::LoadCircle)
                                 .size(IconSize::Small)
                                 .color(Color::Custom(c(p::ORANGE)))
-                                .with_rotate_animation(1),
+                                .with_throttled_rotate("graph-loading", 1),
                         )
                         .child("Working…")
                         .child(p::text(format!("· streaming from {source}"), 12.5, p::DIM)),
@@ -2257,54 +2220,4 @@ fn human_size(bytes: u64) -> String {
         b if b < 1024 * 1024 => format!("{:.1} KB", b as f64 / 1024.),
         b => format!("{:.1} MB", b as f64 / (1024. * 1024.)),
     }
-}
-
-/// A unified diff split per file: a section starts at `diff --git`, or at a
-/// `--- ` header that no `diff --git` line introduced (plain patches). A bare
-/// `--- ` only counts as a header when the next line is `+++ `: inside a hunk,
-/// a removed line that began with `-- ` (an SQL or Lua comment) also reads
-/// `--- …` and must not split the file.
-fn diff_sections(diff: &str) -> Vec<String> {
-    let mut sections = Vec::new();
-    let mut current = String::new();
-    let mut in_git_header = false;
-    let mut lines = diff.lines().peekable();
-    while let Some(line) = lines.next() {
-        let git = line.starts_with("diff --git ");
-        let plain_header = line.starts_with("--- ")
-            && !in_git_header
-            && lines.peek().is_some_and(|next| next.starts_with("+++ "));
-        let starts = git || plain_header;
-        if starts && !current.is_empty() {
-            sections.push(std::mem::take(&mut current));
-        }
-        in_git_header = git
-            || (in_git_header
-                && ["index ", "new file", "deleted file", "similarity", "rename ", "old mode", "new mode"]
-                    .iter()
-                    .any(|p| line.starts_with(p)));
-        current.push_str(line);
-        current.push('\n');
-    }
-    if !current.is_empty() {
-        sections.push(current);
-    }
-    sections
-}
-
-/// The section of `path` (a repo-relative path or a bare file name).
-fn section_for(sections: &[String], path: &str) -> Option<String> {
-    if path.is_empty() {
-        return None;
-    }
-    let needle = format!("/{}", path.trim_start_matches('/'));
-    sections
-        .iter()
-        .find(|section| {
-            section.lines().take(4).any(|line| {
-                (line.starts_with("diff --git ") || line.starts_with("--- ") || line.starts_with("+++ "))
-                    && (line.contains(&needle) || line.ends_with(&format!(" {path}")))
-            })
-        })
-        .cloned()
 }
