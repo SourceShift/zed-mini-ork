@@ -526,7 +526,7 @@ impl MiniOrkPage {
         };
         for (i, s) in sections.iter().enumerate() {
             // With the flow map drawn the older column DAG below it is
-            // redundant; the full-screen DAG still opens from its button.
+            // redundant; the flow card carries its own full-screen button.
             if hide_dag && str_of(s, "type") == "dag" {
                 continue;
             }
@@ -1370,9 +1370,9 @@ impl Render for MiniOrkPage {
                 .child(self.texts.text("page-error", &error, Look::new(12.5, c(p::RED)).mono(true), cx))
                 .into_any_element(),
             Some(Ok(page)) => {
-                // On the Graph tab the flow map leads. The map *is* the graph
-                // view, so the older column DAG below it is dropped when the
-                // map is drawn; the full-screen DAG still opens from its button.
+                // On the Graph tab the flow map leads and the older column DAG
+                // below it is retired: the map carries its own full-screen
+                // button, so nothing is lost by dropping the section.
                 let flow_map = (str_of(&page, "tab") == "graph")
                     .then(|| page.get("flow"))
                     .flatten()

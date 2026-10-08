@@ -1,14 +1,14 @@
-//! The run flow map: one horizontal track from **Ticket in** through **Design**
-//! and the **Build** fan-out to the **Integrate** pill, then a return track
-//! down the right side and back left along a lower line that carries the
-//! **Review** hub, its spokes and the optional **Merge** bar.
+//! The run flow map: one horizontal track from **Ticket in** through
+//! **Design** and the **Build** fan-out to the **Integrate** pill, then a
+//! return track back left along a lower line carrying the **Review** hub, its
+//! spokes, the **Fix** loop, the **Merge** bar (or a **Rolled back** marker)
+//! and, below the bar, the **Human** who owns the final merge.
 //!
 //! The data is the run page's top-level `flow` object (`mini_ork/ide_pages/
 //! run_flow.py::build_flow`): the ticket, the design steps with their revise
 //! loops, the build packages with an Implementer / critic lane each, the
-//! integrate node with its check tiers, the review hub with its spokes and Fix
-//! loop, the merge checklist and the rollback record, the legend and the stage
-//! chips.
+//! integrate node with its check tiers, and the review / merge / rollback /
+//! legend / stages that close the run out.
 //!
 //! Connectors are one `gpui::canvas` painting stroked paths — the same idiom
 //! `graph.rs` and `thumb.rs` use — while every marker, label, package box and
@@ -62,44 +62,39 @@ const TIERS_W: f32 = 176.;
 const ARC_RISE: f32 = 14.;
 const ARC_CTRL_RISE: f32 = 58.;
 const ARC_APEX_DY: f32 = 47.;
-/// The radius of the return track's two rounded corners.
+
+/// The return track rounds its two corners at this radius and drops this far
+/// below the widest row before it turns back left.
 const CORNER_R: f32 = 40.;
-/// How far below the body of the map the lower line runs.
 const RETURN_DROP: f32 = 220.;
-/// The review hub: a 120px circle, 3px TEXT stroke.
+/// The review hub's radius, and how far a spoke runs from the hub's edge.
 const HUB_R: f32 = 60.;
-/// A spoke's line length from the hub's edge, and the ring at its end.
 const SPOKE_LEN: f32 = 150.;
+/// A spoke ends in this ring, with its label this far beyond it.
 const SPOKE_RING: f32 = 18.;
-/// The gap between a spoke's ring and the label beside it, and the width that
-/// label and its sub sit in.
 const SPOKE_LABEL_GAP: f32 = 13.;
 const SPOKE_LABEL_W: f32 = 96.;
-/// How far a spoke's ring and label reach from the hub's centre. The fan's
-/// outer bound: the merge strip sits past it on the left, the return track
-/// drops past it on the right.
-const SPOKE_REACH: f32 = HUB_R + SPOKE_LEN + SPOKE_RING / 2. + SPOKE_LABEL_GAP + SPOKE_LABEL_W;
-/// The angles the spokes fan over, in degrees: the upper arc runs up-left to
-/// up-right, the lower arc down-right to down-left. Neither reaches 180° (dead
-/// left), where the incoming lower line and the merge strip run.
-const UPPER_ARC: (f32, f32) = (200., 340.);
-const LOWER_ARC: (f32, f32) = (20., 160.);
-/// The merge bar, the human circle below it, its checkbox, and the left
-/// overhang that holds them on the lower line.
+/// The Fix loop leans back under the hub on the lower-left, at an angle held
+/// clear of the spoke fan's lower spread (20°–130°) so the two never collide.
+const FIX_ANGLE: f32 = 150.;
+/// How far a spoke's ring and label reach from the hub. The merge column and
+/// the return track both have to clear the fan's outer edge, so they read it.
+const FAN_REACH: f32 = HUB_R + SPOKE_LEN + SPOKE_RING / 2. + SPOKE_LABEL_GAP + SPOKE_LABEL_W;
+/// The merge bar, and the clear width its checklist labels need to its right.
 const MERGE_W: f32 = 6.;
 const MERGE_H: f32 = 56.;
-/// How far the merge strip's content runs right of its bar (its check labels
-/// are the widest part), and the gap it keeps from the fan's left reach.
-const MERGE_RIGHT: f32 = 100.;
-const MERGE_FAN_GAP: f32 = 24.;
+const MERGE_COL_W: f32 = 100.;
+/// Where the merge bar sits when there is no fan to clear.
+const MERGE_GAP: f32 = 160.;
+/// The dotted line down to the human's circle, and that circle's diameter.
 const HUMAN_D: f32 = 52.;
 const HUMAN_DROP: f32 = 120.;
 const CHECK_D: f32 = 14.;
-/// The legend swatch, and a stage chip's numbered circle.
+/// A legend swatch, and a stage chip's ordinal circle.
 const LEGEND_W: f32 = 22.;
 const LEGEND_H: f32 = 3.;
 const CHIP_D: f32 = 20.;
-/// The width of the band a stage chip's 1.5s highlight paints behind it.
+/// How wide a stage chip's jump glow is.
 const STAGE_HIGHLIGHT_W: f32 = 150.;
 
 /// The map, parsed out of the page's `flow` object. Every part is optional:
@@ -154,7 +149,7 @@ struct Tier {
     total: f32,
 }
 
-/// The review hub, its radial spokes and the Fix loop, from `flow.review`.
+/// The review hub the return track ends at, with the spokes fanning off it.
 struct Review {
     hub: Option<Step>,
     verdict: String,
@@ -397,13 +392,13 @@ struct Layout {
     integrate_x: f32,
     /// Revise arcs, as the two marker x they span.
     arcs: Vec<Arc>,
-    /// The lower line's y, the review hub's centre x, and the x the return
-    /// track drops down on.
+    /// The lower line's y, the review hub's centre x, the x the return track
+    /// drops down on, and where the lower line stops on the left.
     return_y: f32,
     hub_x: f32,
     ret_x_right: f32,
-    /// The lower line's left overhang, when a merge bar or rollback marker
-    /// hangs off it.
+    end_x: f32,
+    /// The merge bar's x, when the run has a merge bar to draw.
     merge_x: Option<f32>,
     /// One anchor x per stage chip, in `Flow.stages` order.
     stage_x: Vec<f32>,
@@ -508,41 +503,51 @@ impl Layout {
         };
         let body_bottom = package_bottom.max(tiers_bottom).max(TRACK_Y + 40.);
 
-        // The return track leaves the pill, clears the tier rows and the whole
-        // spoke fan on the right, drops to the lower line and comes back left
-        // under the whole map.
+        // The fan only exists with a review, and the merge column and the
+        // return track both have to clear its outer edge — so it decides
+        // where they sit.
+        let fan_reach = if map.review.is_some() { FAN_REACH } else { 0. };
         let hub_x = integrate_x + PILL_W / 2.;
-        let ret_x_right = (integrate_x + TIERS_W + CORNER_R).max(hub_x + SPOKE_REACH + 32.);
-        // The merge bar (or the rollback marker) hangs off the lower line's
-        // left end, only when the run has something there to show. It sits past
-        // the fan's left reach so its checklist never lands under a spoke.
-        let merge_x = if map.merge.is_some() || map.rollback.is_some() {
-            Some(hub_x - SPOKE_REACH - MERGE_RIGHT - MERGE_FAN_GAP)
-        } else {
-            None
+        let ret_x_right =
+            (integrate_x + TIERS_W + CORNER_R).max(hub_x + fan_reach + CORNER_R + 16.);
+        let merge_x = map.merge.is_some().then(|| {
+            if map.review.is_some() {
+                hub_x - (fan_reach + MERGE_COL_W + 20.)
+            } else {
+                hub_x - MERGE_GAP
+            }
+        });
+        // Without a merge bar the lower line stops at the hub — or just short
+        // of it, so a rollback marker can take the bar's place.
+        let end_x = match (merge_x, map.rollback.is_some()) {
+            (Some(x), _) => x,
+            (None, true) => hub_x - HUB_R,
+            (None, false) => hub_x,
         };
-        // The lower line, the hub and the spokes exist only once there is an
-        // integrate node to leave from.
+
         let (return_y, height, width) = if map.integrate.is_some() {
             let return_y = body_bottom + RETURN_DROP;
-            let spokes_bottom = return_y + HUB_R + SPOKE_LEN + SPOKE_RING;
-            let merge_bottom = match map.merge.as_ref().and_then(|merge| merge.human.as_ref()) {
-                Some(_) => return_y + HUMAN_DROP + HUMAN_D / 2. + 30.,
-                None => return_y,
+            // The chip row lands a fixed distance under the lowest thing the
+            // map draws: the fan, the human's sub, or the hub itself.
+            let fan_bottom =
+                if map.review.is_some() { HUB_R + SPOKE_LEN + SPOKE_RING } else { HUB_R };
+            let below = return_y + fan_bottom;
+            let below = match map.merge.as_ref().and_then(|merge| merge.human.as_ref()) {
+                Some(_) => below.max(return_y + HUMAN_DROP + HUMAN_D / 2. + 30.),
+                None => below,
             };
-            let chips_top = spokes_bottom.max(merge_bottom) + 22.;
-            let height = chips_top + CHIP_D + 16.;
+            let height = below + 22. + CHIP_D + 16.;
             let width = (integrate_x + PILL_W)
                 .max(integrate_x + TIERS_W)
-                .max(ret_x_right + 24.)
-                .max(hub_x + SPOKE_REACH + 24.)
+                .max(hub_x + fan_reach + 24.)
+                .max(ret_x_right)
                 + 24.;
             (return_y, height, width)
         } else {
-            // Reserve the chip row when there are stages to draw, so the chips
-            // sit below the body rather than on top of it.
-            let chip_space = if map.stages.is_empty() { 24. } else { 22. + CHIP_D + 16. };
-            let height = body_bottom + chip_space;
+            // The chips run along the bottom even before there is a hub, so
+            // their row has to be reserved here too.
+            let chips_top = if map.stages.is_empty() { body_bottom } else { body_bottom + 22. };
+            let height = chips_top + CHIP_D + 16.;
             let width = (integrate_x + PILL_W).max(integrate_x + TIERS_W) + 24.;
             (body_bottom, height, width)
         };
@@ -577,25 +582,21 @@ impl Layout {
             return_y,
             hub_x,
             ret_x_right,
+            end_x,
             merge_x,
             stage_x,
         }
     }
 }
 
-/// The review's spoke angles, split over the upper and lower arcs so neither
-/// the left nor the right sector (where the track runs) carries a line, and —
-/// when a Fix spoke exists — the angle it takes. The Fix gets the lower arc's
-/// last (furthest-left) slot, so its ring and label can never land on a review
-/// spoke's whatever the spoke count.
-fn spoke_angles(count: usize, has_fix: bool) -> (Vec<f32>, Option<f32>) {
+/// The spokes' angles, split over the upper and lower arcs so neither the left
+/// nor the right sector (where the track runs in) carries a line. The lower
+/// spread stops at 130° to leave [`FIX_ANGLE`] its own slot.
+fn spoke_angles(count: usize) -> Vec<f32> {
     let upper = (count + 1) / 2;
-    let mut angles = spread_angles(upper, UPPER_ARC.0, UPPER_ARC.1);
-    let mut lower_angles =
-        spread_angles(count - upper + usize::from(has_fix), LOWER_ARC.0, LOWER_ARC.1);
-    let fix_angle = has_fix.then(|| lower_angles.pop()).flatten();
-    angles.extend(lower_angles);
-    (angles, fix_angle)
+    let mut angles = spread_angles(upper, 200., 340.);
+    angles.extend(spread_angles(count - upper, 20., 130.));
+    angles
 }
 
 /// `count` angles spread evenly over `start..=end` degrees; one sits centred.
@@ -1031,8 +1032,7 @@ pub(crate) fn render_flow_part_a(
             }
 
             // One ring, label and sub per spoke, out at its angle's radius.
-            let (angles, fix_angle) = spoke_angles(review.spokes.len(), review.fix.is_some());
-            for (spoke, angle) in review.spokes.iter().zip(angles.iter()) {
+            for (spoke, angle) in review.spokes.iter().zip(spoke_angles(review.spokes.len()).iter()) {
                 let radians = angle.to_radians();
                 let (sin, cos) = radians.sin_cos();
                 let ring_x = hub_x + (HUB_R + SPOKE_LEN) * cos;
@@ -1048,14 +1048,14 @@ pub(crate) fn render_flow_part_a(
             }
 
             // The Fix spoke: an orange ring, "Fix" and the rounds it cost,
-            // green-outlined once the fix was approved. It takes the reserved
-            // lower-arc slot, so it always leans left of the hub.
-            if let (Some(fix), Some(angle)) = (&review.fix, fix_angle) {
-                let radians = angle.to_radians();
+            // green-outlined once the fix was approved.
+            if let Some(fix) = &review.fix {
+                let radians = FIX_ANGLE.to_radians();
                 let (sin, cos) = radians.sin_cos();
                 let ring_x = hub_x + (HUB_R + SPOKE_LEN) * cos;
                 let ring_y = hub_y + (HUB_R + SPOKE_LEN) * sin;
                 let approved = fix.state == "approved";
+                let colour = if approved { p::GREEN } else { p::ORANGE };
                 let label_left = ring_x - SPOKE_LABEL_GAP - SPOKE_LABEL_W;
                 pieces.push(
                     div()
@@ -1066,7 +1066,7 @@ pub(crate) fn render_flow_part_a(
                         .rounded_full()
                         .bg(c(p::CARD))
                         .border_2()
-                        .border_color(c(if approved { p::GREEN } else { p::ORANGE }))
+                        .border_color(c(colour))
                         .into_any_element(),
                 );
                 pieces.push(
@@ -1108,10 +1108,42 @@ pub(crate) fn render_flow_part_a(
         }
     }
 
-    // The legend, from `flow.legend`, sits at the map's top left — the top
-    // right holds the card's full-screen button.
+    // The card's own "Full screen" control: with the column DAG retired the
+    // flow map is the only in-page way in, so it has to carry the button.
+    pieces.push(
+        div()
+            .id("flow-full")
+            .absolute()
+            .top(px(6.))
+            .left(px(12.))
+            .h(px(24.))
+            .px(px(9.))
+            .flex()
+            .items_center()
+            .rounded(px(5.))
+            .border_1()
+            .border_color(c(p::BORDER2))
+            .bg(c(p::BG))
+            .text_size(px(12.))
+            .text_color(c(p::MUTED))
+            .cursor_pointer()
+            .hover(|style| style.bg(c(p::HOVER)).text_color(c(p::TEXT)))
+            .tooltip(ui::Tooltip::text("Full screen · inspect every node"))
+            .child("⤢ Full screen")
+            .on_click(cx.listener(
+                |page: &mut MiniOrkPage,
+                 _: &ClickEvent,
+                 window: &mut Window,
+                 cx: &mut Context<MiniOrkPage>| {
+                    page.open_graph(None, window, cx);
+                },
+            ))
+            .into_any_element(),
+    );
+
+    // The legend, from `flow.legend`, sits at the map's top right.
     if !map.legend.is_empty() {
-        let mut row = h_flex().absolute().top(px(6.)).left(px(12.)).gap(px(14.)).items_center();
+        let mut row = h_flex().absolute().top(px(6.)).right(px(12.)).gap(px(14.)).items_center();
         for item in &map.legend {
             row = row.child(
                 h_flex()
@@ -1188,13 +1220,11 @@ pub(crate) fn render_flow_part_a(
                               _: &ClickEvent,
                               _: &mut Window,
                               cx: &mut Context<MiniOrkPage>| {
+                            // Scroll offsets are negative: x runs from 0 (left
+                            // edge) down to -max_offset (fully scrolled).
                             let max = jump_scroll.max_offset().x;
-                            let want = px((anchor - 120.).max(0.));
-                            // A scroll offset is <= 0: it is how far the content
-                            // is dragged left of the viewport, so the jump is the
-                            // negated distance, clamped to the extent.
-                            let offset_x = if want > max { -max } else { -want };
-                            jump_scroll.set_offset(point(offset_x, jump_scroll.offset().y));
+                            let want = px((anchor - 120.).max(0.)).min(max);
+                            jump_scroll.set_offset(point(-want, jump_scroll.offset().y));
                             let next = page.flow_focus.as_ref().map(|(_, seq)| *seq).unwrap_or(0) + 1;
                             page.flow_focus = Some((key.clone(), next));
                             cx.notify();
@@ -1234,32 +1264,6 @@ pub(crate) fn render_flow_part_a(
         .overflow_x_scroll()
         .track_scroll(scroll)
         .child(surface);
-    // The map *is* the graph on this tab, so its card keeps the way into the
-    // full-screen DAG (the older column DAG's own button is hidden).
-    let full_screen = div()
-        .id("flow-full")
-        .absolute()
-        .top(px(6.))
-        .right(px(6.))
-        .h(px(24.))
-        .px(px(9.))
-        .flex()
-        .items_center()
-        .rounded(px(5.))
-        .border_1()
-        .border_color(c(p::BORDER2))
-        .bg(c(p::BG))
-        .text_size(px(12.))
-        .text_color(c(p::MUTED))
-        .cursor_pointer()
-        .hover(|s| s.bg(c(p::HOVER)).text_color(c(p::TEXT)))
-        .tooltip(ui::Tooltip::text("Full screen · inspect every node"))
-        .child("⤢ Full screen")
-        .on_click(cx.listener(
-            |page: &mut MiniOrkPage, _, window, cx: &mut Context<MiniOrkPage>| {
-                page.open_graph(None, window, cx)
-            },
-        ));
     v_flex()
         .w_full()
         .min_w_0()
@@ -1269,17 +1273,11 @@ pub(crate) fn render_flow_part_a(
         .border_color(c(p::BORDER))
         .bg(c(p::CHROME))
         .child(
-            div()
-                .relative()
-                .w_full()
-                .child(scroller)
-                .child(full_screen)
-                .custom_scrollbars(
-                    Scrollbars::always_visible(ScrollAxes::Horizontal)
-                        .tracked_scroll_handle(scroll),
-                    window,
-                    cx,
-                ),
+            div().relative().w_full().child(scroller).custom_scrollbars(
+                Scrollbars::always_visible(ScrollAxes::Horizontal).tracked_scroll_handle(scroll),
+                window,
+                cx,
+            ),
         )
         .into_any_element()
 }
@@ -1345,7 +1343,7 @@ fn pill_glyph(state: &str, colour: u32) -> AnyElement {
     }
 }
 
-/// A spoke's end ring, in its state colour.
+/// A spoke's terminus: a hollow ring in the spoke's state colour.
 fn spoke_ring(centre_x: f32, centre_y: f32, state: &str) -> AnyElement {
     div()
         .absolute()
@@ -1421,7 +1419,6 @@ fn merge_elements(merge: &Merge, layout: &Layout) -> Vec<AnyElement> {
             .left(px(x - 70.))
             .top(px(row_top))
             .size(px(CHECK_D))
-            .flex_none()
             .flex()
             .items_center()
             .justify_center()
@@ -1494,22 +1491,17 @@ fn merge_elements(merge: &Merge, layout: &Layout) -> Vec<AnyElement> {
 }
 
 /// The red end marker the lower line closes with when the run rolled back. It
-/// carries a CARD background so the line ending under it does not show through
-/// the text.
+/// sits just left of where the line stops, so the two never overlap.
 fn rollback_marker(rollback: &Rollback, layout: &Layout) -> AnyElement {
-    let x = layout.merge_x.unwrap_or(layout.hub_x);
     let plural = if rollback.paths == 1 { "file" } else { "files" };
     h_flex()
         .absolute()
-        .left(px(x - 96.))
-        .top(px(layout.return_y - 12.))
+        .left(px(layout.end_x - 198.))
+        .top(px(layout.return_y - 10.))
         .w(px(192.))
-        .py(px(2.))
         .justify_center()
         .gap(px(6.))
         .items_center()
-        .rounded(px(10.))
-        .bg(c(p::CARD))
         .child(div().size(px(10.)).flex_none().rounded_full().bg(c(p::RED)))
         .child(
             div()
@@ -1650,7 +1642,6 @@ fn connectors(map: &Flow, layout: &Layout) -> Vec<Stroke> {
             .unwrap_or("pending");
         let colour = c(state_colour(review_state));
         let width = edge_width(review_state);
-        let end_x = layout.merge_x.unwrap_or(layout.hub_x);
         strokes.push(Stroke::line(
             (layout.integrate_x + PILL_W, TRACK_Y),
             (layout.ret_x_right - CORNER_R, TRACK_Y),
@@ -1681,14 +1672,13 @@ fn connectors(map: &Flow, layout: &Layout) -> Vec<Stroke> {
         ));
         strokes.push(Stroke::line(
             (layout.ret_x_right - CORNER_R, layout.return_y),
-            (end_x, layout.return_y),
+            (layout.end_x, layout.return_y),
             colour,
             width,
         ));
 
         if let Some(review) = &map.review {
-            let (angles, fix_angle) = spoke_angles(review.spokes.len(), review.fix.is_some());
-            for angle in &angles {
+            for angle in spoke_angles(review.spokes.len()) {
                 let radians = angle.to_radians();
                 let (sin, cos) = radians.sin_cos();
                 strokes.push(Stroke::line(
@@ -1701,9 +1691,9 @@ fn connectors(map: &Flow, layout: &Layout) -> Vec<Stroke> {
                     2.,
                 ));
             }
-            // The Fix spoke is a double line, drawn in its reserved slot.
-            if let (Some(fix), Some(angle)) = (&review.fix, fix_angle) {
-                let radians = angle.to_radians();
+            // The Fix spoke is a double line, held clear of the fan's angle.
+            if let Some(fix) = &review.fix {
+                let radians = FIX_ANGLE.to_radians();
                 let (sin, cos) = radians.sin_cos();
                 let fix_colour = c(if fix.state == "approved" { p::GREEN } else { p::ORANGE });
                 let from = (layout.hub_x + HUB_R * cos, layout.return_y + HUB_R * sin);
