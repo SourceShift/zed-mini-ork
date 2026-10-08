@@ -24,6 +24,7 @@ mod node_tab;
 mod page;
 mod palette;
 mod projects;
+mod run_panel;
 mod sections;
 mod select;
 mod sidebar;
@@ -64,6 +65,7 @@ pub fn init(cx: &mut App) {
     store::init(cx);
     title_bar::init(cx);
     status::init(cx);
+    run_panel::init(cx);
     apply_ide_defaults(cx);
 }
 
