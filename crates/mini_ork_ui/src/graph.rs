@@ -75,9 +75,30 @@ pub struct Model {
 
 impl Model {
     pub fn from_page(page: &Value, run_id: &str) -> Option<Self> {
-        let dag = arr(page, "sections").into_iter().find(|s| str_of(s, "type") == "dag")?;
+        // Spec v2: the page carries a top-level `graph` object with the columns
+        // and the run's title/recipe/state already resolved. A non-object value
+        // (for example `"graph": null`) and the absent case both fall back to
+        // the older `dag` section + `sub`/`chips` page fields, so the IDE
+        // still runs against an engine that hasn't been upgraded.
+        let (cols_source, heads_source, recipe, title, state) = match page
+            .get("graph")
+            .filter(|graph| graph.is_object())
+        {
+            Some(graph) => (arr(graph, "cols"), arr(graph, "heads"), str_of(graph, "recipe"), str_of(graph, "run_title"), str_of(graph, "state")),
+            None => {
+                let dag = arr(page, "sections").into_iter().find(|s| str_of(s, "type") == "dag")?;
+                let sub = str_of(page, "sub");
+                let mut parts = sub.split(" · ");
+                let recipe = str_of(&dag, "recipe");
+                let recipe = if recipe.is_empty() { parts.next().unwrap_or_default().to_string() } else { recipe };
+                let title = str_of(&dag, "run_title");
+                let title = if title.is_empty() { parts.next().unwrap_or_default().to_string() } else { title };
+                let state = arr(page, "chips").first().map(|c| str_of(c, "t")).unwrap_or_default();
+                (arr(&dag, "cols"), arr(&dag, "heads"), recipe, title, state)
+            }
+        };
         let mut cols: Vec<Vec<Node>> = Vec::new();
-        for (ci, column) in arr(&dag, "cols").iter().enumerate() {
+        for (ci, column) in cols_source.iter().enumerate() {
             let nodes = column.as_array().cloned().unwrap_or_default();
             let len = nodes.len();
             cols.push(
@@ -100,7 +121,10 @@ impl Model {
             );
         }
         let heads = {
-            let given: Vec<String> = arr(&dag, "heads").iter().filter_map(|h| h.as_str().map(String::from)).collect();
+            let given: Vec<String> = heads_source
+                .into_iter()
+                .filter_map(|h| h.as_str().map(String::from))
+                .collect();
             if given.len() == cols.len() {
                 given
             } else {
@@ -114,14 +138,14 @@ impl Model {
                     .collect()
             }
         };
-        let sub = str_of(page, "sub");
-        let mut parts = sub.split(" · ");
-        let recipe = str_of(&dag, "recipe");
-        let recipe = if recipe.is_empty() { parts.next().unwrap_or_default().to_string() } else { recipe };
-        let title = str_of(&dag, "run_title");
-        let title = if title.is_empty() { parts.next().unwrap_or_default().to_string() } else { title };
-        let state = arr(page, "chips").first().map(|c| str_of(c, "t")).unwrap_or_default();
-        Some(Self { run_id: run_id.to_string(), recipe, title, state, heads, cols })
+        Some(Self {
+            run_id: run_id.to_string(),
+            recipe,
+            title,
+            state,
+            heads,
+            cols,
+        })
     }
 
     fn flat(&self) -> Vec<&Node> {

@@ -157,6 +157,7 @@ async fn run_json(bin: &Path, args: &[String], home: &Path) -> Result<Value> {
         // An inherited flag would stop the launcher from switching to
         // mini-ork's own Python.
         .env_remove("MINI_ORK_VENV_ACTIVE")
+        .env("MINI_ORK_IDE_SPEC", "2")
         .output()
         .await
         .with_context(|| format!("running {}", bin.display()))?;
@@ -285,6 +286,7 @@ pub async fn run_action(bin: PathBuf, home: PathBuf, args: Vec<String>, with_hom
     command
         .args(&args)
         .env("MINI_ORK_HOME", &home)
+        .env("MINI_ORK_IDE_SPEC", "2")
         .env_remove("MINI_ORK_VENV_ACTIVE");
     if with_home {
         command.arg("--home").arg(&home);

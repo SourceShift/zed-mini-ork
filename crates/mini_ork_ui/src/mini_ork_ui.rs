@@ -16,6 +16,7 @@
 //! mini-ork stays the source of truth: the shell is a view over its CLI.
 
 mod board;
+mod components;
 mod graph;
 mod loading;
 mod node_tab;

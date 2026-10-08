@@ -985,7 +985,7 @@ impl MiniOrkSidebar {
 }
 
 /// A run's status: a spinner while it works, otherwise a coloured dot.
-fn status_mark(state: &str, key: &str) -> AnyElement {
+pub(crate) fn status_mark(state: &str, key: &str) -> AnyElement {
     if matches!(state, "working" | "running") {
         return Icon::new(IconName::LoadCircle)
             .size(IconSize::XSmall)
@@ -1003,7 +1003,7 @@ fn status_mark(state: &str, key: &str) -> AnyElement {
 }
 
 /// A node's status: spinner, ✓ in a ring, ✕ in a ring, or an empty ring.
-fn node_mark(state: &str, key: &str) -> AnyElement {
+pub(crate) fn node_mark(state: &str, key: &str) -> AnyElement {
     let ring = |colour: u32| {
         div()
             .size(px(12.))
