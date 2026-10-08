@@ -23,6 +23,7 @@ mod node_tab;
 mod page;
 mod palette;
 mod projects;
+mod sections;
 mod select;
 mod sidebar;
 mod status;

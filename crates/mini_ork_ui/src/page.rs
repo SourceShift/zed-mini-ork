@@ -105,7 +105,7 @@ pub struct MiniOrkPage {
     /// The DAG card scrolls sideways, as in the design.
     dag_scroll: ScrollHandle,
     /// Selectable text for everything this page shows.
-    texts: Texts,
+    pub(crate) texts: Texts,
     /// The run graph, full screen, when open.
     graph: Option<Entity<crate::graph::MiniOrkGraph>>,
     /// Open the graph (on this node, if any) once the page has loaded.
@@ -362,7 +362,7 @@ impl MiniOrkPage {
         }))
     }
 
-    fn button(&self, id: impl Into<ElementId>, b: &Value, height: f32, size: f32, cx: &mut Context<Self>) -> AnyElement {
+    pub(crate) fn button(&self, id: impl Into<ElementId>, b: &Value, height: f32, size: f32, cx: &mut Context<Self>) -> AnyElement {
         let label = str_of(b, "label");
         let kind = b.get("kind").and_then(Value::as_str).unwrap_or("default").to_string();
         let handler = self.action_handler(b.get("do"), cx);
@@ -505,6 +505,9 @@ impl MiniOrkPage {
         match kind.as_str() {
             "dag" => return self.render_dag(index, s, window, cx),
             "inspector" => return self.render_inspector(index, s, cx),
+            "triage" => return self.render_triage(index, s, cx),
+            "callout" => return self.render_callout(index, s, cx),
+            "hero" => return self.render_hero(index, s, cx),
             _ => {}
         }
         let title = str_of(s, "title");
