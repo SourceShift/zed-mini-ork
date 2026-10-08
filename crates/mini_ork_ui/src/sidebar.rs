@@ -22,6 +22,7 @@ use crate::{
     board::{self, Board, Run},
     page::{self, MiniOrkPage},
     palette::{self as p, c},
+    projects,
     store::{self, BoardStore},
     thumb,
 };
@@ -521,6 +522,49 @@ impl MiniOrkSidebar {
         bar.into_any_element()
     }
 
+    /// One row per known project that still has a `.mini-ork` home, then
+    /// "Open project folder…". A click opens the project in this window.
+    fn render_project_picker(workspace: &Entity<Workspace>) -> AnyElement {
+        let home = std::env::var("HOME").unwrap_or_default();
+        let row = |id: SharedString, title: String, subtitle: Option<String>| {
+            v_flex()
+                .id(id)
+                .mx(px(2.))
+                .px(px(8.))
+                .py(px(5.))
+                .rounded(px(5.))
+                .cursor_pointer()
+                .hover(|s| s.bg(c(p::HOVER)))
+                .child(div().text_size(px(12.5)).text_color(c(p::TEXT)).child(title))
+                .when_some(subtitle, |this, sub| this.child(p::text(sub, 11., p::SUB)))
+        };
+        let mut picker = v_flex().gap(px(2.)).pt(px(4.));
+        for (i, root) in projects::known()
+            .into_iter()
+            .filter(|root| root.join(".mini-ork").is_dir())
+            .enumerate()
+        {
+            let name = root
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_else(|| root.to_string_lossy().to_string());
+            let path = root.to_string_lossy().replace(&home, "~");
+            let workspace = workspace.clone();
+            picker = picker.child(
+                row(format!("board-open-project-{i}").into(), name, Some(path)).on_click(
+                    move |_, window, cx| projects::switch_to(&workspace, root.clone(), window, cx),
+                ),
+            );
+        }
+        let workspace = workspace.clone();
+        picker
+            .child(
+                row("board-open-project-pick".into(), "Open project folder…".into(), None)
+                    .on_click(move |_, window, cx| projects::pick(&workspace, window, cx)),
+            )
+            .into_any_element()
+    }
+
     fn render_board(
         &self,
         board: Option<&Board>,
@@ -633,6 +677,11 @@ impl MiniOrkSidebar {
         let mut list = v_flex().px(px(6.)).pt(px(6.)).pb(px(16.));
         if let Some(error) = error.filter(|_| runs.is_empty()) {
             list = list.child(p::text(error, 12., p::SUB).p(px(8.)));
+            // A window restored without a folder has nothing to read runs from:
+            // offer the known projects right here instead of a dead end.
+            if let Some(workspace) = workspace.as_ref().filter(|w| projects::current_root(w, cx).is_none()) {
+                list = list.child(Self::render_project_picker(workspace));
+            }
         } else if board.is_none() {
             list = list.child(p::text("Loading…", 12., p::SUB).p(px(8.)));
         } else if runs.is_empty() && self.results.is_some() && !self.loading_more {
