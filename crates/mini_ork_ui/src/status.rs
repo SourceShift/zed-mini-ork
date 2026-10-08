@@ -1,11 +1,12 @@
 //! Status bar items: the board toggle and the live mini-ork counters on the
 //! left, the mini-ork version on the right.
 
-use gpui::{App, Context, Entity, Render, SharedString, Subscription, WeakEntity, Window, px};
+use gpui::{App, Context, Entity, Render, SharedString, Subscription, WeakEntity, Window, px, relative};
 use ui::{Tooltip, prelude::*};
 use workspace::{HideStatusItem, ItemHandle, StatusItemView, Workspace};
 
 use crate::{
+    board::Lane,
     page,
     palette::{self as p, c},
     sidebar::MiniOrkSidebar,
@@ -120,6 +121,7 @@ impl Render for MiniOrkStatus {
         } else {
             "⬡ local".to_string()
         };
+        let lanes: Vec<AnyElement> = header.lanes.iter().take(5).map(|lane| lane_item(lane, cx)).collect();
         h_flex()
             .gap(px(2.))
             .child(
@@ -151,7 +153,17 @@ impl Render for MiniOrkStatus {
                 None,
                 w.clone(),
             ))
-            .child(item("status-needs", format!("✋ {}", header.needs_you), p::YELLOW, "Needs you", "verify", Some("inbox"), w.clone()))
+            .when(header.needs_you > 0, |this| {
+                this.child(item(
+                    "status-needs",
+                    format!("✋ {} need you", header.needs_you),
+                    p::ORANGE,
+                    "Opens the Inbox",
+                    "inbox",
+                    None,
+                    w.clone(),
+                ))
+            })
             .child(item(
                 "status-failed",
                 format!("✗ {}", header.failed),
@@ -189,7 +201,53 @@ impl Render for MiniOrkStatus {
                 w.clone(),
             ))
             .child(item("status-nodes", nodes, p::MUTED, "Nodes", "nodes", None, w))
+            .when(!lanes.is_empty(), |this| {
+                this.child(div().w(px(1.)).h(px(14.)).mx(px(4.)).bg(c(p::BORDER2)))
+                    .children(lanes)
+            })
     }
+}
+
+/// One lane's last-24h health: its name, then a 28×4 bar split green for the
+/// success share and red for the failure share. A lane failing half its calls
+/// (over at least three) gets a red name.
+fn lane_item(lane: &Lane, cx: &App) -> AnyElement {
+    let calls = lane.calls;
+    let failed = lane.failed.min(calls);
+    let failure = if calls > 0 { failed as f32 / calls as f32 } else { 0. };
+    let success = if calls > 0 { (calls - failed) as f32 / calls as f32 } else { 0. };
+    let name_colour = if calls >= 3 && failure >= 0.5 { p::RED } else { p::SUB };
+    let mut tip = format!("{} calls · {} failed · ${:.2}", calls, failed, lane.usd);
+    if !lane.last_error.is_empty() {
+        tip.push_str(&format!(" · {}", lane.last_error));
+    }
+    h_flex()
+        .id(SharedString::from(format!("status-lane-{}", lane.lane)))
+        .h(px(20.))
+        .px(px(5.))
+        .gap(px(4.))
+        .items_center()
+        .rounded(px(4.))
+        .tooltip(Tooltip::text(tip))
+        .child(
+            div()
+                .font(p::mono_font(cx))
+                .text_size(px(10.5))
+                .text_color(c(name_colour))
+                .child(lane.lane.clone()),
+        )
+        .child(
+            h_flex()
+                .w(px(28.))
+                .h(px(4.))
+                .flex_none()
+                .rounded(px(2.))
+                .overflow_hidden()
+                .bg(c(p::BORDER2))
+                .child(div().h_full().w(relative(success)).flex_none().bg(c(p::GREEN)))
+                .child(div().h_full().w(relative(failure)).flex_none().bg(c(p::RED))),
+        )
+        .into_any_element()
 }
 
 impl StatusItemView for MiniOrkStatus {

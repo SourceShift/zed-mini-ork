@@ -19,6 +19,7 @@ mod board;
 mod components;
 mod flow;
 mod graph;
+mod jump;
 mod loading;
 mod node_tab;
 mod page;
@@ -65,6 +66,7 @@ pub fn init(cx: &mut App) {
     store::init(cx);
     title_bar::init(cx);
     status::init(cx);
+    jump::init(cx);
     run_panel::init(cx);
     apply_ide_defaults(cx);
 }
