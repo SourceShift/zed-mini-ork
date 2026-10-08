@@ -1,11 +1,14 @@
-//! The run flow map, part A: one horizontal track from **Ticket in** through
-//! **Design** and the **Build** fan-out to the **Integrate** pill.
+//! The run flow map: one horizontal track from **Ticket in** through **Design**
+//! and the **Build** fan-out to the **Integrate** pill, then a return track
+//! down the right side and back left along a lower line that carries the
+//! **Review** hub, its spokes and the optional **Merge** bar.
 //!
 //! The data is the run page's top-level `flow` object (`mini_ork/ide_pages/
 //! run_flow.py::build_flow`): the ticket, the design steps with their revise
-//! loops, the build packages with an Implementer / critic lane each, and the
-//! integrate node with its check tiers. Part B adds Review / Merge / Rollback
-//! and retires the older `dag` section below the map.
+//! loops, the build packages with an Implementer / critic lane each, the
+//! integrate node with its check tiers, the review hub with its spokes and Fix
+//! loop, the merge checklist and the rollback record, the legend and the stage
+//! chips.
 //!
 //! Connectors are one `gpui::canvas` painting stroked paths — the same idiom
 //! `graph.rs` and `thumb.rs` use — while every marker, label, package box and
@@ -15,17 +18,17 @@
 //! Geometry is decided once in [`Layout::compute`] so the canvas (which needs
 //! the endpoints) and the divs (which need the same anchors) cannot drift.
 
-use std::collections::HashMap;
+use std::{collections::HashMap, time::Duration};
 
 use gpui::{
-    AnyElement, Bounds, Context, Div, FontWeight, Hsla, PathBuilder, Pixels, Point, ScrollHandle,
-    SharedString, Window, canvas, point, px,
+    AnyElement, Bounds, ClickEvent, Context, Div, FontWeight, Hsla, PathBuilder, Pixels, Point,
+    ScrollHandle, SharedString, Window, canvas, point, px,
 };
 use serde_json::Value;
 use ui::{ScrollAxes, Scrollbars, WithScrollbar as _, prelude::*};
 
 use crate::{
-    page::{MiniOrkPage, arr, str_of},
+    page::{MiniOrkPage, arr, bool_of, str_of},
     palette::{self as p, c, ca},
 };
 
@@ -59,6 +62,45 @@ const TIERS_W: f32 = 176.;
 const ARC_RISE: f32 = 14.;
 const ARC_CTRL_RISE: f32 = 58.;
 const ARC_APEX_DY: f32 = 47.;
+/// The radius of the return track's two rounded corners.
+const CORNER_R: f32 = 40.;
+/// How far below the body of the map the lower line runs.
+const RETURN_DROP: f32 = 220.;
+/// The review hub: a 120px circle, 3px TEXT stroke.
+const HUB_R: f32 = 60.;
+/// A spoke's line length from the hub's edge, and the ring at its end.
+const SPOKE_LEN: f32 = 150.;
+const SPOKE_RING: f32 = 18.;
+/// The gap between a spoke's ring and the label beside it, and the width that
+/// label and its sub sit in.
+const SPOKE_LABEL_GAP: f32 = 13.;
+const SPOKE_LABEL_W: f32 = 96.;
+/// How far a spoke's ring and label reach from the hub's centre. The fan's
+/// outer bound: the merge strip sits past it on the left, the return track
+/// drops past it on the right.
+const SPOKE_REACH: f32 = HUB_R + SPOKE_LEN + SPOKE_RING / 2. + SPOKE_LABEL_GAP + SPOKE_LABEL_W;
+/// The angles the spokes fan over, in degrees: the upper arc runs up-left to
+/// up-right, the lower arc down-right to down-left. Neither reaches 180° (dead
+/// left), where the incoming lower line and the merge strip run.
+const UPPER_ARC: (f32, f32) = (200., 340.);
+const LOWER_ARC: (f32, f32) = (20., 160.);
+/// The merge bar, the human circle below it, its checkbox, and the left
+/// overhang that holds them on the lower line.
+const MERGE_W: f32 = 6.;
+const MERGE_H: f32 = 56.;
+/// How far the merge strip's content runs right of its bar (its check labels
+/// are the widest part), and the gap it keeps from the fan's left reach.
+const MERGE_RIGHT: f32 = 100.;
+const MERGE_FAN_GAP: f32 = 24.;
+const HUMAN_D: f32 = 52.;
+const HUMAN_DROP: f32 = 120.;
+const CHECK_D: f32 = 14.;
+/// The legend swatch, and a stage chip's numbered circle.
+const LEGEND_W: f32 = 22.;
+const LEGEND_H: f32 = 3.;
+const CHIP_D: f32 = 20.;
+/// The width of the band a stage chip's 1.5s highlight paints behind it.
+const STAGE_HIGHLIGHT_W: f32 = 150.;
 
 /// The map, parsed out of the page's `flow` object. Every part is optional:
 /// the builder is fail-soft, so a run with no build (or no verifiers) simply
@@ -71,6 +113,11 @@ struct Flow {
     build_loops: Vec<ReviseLoop>,
     integrate: Option<Step>,
     tiers: Vec<Tier>,
+    review: Option<Review>,
+    merge: Option<Merge>,
+    rollback: Option<Rollback>,
+    legend: Vec<Legend>,
+    stages: Vec<Stage>,
 }
 
 /// One node of the map, as the flow model spells it.
@@ -107,12 +154,72 @@ struct Tier {
     total: f32,
 }
 
+/// The review hub, its radial spokes and the Fix loop, from `flow.review`.
+struct Review {
+    hub: Option<Step>,
+    verdict: String,
+    score: String,
+    spokes: Vec<Spoke>,
+    fix: Option<Fix>,
+}
+
+/// One radial spoke: a ring in its state colour, a label and a sub.
+struct Spoke {
+    label: String,
+    sub: String,
+    state: String,
+}
+
+/// The "Fix — then review again" spoke, present once a revise round fired.
+struct Fix {
+    rounds: u64,
+    state: String,
+}
+
+/// The merge bar and its checklist, from `flow.merge` (null until code merges).
+struct Merge {
+    state: String,
+    checks: Vec<Check>,
+    human: Option<Human>,
+}
+
+struct Check {
+    label: String,
+    ok: bool,
+}
+
+struct Human {
+    label: String,
+    sub: String,
+}
+
+/// The rolled-back record, drawn at the lower line's end when nothing merged.
+struct Rollback {
+    paths: u64,
+}
+
+/// One legend entry: a swatch keyed to an edge state and its label.
+struct Legend {
+    key: String,
+    label: String,
+}
+
+/// A stage chip along the bottom: its ordinal and its roll-up state.
+struct Stage {
+    key: String,
+    label: String,
+    n: u64,
+    state: String,
+}
+
 impl Flow {
     fn parse(flow: &Value) -> Self {
         let ticket = flow.get("ticket").cloned().unwrap_or(Value::Null);
         let design = flow.get("design").cloned().unwrap_or(Value::Null);
         let build = flow.get("build").cloned().unwrap_or(Value::Null);
         let integrate = flow.get("integrate").cloned().unwrap_or(Value::Null);
+        let review = flow.get("review").cloned().unwrap_or(Value::Null);
+        let legend = flow.get("legend").cloned().unwrap_or(Value::Null);
         Self {
             ticket_id: str_of(&ticket, "id"),
             design: arr(&design, "nodes").iter().filter_map(parse_step).collect(),
@@ -121,6 +228,11 @@ impl Flow {
             build_loops: parse_loops(&build),
             integrate: integrate.get("node").and_then(parse_step),
             tiers: arr(&integrate, "tiers").iter().filter_map(parse_tier).collect(),
+            review: parse_review(&review),
+            merge: flow.get("merge").and_then(parse_merge),
+            rollback: flow.get("rollback").and_then(parse_rollback),
+            legend: parse_legend(&legend),
+            stages: arr(flow, "stages").iter().filter_map(parse_stage).collect(),
         }
     }
 }
@@ -187,6 +299,88 @@ fn parse_tier(value: &Value) -> Option<Tier> {
     })
 }
 
+fn parse_review(value: &Value) -> Option<Review> {
+    if !value.is_object() {
+        return None;
+    }
+    let fix_value = value.get("fix").cloned().unwrap_or(Value::Null);
+    let rounds = fix_value.get("rounds").and_then(Value::as_u64).unwrap_or(0);
+    Some(Review {
+        hub: value.get("hub").and_then(parse_step),
+        verdict: str_of(value, "verdict"),
+        score: str_of(value, "score"),
+        spokes: arr(value, "spokes").iter().filter_map(parse_spoke).collect(),
+        // A Fix spoke only exists once a round has fired; rounds 0 is "none".
+        fix: (rounds > 0).then(|| Fix { rounds, state: str_of(&fix_value, "state") }),
+    })
+}
+
+fn parse_spoke(value: &Value) -> Option<Spoke> {
+    if !value.is_object() {
+        return None;
+    }
+    Some(Spoke {
+        label: str_of(value, "label"),
+        sub: str_of(value, "sub"),
+        state: str_of(value, "state"),
+    })
+}
+
+fn parse_merge(value: &Value) -> Option<Merge> {
+    if !value.is_object() {
+        return None;
+    }
+    Some(Merge {
+        state: str_of(value, "state"),
+        checks: arr(value, "checks").iter().filter_map(parse_check).collect(),
+        human: value.get("human").filter(|human| human.is_object()).map(|human| Human {
+            label: str_of(human, "label"),
+            sub: str_of(human, "sub"),
+        }),
+    })
+}
+
+fn parse_check(value: &Value) -> Option<Check> {
+    if !value.is_object() {
+        return None;
+    }
+    Some(Check { label: str_of(value, "label"), ok: bool_of(value, "ok") })
+}
+
+fn parse_rollback(value: &Value) -> Option<Rollback> {
+    if !value.is_object() {
+        return None;
+    }
+    Some(Rollback { paths: value.get("paths").and_then(Value::as_u64).unwrap_or(0) })
+}
+
+fn parse_legend(value: &Value) -> Vec<Legend> {
+    let Some(items) = value.as_array() else {
+        return Vec::new();
+    };
+    items
+        .iter()
+        .filter_map(|item| {
+            if !item.is_object() {
+                return None;
+            }
+            Some(Legend { key: str_of(item, "key"), label: str_of(item, "label") })
+        })
+        .collect()
+}
+
+fn parse_stage(value: &Value) -> Option<Stage> {
+    if !value.is_object() {
+        return None;
+    }
+    Some(Stage {
+        key: str_of(value, "key"),
+        label: str_of(value, "label"),
+        n: value.get("n").and_then(Value::as_u64).unwrap_or(0),
+        state: str_of(value, "state"),
+    })
+}
+
 /// Where every marker, box and pill goes. Only x/y arithmetic here — no
 /// elements — so the canvas and the divs read the same numbers.
 struct Layout {
@@ -203,6 +397,16 @@ struct Layout {
     integrate_x: f32,
     /// Revise arcs, as the two marker x they span.
     arcs: Vec<Arc>,
+    /// The lower line's y, the review hub's centre x, and the x the return
+    /// track drops down on.
+    return_y: f32,
+    hub_x: f32,
+    ret_x_right: f32,
+    /// The lower line's left overhang, when a merge bar or rollback marker
+    /// hangs off it.
+    merge_x: Option<f32>,
+    /// One anchor x per stage chip, in `Flow.stages` order.
+    stage_x: Vec<f32>,
 }
 
 struct PackageSpot {
@@ -302,8 +506,62 @@ impl Layout {
         } else {
             TRACK_Y + 20.
         };
-        let height = package_bottom.max(tiers_bottom).max(TRACK_Y + 40.) + 24.;
-        let width = (integrate_x + PILL_W).max(integrate_x + TIERS_W) + 24.;
+        let body_bottom = package_bottom.max(tiers_bottom).max(TRACK_Y + 40.);
+
+        // The return track leaves the pill, clears the tier rows and the whole
+        // spoke fan on the right, drops to the lower line and comes back left
+        // under the whole map.
+        let hub_x = integrate_x + PILL_W / 2.;
+        let ret_x_right = (integrate_x + TIERS_W + CORNER_R).max(hub_x + SPOKE_REACH + 32.);
+        // The merge bar (or the rollback marker) hangs off the lower line's
+        // left end, only when the run has something there to show. It sits past
+        // the fan's left reach so its checklist never lands under a spoke.
+        let merge_x = if map.merge.is_some() || map.rollback.is_some() {
+            Some(hub_x - SPOKE_REACH - MERGE_RIGHT - MERGE_FAN_GAP)
+        } else {
+            None
+        };
+        // The lower line, the hub and the spokes exist only once there is an
+        // integrate node to leave from.
+        let (return_y, height, width) = if map.integrate.is_some() {
+            let return_y = body_bottom + RETURN_DROP;
+            let spokes_bottom = return_y + HUB_R + SPOKE_LEN + SPOKE_RING;
+            let merge_bottom = match map.merge.as_ref().and_then(|merge| merge.human.as_ref()) {
+                Some(_) => return_y + HUMAN_DROP + HUMAN_D / 2. + 30.,
+                None => return_y,
+            };
+            let chips_top = spokes_bottom.max(merge_bottom) + 22.;
+            let height = chips_top + CHIP_D + 16.;
+            let width = (integrate_x + PILL_W)
+                .max(integrate_x + TIERS_W)
+                .max(ret_x_right + 24.)
+                .max(hub_x + SPOKE_REACH + 24.)
+                + 24.;
+            (return_y, height, width)
+        } else {
+            // Reserve the chip row when there are stages to draw, so the chips
+            // sit below the body rather than on top of it.
+            let chip_space = if map.stages.is_empty() { 24. } else { 22. + CHIP_D + 16. };
+            let height = body_bottom + chip_space;
+            let width = (integrate_x + PILL_W).max(integrate_x + TIERS_W) + 24.;
+            (body_bottom, height, width)
+        };
+
+        // A stage chip scrolls to its stage's anchor: the marker, box or pill
+        // that spells the stage on the map.
+        let stage_x = map
+            .stages
+            .iter()
+            .map(|stage| match stage.key.as_str() {
+                "intake" => ticket_x + TICKET_W / 2.,
+                "design" => design_x.first().copied().unwrap_or(fan_x),
+                "build" => packages.first().map(|spot| spot.left + PKG_W / 2.).unwrap_or(fan_x),
+                "integrate" => integrate_x + PILL_W / 2.,
+                "review" => hub_x,
+                "merge" => merge_x.map(|x| x + MERGE_W / 2.).unwrap_or(hub_x),
+                _ => fan_x,
+            })
+            .collect();
 
         Self {
             width,
@@ -316,8 +574,41 @@ impl Layout {
             fan_in_x,
             integrate_x,
             arcs,
+            return_y,
+            hub_x,
+            ret_x_right,
+            merge_x,
+            stage_x,
         }
     }
+}
+
+/// The review's spoke angles, split over the upper and lower arcs so neither
+/// the left nor the right sector (where the track runs) carries a line, and —
+/// when a Fix spoke exists — the angle it takes. The Fix gets the lower arc's
+/// last (furthest-left) slot, so its ring and label can never land on a review
+/// spoke's whatever the spoke count.
+fn spoke_angles(count: usize, has_fix: bool) -> (Vec<f32>, Option<f32>) {
+    let upper = (count + 1) / 2;
+    let mut angles = spread_angles(upper, UPPER_ARC.0, UPPER_ARC.1);
+    let mut lower_angles =
+        spread_angles(count - upper + usize::from(has_fix), LOWER_ARC.0, LOWER_ARC.1);
+    let fix_angle = has_fix.then(|| lower_angles.pop()).flatten();
+    angles.extend(lower_angles);
+    (angles, fix_angle)
+}
+
+/// `count` angles spread evenly over `start..=end` degrees; one sits centred.
+fn spread_angles(count: usize, start: f32, end: f32) -> Vec<f32> {
+    if count == 0 {
+        return Vec::new();
+    }
+    if count == 1 {
+        return vec![(start + end) / 2.];
+    }
+    (0..count)
+        .map(|index| start + (end - start) * index as f32 / (count - 1) as f32)
+        .collect()
 }
 
 /// One stroked connector, in the map's own coordinates.
@@ -392,6 +683,24 @@ pub(crate) fn render_flow_part_a(
     let strokes = connectors(&map, &layout);
     let mono = p::mono_font(cx);
     let mut pieces: Vec<AnyElement> = Vec::new();
+
+    // A stage chip's jump glows behind the whole map for 1.5s (`flow_focus`).
+    if let Some((key, _)) = &page.flow_focus {
+        if let Some(index) = map.stages.iter().position(|stage| &stage.key == key) {
+            let anchor = layout.stage_x.get(index).copied().unwrap_or(layout.hub_x);
+            pieces.push(
+                div()
+                    .absolute()
+                    .left(px(anchor - STAGE_HIGHLIGHT_W / 2.))
+                    .top(px(0.))
+                    .w(px(STAGE_HIGHLIGHT_W))
+                    .h(px(layout.height))
+                    .rounded(px(12.))
+                    .bg(ca(0x74ade833))
+                    .into_any_element(),
+            );
+        }
+    }
 
     // The connectors go in first: GPUI paints children in insertion order, so
     // every marker and label below lands on top of the strokes.
@@ -675,6 +984,245 @@ pub(crate) fn render_flow_part_a(
         );
     }
 
+    // The return track's lower line carries the review hub: its spokes fan out
+    // over the upper and lower arcs, the Fix loop hangs off it, and the merge
+    // bar (or a rollback marker) sits at the line's left end.
+    if map.integrate.is_some() {
+        if let Some(review) = &map.review {
+            let (hub_x, hub_y) = (layout.hub_x, layout.return_y);
+            if let Some(hub) = &review.hub {
+                let colour = state_colour(&hub.state);
+                let mut circle = v_flex()
+                    .id("flow-review-hub")
+                    .absolute()
+                    .left(px(hub_x - HUB_R))
+                    .top(px(hub_y - HUB_R))
+                    .size(px(HUB_R * 2.))
+                    .items_center()
+                    .justify_center()
+                    .rounded_full()
+                    .bg(c(p::CARD))
+                    .border_3()
+                    .border_color(c(p::TEXT))
+                    .child(
+                        div()
+                            .text_size(px(16.))
+                            .font_weight(FontWeight::SEMIBOLD)
+                            .text_color(c(p::TEXT))
+                            .child("Review"),
+                    )
+                    .when(!review.verdict.is_empty(), |this| {
+                        this.child(
+                            div()
+                                .text_size(px(11.))
+                                .text_color(c(colour))
+                                .child(review.verdict.clone()),
+                        )
+                    })
+                    .when(!review.score.is_empty(), |this| {
+                        this.child(
+                            div().text_size(px(11.)).text_color(c(p::SUB)).child(review.score.clone()),
+                        )
+                    });
+                if let Some(handler) = page.action_handler(Some(&hub.action), cx) {
+                    circle = circle.cursor_pointer().on_click(handler);
+                }
+                pieces.push(circle.into_any_element());
+            }
+
+            // One ring, label and sub per spoke, out at its angle's radius.
+            let (angles, fix_angle) = spoke_angles(review.spokes.len(), review.fix.is_some());
+            for (spoke, angle) in review.spokes.iter().zip(angles.iter()) {
+                let radians = angle.to_radians();
+                let (sin, cos) = radians.sin_cos();
+                let ring_x = hub_x + (HUB_R + SPOKE_LEN) * cos;
+                let ring_y = hub_y + (HUB_R + SPOKE_LEN) * sin;
+                pieces.push(spoke_ring(ring_x, ring_y, &spoke.state));
+                let right = cos >= 0.;
+                let label_left = if right {
+                    ring_x + SPOKE_LABEL_GAP
+                } else {
+                    ring_x - SPOKE_LABEL_GAP - SPOKE_LABEL_W
+                };
+                pieces.push(spoke_label(label_left, ring_y, &spoke.label, &spoke.sub, right));
+            }
+
+            // The Fix spoke: an orange ring, "Fix" and the rounds it cost,
+            // green-outlined once the fix was approved. It takes the reserved
+            // lower-arc slot, so it always leans left of the hub.
+            if let (Some(fix), Some(angle)) = (&review.fix, fix_angle) {
+                let radians = angle.to_radians();
+                let (sin, cos) = radians.sin_cos();
+                let ring_x = hub_x + (HUB_R + SPOKE_LEN) * cos;
+                let ring_y = hub_y + (HUB_R + SPOKE_LEN) * sin;
+                let approved = fix.state == "approved";
+                let label_left = ring_x - SPOKE_LABEL_GAP - SPOKE_LABEL_W;
+                pieces.push(
+                    div()
+                        .absolute()
+                        .left(px(ring_x - SPOKE_RING / 2.))
+                        .top(px(ring_y - SPOKE_RING / 2.))
+                        .size(px(SPOKE_RING))
+                        .rounded_full()
+                        .bg(c(p::CARD))
+                        .border_2()
+                        .border_color(c(if approved { p::GREEN } else { p::ORANGE }))
+                        .into_any_element(),
+                );
+                pieces.push(
+                    div()
+                        .absolute()
+                        .left(px(label_left))
+                        .top(px(ring_y - 9.))
+                        .w(px(SPOKE_LABEL_W))
+                        .text_right()
+                        .text_size(px(13.))
+                        .font_weight(FontWeight::SEMIBOLD)
+                        .text_color(c(p::ORANGE))
+                        .child("Fix")
+                        .into_any_element(),
+                );
+                pieces.push(
+                    div()
+                        .absolute()
+                        .left(px(label_left))
+                        .top(px(ring_y + 8.))
+                        .w(px(SPOKE_LABEL_W))
+                        .text_right()
+                        .text_size(px(11.))
+                        .text_color(c(p::SUB))
+                        .child(format!(
+                            "then review again · {} {}",
+                            fix.rounds,
+                            if fix.rounds == 1 { "round" } else { "rounds" }
+                        ))
+                        .into_any_element(),
+                );
+            }
+        }
+
+        if let Some(merge) = &map.merge {
+            pieces.extend(merge_elements(merge, &layout));
+        } else if let Some(rollback) = &map.rollback {
+            pieces.push(rollback_marker(rollback, &layout));
+        }
+    }
+
+    // The legend, from `flow.legend`, sits at the map's top left — the top
+    // right holds the card's full-screen button.
+    if !map.legend.is_empty() {
+        let mut row = h_flex().absolute().top(px(6.)).left(px(12.)).gap(px(14.)).items_center();
+        for item in &map.legend {
+            row = row.child(
+                h_flex()
+                    .gap(px(6.))
+                    .items_center()
+                    .child(
+                        div().w(px(LEGEND_W)).h(px(LEGEND_H)).rounded(px(2.)).bg(c(state_colour(&item.key))),
+                    )
+                    .child(
+                        div()
+                            .text_size(px(11.))
+                            .font(mono.clone())
+                            .text_color(c(p::SUB))
+                            .child(item.label.clone()),
+                    ),
+            );
+        }
+        pieces.push(row.into_any_element());
+    }
+
+    // The stage chips, from `flow.stages`, run along the bottom; a click
+    // scrolls its stage into view and highlights it for 1.5s.
+    if !map.stages.is_empty() {
+        let mut row = h_flex()
+            .absolute()
+            .left(px(layout.ticket_x))
+            .top(px(layout.height - CHIP_D - 12.))
+            .gap(px(12.))
+            .items_center();
+        for (index, stage) in map.stages.iter().enumerate() {
+            let anchor = layout.stage_x.get(index).copied().unwrap_or(layout.hub_x);
+            let key = stage.key.clone();
+            let jump_scroll = scroll.clone();
+            let focused = page.flow_focus.as_ref().map(|(k, _)| k == &stage.key).unwrap_or(false);
+            let filled = stage.state == "approved";
+            let ring_colour = match stage.state.as_str() {
+                "approved" => p::GREEN,
+                "in_progress" => p::BLUE,
+                "sent_back" | "failed" => p::ORANGE,
+                _ => p::BORDER2,
+            };
+            row = row.child(
+                h_flex()
+                    .id(("flow-chip", index))
+                    .cursor_pointer()
+                    .px(px(8.))
+                    .py(px(3.))
+                    .gap(px(7.))
+                    .items_center()
+                    .rounded(px(12.))
+                    .border_1()
+                    .border_color(c(if focused { p::BLUE } else { p::BORDER2 }))
+                    .child(
+                        div()
+                            .size(px(CHIP_D))
+                            .flex_none()
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .rounded_full()
+                            .border_2()
+                            .border_color(c(ring_colour))
+                            .when(filled, |this| this.bg(c(p::GREEN)))
+                            .text_size(px(11.))
+                            .font_weight(FontWeight::SEMIBOLD)
+                            .text_color(c(if filled { p::CARD } else { ring_colour }))
+                            .child(format!("{}", stage.n)),
+                    )
+                    .child(
+                        div().text_size(px(13.)).text_color(c(p::TEXT)).child(stage.label.clone()),
+                    )
+                    .on_click(cx.listener(
+                        move |page: &mut MiniOrkPage,
+                              _: &ClickEvent,
+                              _: &mut Window,
+                              cx: &mut Context<MiniOrkPage>| {
+                            let max = jump_scroll.max_offset().x;
+                            let want = px((anchor - 120.).max(0.));
+                            // A scroll offset is <= 0: it is how far the content
+                            // is dragged left of the viewport, so the jump is the
+                            // negated distance, clamped to the extent.
+                            let offset_x = if want > max { -max } else { -want };
+                            jump_scroll.set_offset(point(offset_x, jump_scroll.offset().y));
+                            let next = page.flow_focus.as_ref().map(|(_, seq)| *seq).unwrap_or(0) + 1;
+                            page.flow_focus = Some((key.clone(), next));
+                            cx.notify();
+                            cx.spawn(async move |this, cx| {
+                                cx.background_executor().timer(Duration::from_millis(1500)).await;
+                                this.update(cx, |page, cx| {
+                                    if page.flow_focus.as_ref().map(|(_, seq)| *seq) == Some(next) {
+                                        page.flow_focus = None;
+                                        cx.notify();
+                                    }
+                                })
+                                .ok();
+                            })
+                            .detach();
+                        },
+                    )),
+            );
+        }
+        row = row.child(
+            div()
+                .text_size(px(11.))
+                .font(mono.clone())
+                .text_color(c(p::SUB))
+                .child("Click a stage to jump to it"),
+        );
+        pieces.push(row.into_any_element());
+    }
+
     let surface = div()
         .relative()
         .w(px(layout.width))
@@ -686,6 +1234,32 @@ pub(crate) fn render_flow_part_a(
         .overflow_x_scroll()
         .track_scroll(scroll)
         .child(surface);
+    // The map *is* the graph on this tab, so its card keeps the way into the
+    // full-screen DAG (the older column DAG's own button is hidden).
+    let full_screen = div()
+        .id("flow-full")
+        .absolute()
+        .top(px(6.))
+        .right(px(6.))
+        .h(px(24.))
+        .px(px(9.))
+        .flex()
+        .items_center()
+        .rounded(px(5.))
+        .border_1()
+        .border_color(c(p::BORDER2))
+        .bg(c(p::BG))
+        .text_size(px(12.))
+        .text_color(c(p::MUTED))
+        .cursor_pointer()
+        .hover(|s| s.bg(c(p::HOVER)).text_color(c(p::TEXT)))
+        .tooltip(ui::Tooltip::text("Full screen · inspect every node"))
+        .child("⤢ Full screen")
+        .on_click(cx.listener(
+            |page: &mut MiniOrkPage, _, window, cx: &mut Context<MiniOrkPage>| {
+                page.open_graph(None, window, cx)
+            },
+        ));
     v_flex()
         .w_full()
         .min_w_0()
@@ -695,11 +1269,17 @@ pub(crate) fn render_flow_part_a(
         .border_color(c(p::BORDER))
         .bg(c(p::CHROME))
         .child(
-            div().relative().w_full().child(scroller).custom_scrollbars(
-                Scrollbars::always_visible(ScrollAxes::Horizontal).tracked_scroll_handle(scroll),
-                window,
-                cx,
-            ),
+            div()
+                .relative()
+                .w_full()
+                .child(scroller)
+                .child(full_screen)
+                .custom_scrollbars(
+                    Scrollbars::always_visible(ScrollAxes::Horizontal)
+                        .tracked_scroll_handle(scroll),
+                    window,
+                    cx,
+                ),
         )
         .into_any_element()
 }
@@ -763,6 +1343,182 @@ fn pill_glyph(state: &str, colour: u32) -> AnyElement {
             .into_any_element(),
         _ => div().into_any_element(),
     }
+}
+
+/// A spoke's end ring, in its state colour.
+fn spoke_ring(centre_x: f32, centre_y: f32, state: &str) -> AnyElement {
+    div()
+        .absolute()
+        .left(px(centre_x - SPOKE_RING / 2.))
+        .top(px(centre_y - SPOKE_RING / 2.))
+        .size(px(SPOKE_RING))
+        .rounded_full()
+        .bg(c(p::CARD))
+        .border_2()
+        .border_color(c(state_colour(state)))
+        .into_any_element()
+}
+
+/// A spoke's label and its sub, beside the ring — to its right, or left when
+/// the spoke leans left.
+fn spoke_label(left: f32, centre_y: f32, label: &str, sub: &str, right: bool) -> AnyElement {
+    let mut label_div = div()
+        .text_size(px(13.))
+        .font_weight(FontWeight::SEMIBOLD)
+        .text_color(c(p::TEXT));
+    let mut sub_div = div().text_size(px(11.)).text_color(c(p::SUB));
+    if !right {
+        label_div = label_div.text_right();
+        sub_div = sub_div.text_right();
+    }
+    let mut block = v_flex()
+        .absolute()
+        .left(px(left))
+        .top(px(centre_y - 9.))
+        .w(px(SPOKE_LABEL_W))
+        .child(label_div.child(label.to_string()));
+    if !sub.is_empty() {
+        block = block.child(sub_div.child(sub.to_string()));
+    }
+    block.into_any_element()
+}
+
+/// The merge bar, its label and checklist, and the human's circle below it.
+fn merge_elements(merge: &Merge, layout: &Layout) -> Vec<AnyElement> {
+    let mut pieces = Vec::new();
+    let x = layout.merge_x.unwrap_or(layout.hub_x);
+    pieces.push(
+        div()
+            .absolute()
+            .left(px(x - MERGE_W / 2.))
+            .top(px(layout.return_y - MERGE_H / 2.))
+            .w(px(MERGE_W))
+            .h(px(MERGE_H))
+            .rounded(px(3.))
+            .bg(c(state_colour(&merge.state)))
+            .into_any_element(),
+    );
+    pieces.push(
+        div()
+            .absolute()
+            .left(px(x - 44.))
+            .top(px(layout.return_y - MERGE_H / 2. - 20.))
+            .w(px(88.))
+            .text_center()
+            .text_size(px(13.))
+            .font_weight(FontWeight::SEMIBOLD)
+            .text_color(c(p::TEXT))
+            .child("Merge")
+            .into_any_element(),
+    );
+    // The checks stack upward from the bar.
+    let checks_bottom = layout.return_y - MERGE_H / 2. - 26.;
+    let count = merge.checks.len() as f32;
+    for (index, check) in merge.checks.iter().enumerate() {
+        let row_top = checks_bottom - (count - index as f32) * 20.;
+        let mut tick = div()
+            .absolute()
+            .left(px(x - 70.))
+            .top(px(row_top))
+            .size(px(CHECK_D))
+            .flex_none()
+            .flex()
+            .items_center()
+            .justify_center()
+            .rounded(px(3.))
+            .border_1()
+            .border_color(c(if check.ok { p::GREEN } else { p::BORDER2 }));
+        if check.ok {
+            tick = tick.child(p::text("✓", 10., p::GREEN));
+        }
+        pieces.push(tick.into_any_element());
+        pieces.push(
+            div()
+                .absolute()
+                .left(px(x - 70. + CHECK_D + 6.))
+                .top(px(row_top + 1.))
+                .w(px(150.))
+                .text_size(px(11.))
+                .text_color(c(p::BODY))
+                .child(check.label.clone())
+                .into_any_element(),
+        );
+    }
+    if let Some(human) = &merge.human {
+        let human_y = layout.return_y + HUMAN_DROP;
+        pieces.push(
+            div()
+                .absolute()
+                .left(px(x - HUMAN_D / 2.))
+                .top(px(human_y - HUMAN_D / 2.))
+                .size(px(HUMAN_D))
+                .flex()
+                .items_center()
+                .justify_center()
+                .rounded_full()
+                .bg(c(p::CARD))
+                .border_2()
+                .border_color(c(p::BORDER2))
+                .child(gpui::svg().path(IconName::Person.path()).size(px(24.)).text_color(c(p::BODY)))
+                .into_any_element(),
+        );
+        pieces.push(
+            div()
+                .absolute()
+                .left(px(x - 60.))
+                .top(px(human_y + HUMAN_D / 2. + 4.))
+                .w(px(120.))
+                .text_center()
+                .text_size(px(13.))
+                .font_weight(FontWeight::SEMIBOLD)
+                .text_color(c(p::TEXT))
+                .child(human.label.clone())
+                .into_any_element(),
+        );
+        if !human.sub.is_empty() {
+            pieces.push(
+                div()
+                    .absolute()
+                    .left(px(x - 70.))
+                    .top(px(human_y + HUMAN_D / 2. + 20.))
+                    .w(px(140.))
+                    .text_center()
+                    .text_size(px(11.))
+                    .text_color(c(p::SUB))
+                    .child(human.sub.clone())
+                    .into_any_element(),
+            );
+        }
+    }
+    pieces
+}
+
+/// The red end marker the lower line closes with when the run rolled back. It
+/// carries a CARD background so the line ending under it does not show through
+/// the text.
+fn rollback_marker(rollback: &Rollback, layout: &Layout) -> AnyElement {
+    let x = layout.merge_x.unwrap_or(layout.hub_x);
+    let plural = if rollback.paths == 1 { "file" } else { "files" };
+    h_flex()
+        .absolute()
+        .left(px(x - 96.))
+        .top(px(layout.return_y - 12.))
+        .w(px(192.))
+        .py(px(2.))
+        .justify_center()
+        .gap(px(6.))
+        .items_center()
+        .rounded(px(10.))
+        .bg(c(p::CARD))
+        .child(div().size(px(10.)).flex_none().rounded_full().bg(c(p::RED)))
+        .child(
+            div()
+                .text_size(px(12.))
+                .font_weight(FontWeight::SEMIBOLD)
+                .text_color(c(p::RED))
+                .child(format!("Rolled back · {} {plural}", rollback.paths)),
+        )
+        .into_any_element()
 }
 
 /// Every connector, in one canvas. The chart is small and fully known at
@@ -880,6 +1636,106 @@ fn connectors(map: &Flow, layout: &Layout) -> Vec<Stroke> {
             c(p::ORANGE),
             EDGE_W,
         ));
+    }
+
+    // The return track — off the pill, down the right side, back left along
+    // the lower line — and the review hub's spokes fanning out over the upper
+    // and lower arcs.
+    if map.integrate.is_some() {
+        let review_state = map
+            .review
+            .as_ref()
+            .and_then(|review| review.hub.as_ref())
+            .map(|hub| hub.state.as_str())
+            .unwrap_or("pending");
+        let colour = c(state_colour(review_state));
+        let width = edge_width(review_state);
+        let end_x = layout.merge_x.unwrap_or(layout.hub_x);
+        strokes.push(Stroke::line(
+            (layout.integrate_x + PILL_W, TRACK_Y),
+            (layout.ret_x_right - CORNER_R, TRACK_Y),
+            colour,
+            width,
+        ));
+        strokes.push(Stroke::cubic(
+            (layout.ret_x_right - CORNER_R, TRACK_Y),
+            (layout.ret_x_right, TRACK_Y + CORNER_R),
+            (layout.ret_x_right, TRACK_Y),
+            (layout.ret_x_right, TRACK_Y),
+            colour,
+            width,
+        ));
+        strokes.push(Stroke::line(
+            (layout.ret_x_right, TRACK_Y + CORNER_R),
+            (layout.ret_x_right, layout.return_y - CORNER_R),
+            colour,
+            width,
+        ));
+        strokes.push(Stroke::cubic(
+            (layout.ret_x_right, layout.return_y - CORNER_R),
+            (layout.ret_x_right - CORNER_R, layout.return_y),
+            (layout.ret_x_right, layout.return_y),
+            (layout.ret_x_right, layout.return_y),
+            colour,
+            width,
+        ));
+        strokes.push(Stroke::line(
+            (layout.ret_x_right - CORNER_R, layout.return_y),
+            (end_x, layout.return_y),
+            colour,
+            width,
+        ));
+
+        if let Some(review) = &map.review {
+            let (angles, fix_angle) = spoke_angles(review.spokes.len(), review.fix.is_some());
+            for angle in &angles {
+                let radians = angle.to_radians();
+                let (sin, cos) = radians.sin_cos();
+                strokes.push(Stroke::line(
+                    (layout.hub_x + HUB_R * cos, layout.return_y + HUB_R * sin),
+                    (
+                        layout.hub_x + (HUB_R + SPOKE_LEN) * cos,
+                        layout.return_y + (HUB_R + SPOKE_LEN) * sin,
+                    ),
+                    c(p::BORDER2),
+                    2.,
+                ));
+            }
+            // The Fix spoke is a double line, drawn in its reserved slot.
+            if let (Some(fix), Some(angle)) = (&review.fix, fix_angle) {
+                let radians = angle.to_radians();
+                let (sin, cos) = radians.sin_cos();
+                let fix_colour = c(if fix.state == "approved" { p::GREEN } else { p::ORANGE });
+                let from = (layout.hub_x + HUB_R * cos, layout.return_y + HUB_R * sin);
+                let to = (
+                    layout.hub_x + (HUB_R + SPOKE_LEN) * cos,
+                    layout.return_y + (HUB_R + SPOKE_LEN) * sin,
+                );
+                for offset in [-2.5_f32, 2.5] {
+                    let (dx, dy) = (-sin * offset, cos * offset);
+                    strokes.push(Stroke::line(
+                        (from.0 + dx, from.1 + dy),
+                        (to.0 + dx, to.1 + dy),
+                        fix_colour,
+                        2.,
+                    ));
+                }
+            }
+        }
+
+        // A dotted line drops from the merge bar to the human's circle.
+        if let Some(merge) = &map.merge {
+            if merge.human.is_some() {
+                let x = layout.merge_x.unwrap_or(layout.hub_x);
+                let end = layout.return_y + HUMAN_DROP - HUMAN_D / 2.;
+                let mut y = layout.return_y + MERGE_H / 2.;
+                while y < end {
+                    let stop = (y + 3.).min(end);
+                    strokes.push(Stroke::line((x, y), (x, stop), c(p::BORDER2), 2.));
+                    y += 7.;
+                }
+            }
+        }
     }
 
     strokes

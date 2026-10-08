@@ -106,6 +106,10 @@ pub struct MiniOrkPage {
     dag_scroll: ScrollHandle,
     /// The run flow map scrolls sideways over its own track.
     flow_scroll: ScrollHandle,
+    /// The stage a flow-map chip just jumped to, with a sequence number the
+    /// 1.5s highlight timer checks before clearing it (so a second click
+    /// restarts the glow rather than letting the first timer end it).
+    pub(crate) flow_focus: Option<(String, u64)>,
     /// Selectable text for everything this page shows.
     pub(crate) texts: Texts,
     /// The run graph, full screen, when open.
@@ -154,6 +158,7 @@ impl MiniOrkPage {
             fade: 0,
             dag_scroll: ScrollHandle::new(),
             flow_scroll: ScrollHandle::new(),
+            flow_focus: None,
             texts: Texts::default(),
             graph: None,
             pending_graph: None,
@@ -475,7 +480,13 @@ impl MiniOrkPage {
 
     /// Sections in the design's two-column grid: `full` spans both; `col`
     /// pins a column (list/detail layouts); the rest flow two to a row.
-    fn render_sections(&self, page: &Value, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
+    fn render_sections(
+        &self,
+        page: &Value,
+        hide_dag: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
         let sections = arr(page, "sections");
         let mut rows: Vec<AnyElement> = Vec::new();
         let mut group: Vec<(usize, &Value)> = Vec::new();
@@ -514,6 +525,11 @@ impl MiniOrkPage {
             group.clear();
         };
         for (i, s) in sections.iter().enumerate() {
+            // With the flow map drawn the older column DAG below it is
+            // redundant; the full-screen DAG still opens from its button.
+            if hide_dag && str_of(s, "type") == "dag" {
+                continue;
+            }
             if s.get("full").and_then(Value::as_bool).unwrap_or(false) {
                 flush(&mut group, &mut rows, self, window, cx);
                 rows.push(self.render_section(i, s, window, cx));
@@ -1354,25 +1370,22 @@ impl Render for MiniOrkPage {
                 .child(self.texts.text("page-error", &error, Look::new(12.5, c(p::RED)).mono(true), cx))
                 .into_any_element(),
             Some(Ok(page)) => {
-                // On the Graph tab the flow map leads, and the older column DAG
-                // below it is kept under a "Detailed DAG" heading until part B
-                // retires it.
+                // On the Graph tab the flow map leads. The map *is* the graph
+                // view, so the older column DAG below it is dropped when the
+                // map is drawn; the full-screen DAG still opens from its button.
                 let flow_map = (str_of(&page, "tab") == "graph")
                     .then(|| page.get("flow"))
                     .flatten()
                     .filter(|flow| flow.is_object())
                     .map(|flow| crate::flow::render_flow_part_a(self, flow, &self.flow_scroll, window, cx));
-                let detailed_dag_title = flow_map.is_some().then(|| {
-                    self.texts.text("dag-title", "Detailed DAG", Look::new(13., c(p::TEXT)).bold(true), cx)
-                });
+                let hide_dag = flow_map.is_some();
                 v_flex()
                     .gap(px(14.))
                     .child(self.render_header(&page, cx))
                     .child(v_flex().children(self.render_tabs(&page, cx)).children(bar.map(|b| div().mt(px(-2.)).child(b))))
                     .children(flow_map)
-                    .children(detailed_dag_title)
                     .child(
-                        div().child(self.render_sections(&page, window, cx)).with_animation(
+                        div().child(self.render_sections(&page, hide_dag, window, cx)).with_animation(
                             ("page-fade", self.fade as usize),
                             Animation::new(Duration::from_millis(280)),
                             |el, delta| el.opacity(delta),
