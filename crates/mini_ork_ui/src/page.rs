@@ -535,7 +535,12 @@ impl MiniOrkPage {
                         .child(self.texts.markdown(format!("s{index}-md"), str_of(s, "text"), Look::new(13., c(p::BODY)), cx)),
                 )
                 .into_any_element(),
-            _ => div().into_any_element(),
+            _ => self.texts.text(
+                format!("s{index}-unknown"),
+                &format!("This section ({kind}) needs a newer mini-ork IDE."),
+                Look::new(12., c(p::MUTED)),
+                cx,
+            ),
         };
         let has_head = !title.is_empty() || !actions.is_empty();
         card()

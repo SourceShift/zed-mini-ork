@@ -1,11 +1,12 @@
 //! The mini-ork IDE design's palette, sizes and small building blocks.
 //!
-//! The design is drawn in Zed's One Dark, so views name its colours (`BG`,
-//! `TEXT`, `GREEN`, …, and a few literal greys). `c` / `ca` map each of them
-//! onto the ACTIVE Zed theme (editor/panel backgrounds, borders, text levels,
-//! status and syntax colours), so the IDE follows any theme, light or dark,
-//! and re-colours when the theme changes. Pages name colours rather than
-//! sending hex — see `mini_ork/ide_pages/spec.py`.
+//! Views name design colours (`BG`, `TEXT`, `GREEN`, …); `c` / `ca` return
+//! them. Orca's neutral dark values are the default. Setting
+//! `MINI_ORK_PALETTE=theme` opts out and maps every key onto the ACTIVE Zed
+//! theme (editor/panel backgrounds, borders, text levels, status and syntax
+//! colours), so the IDE follows any theme, light or dark, and re-colours when
+//! the theme changes. Pages name colours rather than sending hex — see
+//! `mini_ork/ide_pages/spec.py`.
 
 use std::{collections::HashMap, sync::RwLock};
 
@@ -45,11 +46,32 @@ const SKELETON: u32 = 0x434a56;
 const NODE_CARD: u32 = 0x323843;
 const NODE_CARD_PENDING: u32 = 0x2a2e36;
 
+/// New Orca surfaces: card / page / sidebar / sidebar-active; an amber unread
+/// accent; and the three git-status colours the IDE shows in row marks.
+pub const CARD: u32 = 0x171717;
+pub const PAGE: u32 = 0x0a0a0a;
+pub const SIDEBAR: u32 = 0x1c1c1c;
+pub const SIDEBAR_ACTIVE: u32 = 0x2a2a2a;
+pub const AMBER: u32 = 0xf59e0b;
+pub const GIT_ADD: u32 = 0x81b88b;
+pub const GIT_MOD: u32 = 0xe2c08d;
+pub const GIT_DEL: u32 = 0xc74e39;
+
+/// Type scale and corner radii the Orca design uses throughout.
+pub const TITLE: f32 = 13.;
+pub const META: f32 = 11.;
+pub const BADGE: f32 = 10.;
+pub const PILL: f32 = 9.;
+pub const RADIUS_CARD: f32 = 10.;
+pub const RADIUS_BTN: f32 = 6.;
+
 /// Design colour → active-theme colour; `None` until `sync_theme` runs.
 static THEMED: RwLock<Option<HashMap<u32, Hsla>>> = RwLock::new(None);
 
 /// Rebuild the design → theme map from the active theme. Called at init and
-/// whenever the theme changes.
+/// whenever the theme changes. The Orca dark look is the default; setting
+/// `MINI_ORK_PALETTE=theme` keeps the older behaviour of mapping every design
+/// key onto the active Zed theme (an opt-out for users who don't want Orca).
 pub fn sync_theme(cx: &App) {
     let theme = cx.theme();
     let colors = theme.colors();
@@ -63,36 +85,85 @@ pub fn sync_theme(cx: &App) {
     };
     // A surface a little darker than `base`, in light and dark themes alike.
     let shade = |base: Hsla, amount: f32| Hsla { l: (base.l - amount).clamp(0., 1.), ..base };
-    let map = HashMap::from([
-        (BG, colors.editor_background),
-        (CHROME, colors.panel_background),
-        (BORDER, colors.border_variant),
-        (BORDER2, colors.border),
-        (HOVER, colors.element_hover),
-        (SELECTED, colors.element_selected),
-        (ROW_SELECTED, colors.background),
-        (ROW_RULE, colors.border_variant.opacity(0.6)),
-        (NODE_BG, colors.element_background.blend(colors.element_hover.opacity(0.6))),
-        (TEXT, colors.text),
-        (BODY, colors.text.blend(colors.text_muted.opacity(0.45))),
-        (MUTED, colors.text_muted),
-        (SUB, colors.text_placeholder),
-        (DIM, colors.text_disabled.opacity(0.75)),
-        (BLUE, colors.text_accent),
-        (GREEN, status.success),
-        (RED, status.error),
-        (YELLOW, status.warning),
-        (PURPLE, syntax("keyword", PURPLE)),
-        (CYAN, syntax("type", CYAN)),
-        (ORANGE, syntax("number", ORANGE)),
-        (STREAM_BOX, shade(colors.editor_background, 0.02)),
-        (ELEMENT, colors.element_background),
-        (CANVAS, shade(colors.editor_background, 0.04)),
-        (SKELETON, colors.border),
-        // Run-graph node cards: an element surface, a quieter one while pending.
-        (NODE_CARD, colors.element_background.blend(colors.element_hover.opacity(0.4))),
-        (NODE_CARD_PENDING, colors.editor_background.blend(colors.element_background.opacity(0.6))),
-    ]);
+    let orca = std::env::var("MINI_ORK_PALETTE").as_deref() != Ok("theme");
+    let map = if orca {
+        HashMap::from([
+            (BG, rgb(0x0a0a0a).into()),
+            (CHROME, rgb(0x171717).into()),
+            (BORDER, rgb(0x232323).into()),
+            (BORDER2, rgb(0x333333).into()),
+            (HOVER, rgb(0x262626).into()),
+            (SELECTED, rgb(0x353535).into()),
+            (ROW_SELECTED, rgb(0x262626).into()),
+            (ROW_RULE, rgb(0x1c1c1c).into()),
+            (NODE_BG, rgb(0x1f1f1f).into()),
+            (TEXT, rgb(0xfafafa).into()),
+            (BODY, rgb(0xd4d4d4).into()),
+            (MUTED, rgb(0xa1a1a1).into()),
+            (SUB, rgb(0x8b8b8b).into()),
+            (DIM, rgb(0x5e5e5e).into()),
+            (BLUE, rgb(0x60a5fa).into()),
+            (GREEN, rgb(0x34d399).into()),
+            (RED, rgb(0xff6568).into()),
+            (YELLOW, rgb(0xf0b100).into()),
+            (PURPLE, rgb(0xa78bfa).into()),
+            (CYAN, rgb(0x22d3ee).into()),
+            (ORANGE, rgb(0xff6900).into()),
+            (STREAM_BOX, rgb(0x111111).into()),
+            (ELEMENT, rgb(0x262626).into()),
+            (CANVAS, rgb(0x0a0a0a).into()),
+            (SKELETON, rgb(0x262626).into()),
+            (NODE_CARD, rgb(0x171717).into()),
+            (NODE_CARD_PENDING, rgb(0x121212).into()),
+            (CARD, rgb(0x171717).into()),
+            (PAGE, rgb(0x0a0a0a).into()),
+            (SIDEBAR, rgb(0x1c1c1c).into()),
+            (SIDEBAR_ACTIVE, rgb(0x2a2a2a).into()),
+            (AMBER, rgb(0xf59e0b).into()),
+            (GIT_ADD, rgb(0x81b88b).into()),
+            (GIT_MOD, rgb(0xe2c08d).into()),
+            (GIT_DEL, rgb(0xc74e39).into()),
+        ])
+    } else {
+        HashMap::from([
+            (BG, colors.editor_background),
+            (CHROME, colors.panel_background),
+            (BORDER, colors.border_variant),
+            (BORDER2, colors.border),
+            (HOVER, colors.element_hover),
+            (SELECTED, colors.element_selected),
+            (ROW_SELECTED, colors.background),
+            (ROW_RULE, colors.border_variant.opacity(0.6)),
+            (NODE_BG, colors.element_background.blend(colors.element_hover.opacity(0.6))),
+            (TEXT, colors.text),
+            (BODY, colors.text.blend(colors.text_muted.opacity(0.45))),
+            (MUTED, colors.text_muted),
+            (SUB, colors.text_placeholder),
+            (DIM, colors.text_disabled.opacity(0.75)),
+            (BLUE, colors.text_accent),
+            (GREEN, status.success),
+            (RED, status.error),
+            (YELLOW, status.warning),
+            (PURPLE, syntax("keyword", PURPLE)),
+            (CYAN, syntax("type", CYAN)),
+            (ORANGE, syntax("number", ORANGE)),
+            (STREAM_BOX, shade(colors.editor_background, 0.02)),
+            (ELEMENT, colors.element_background),
+            (CANVAS, shade(colors.editor_background, 0.04)),
+            (SKELETON, colors.border),
+            // Run-graph node cards: an element surface, a quieter one while pending.
+            (NODE_CARD, colors.element_background.blend(colors.element_hover.opacity(0.4))),
+            (NODE_CARD_PENDING, colors.editor_background.blend(colors.element_background.opacity(0.6))),
+            (CARD, colors.element_background),
+            (PAGE, colors.editor_background),
+            (SIDEBAR, colors.panel_background),
+            (SIDEBAR_ACTIVE, colors.element_selected),
+            (AMBER, status.warning),
+            (GIT_ADD, colors.version_control_added),
+            (GIT_MOD, colors.version_control_modified),
+            (GIT_DEL, colors.version_control_deleted),
+        ])
+    };
     if let Ok(mut themed) = THEMED.write() {
         *themed = Some(map);
     }
@@ -127,6 +198,7 @@ pub fn named(name: &str) -> Hsla {
         "muted" => MUTED,
         "sub" => SUB,
         "dim" => DIM,
+        "amber" => AMBER,
         "blue" => BLUE,
         "green" => GREEN,
         "red" => RED,
@@ -253,12 +325,19 @@ pub fn lane_mark(lane: &str, size: f32) -> AnyElement {
 /// The mark and colour of a run state.
 pub fn state_mark(state: &str) -> (&'static str, u32) {
     match state {
-        "working" | "running" => ("●", BLUE),
-        "needs_you" | "needs" => ("✋", YELLOW),
+        "working" | "running" => ("●", YELLOW),
+        "needs_you" | "needs" => ("?", ORANGE),
         "failed" | "error" => ("✗", RED),
         "done" | "published" => ("✓", GREEN),
         _ => ("○", SUB),
     }
+}
+
+/// RGB-composite blend of two colours, for Orca's "foreground 10% over
+/// background" active surfaces. `t = 0` returns `a`; `t = 1` returns `b`.
+pub fn mix(a: Hsla, b: Hsla, t: f32) -> Hsla {
+    let t = t.clamp(0., 1.);
+    a.blend(b.opacity(t))
 }
 
 pub fn mono_font(cx: &App) -> Font {
