@@ -83,6 +83,38 @@ fn run_label(run_id: &str) -> String {
     }
 }
 
+/// The flow map's replay: a clock that walks the run's `flow.timeline` and
+/// overrides the drawn steps' states while it plays (or is paused mid-way).
+/// The clock is a wall-time remap — at 1× the whole timeline plays in about
+/// 12 seconds whatever the run's real length — so `now` is in the timeline's
+/// own epoch seconds, not wall seconds.
+pub(crate) struct Replay {
+    /// The run the replay belongs to; a run change stops it.
+    pub(crate) run: String,
+    /// The clock position, in epoch seconds, between `start` and `end`.
+    pub(crate) now: f64,
+    /// The timeline's first and last `t`.
+    pub(crate) start: f64,
+    pub(crate) end: f64,
+    /// Whether the clock is advancing.
+    pub(crate) playing: bool,
+    /// The chosen speed multiplier (0.5, 1 or 2); kept when a replay stops so
+    /// the controls keep showing the picked speed.
+    pub(crate) speed: f32,
+    /// True while `now` overrides the map's real states (playing, or paused
+    /// mid-way). Cleared at the end and on Restart, so the map shows truth.
+    pub(crate) active: bool,
+    /// Bumped whenever the clock is (re)started or stopped, so a ticker left
+    /// over from an earlier replay sees the change and exits.
+    pub(crate) epoch: u64,
+}
+
+impl Default for Replay {
+    fn default() -> Self {
+        Self { run: String::new(), now: 0., start: 0., end: 0., playing: false, speed: 1., active: false, epoch: 0 }
+    }
+}
+
 pub struct MiniOrkPage {
     pub(crate) key: String,
     pub(crate) args: BTreeMap<String, String>,
@@ -110,6 +142,8 @@ pub struct MiniOrkPage {
     /// 1.5s highlight timer checks before clearing it (so a second click
     /// restarts the glow rather than letting the first timer end it).
     pub(crate) flow_focus: Option<(String, u64)>,
+    /// The flow map's replay clock and the states it overlays while it runs.
+    pub(crate) replay: Replay,
     /// Selectable text for everything this page shows.
     pub(crate) texts: Texts,
     /// The run graph, full screen, when open.
@@ -159,6 +193,7 @@ impl MiniOrkPage {
             dag_scroll: ScrollHandle::new(),
             flow_scroll: ScrollHandle::new(),
             flow_focus: None,
+            replay: Replay::default(),
             texts: Texts::default(),
             graph: None,
             pending_graph: None,
@@ -204,9 +239,19 @@ impl MiniOrkPage {
         if prev_run != self.args.get("run").cloned() {
             self.expanded.clear();
             self.seeded.clear();
+            self.stop_replay();
         }
         self.begin_switch();
         self.reload(cx);
+    }
+
+    /// Stop the flow map's replay: drop the clock and the state override so the
+    /// map shows the real states again. The chosen speed is kept.
+    pub(crate) fn stop_replay(&mut self) {
+        self.replay.active = false;
+        self.replay.playing = false;
+        // Bump the epoch so a ticker still in flight sees the change and exits.
+        self.replay.epoch += 1;
     }
 
     fn cache_key(&self) -> String {
@@ -245,6 +290,8 @@ impl MiniOrkPage {
     }
 
     fn set_tab(&mut self, tab: String, cx: &mut Context<Self>) {
+        // Leaving the Graph tab stops the replay (and it is only drawn there).
+        self.stop_replay();
         self.tab = Some(tab);
         self.begin_switch();
         self.reload(cx);
