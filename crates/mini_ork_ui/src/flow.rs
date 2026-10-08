@@ -18,11 +18,14 @@
 //! Geometry is decided once in [`Layout::compute`] so the canvas (which needs
 //! the endpoints) and the divs (which need the same anchors) cannot drift.
 
-use std::{collections::HashMap, time::Duration};
+use std::{
+    collections::{HashMap, HashSet},
+    time::Duration,
+};
 
 use gpui::{
-    AnyElement, Bounds, ClickEvent, Context, Div, FontWeight, Hsla, PathBuilder, Pixels, Point,
-    ScrollHandle, SharedString, Window, canvas, point, px,
+    AnyElement, Bounds, ClickEvent, Context, Div, Font, FontWeight, Hsla, PathBuilder, Pixels,
+    Point, ScrollHandle, SharedString, Window, canvas, point, px,
 };
 use serde_json::Value;
 use ui::{ScrollAxes, Scrollbars, WithScrollbar as _, prelude::*};
@@ -113,6 +116,18 @@ struct Flow {
     rollback: Option<Rollback>,
     legend: Vec<Legend>,
     stages: Vec<Stage>,
+    /// The run's `node_start` / `node_end` stream, in order — what a replay
+    /// replays.
+    timeline: Vec<TimelineEvent>,
+}
+
+/// One `flow.timeline` entry: a node's start or end at an epoch second, with
+/// the state the replay clock paints the step in (`in_progress` for a start,
+/// the recorded end state otherwise).
+struct TimelineEvent {
+    t: f64,
+    node: String,
+    state: String,
 }
 
 /// One node of the map, as the flow model spells it.
@@ -215,6 +230,7 @@ impl Flow {
         let integrate = flow.get("integrate").cloned().unwrap_or(Value::Null);
         let review = flow.get("review").cloned().unwrap_or(Value::Null);
         let legend = flow.get("legend").cloned().unwrap_or(Value::Null);
+        let timeline = flow.get("timeline").cloned().unwrap_or(Value::Null);
         Self {
             ticket_id: str_of(&ticket, "id"),
             design: arr(&design, "nodes").iter().filter_map(parse_step).collect(),
@@ -228,8 +244,142 @@ impl Flow {
             rollback: flow.get("rollback").and_then(parse_rollback),
             legend: parse_legend(&legend),
             stages: arr(flow, "stages").iter().filter_map(parse_stage).collect(),
+            timeline: parse_timeline(&timeline),
         }
     }
+
+    /// Every step the map draws — the design markers, each lane's implementer
+    /// node and critic, the integrate pill and the review hub. The ticket and
+    /// the spoke rings carry no node id, so the replay never touches them.
+    fn steps(&self) -> impl Iterator<Item = &Step> {
+        self.design
+            .iter()
+            .chain(
+                self.packages
+                    .iter()
+                    .flat_map(|package| package.lanes.iter())
+                    .flat_map(|lane| std::iter::once(&lane.node).chain(lane.critic.iter())),
+            )
+            .chain(self.integrate.iter())
+            .chain(self.review.iter().filter_map(|review| review.hub.as_ref()))
+    }
+
+    /// Override the steps' states from the timeline at `now`: a step whose id
+    /// the timeline mentions shows its last event at or before `now`, or
+    /// `pending` before its first. A step the timeline never mentions keeps its
+    /// page state. The stage chips re-roll up with the same worst-of rule
+    /// `run_flow.py` uses.
+    fn apply_replay(&mut self, now: f64) {
+        let mut mentioned: HashSet<String> = HashSet::new();
+        let mut reached: HashMap<String, String> = HashMap::new();
+        for event in &self.timeline {
+            mentioned.insert(event.node.clone());
+            if event.t <= now {
+                reached.insert(event.node.clone(), event.state.clone());
+            }
+        }
+        let at = |id: &str| -> Option<String> {
+            if !mentioned.contains(id) {
+                return None;
+            }
+            Some(reached.get(id).cloned().unwrap_or_else(|| "pending".to_string()))
+        };
+        for step in self.design.iter_mut() {
+            if let Some(state) = at(&step.id) {
+                step.state = state;
+            }
+        }
+        for package in self.packages.iter_mut() {
+            for lane in package.lanes.iter_mut() {
+                if let Some(state) = at(&lane.node.id) {
+                    lane.node.state = state;
+                }
+                if let Some(critic) = lane.critic.as_mut() {
+                    if let Some(state) = at(&critic.id) {
+                        critic.state = state;
+                    }
+                }
+            }
+        }
+        if let Some(step) = self.integrate.as_mut() {
+            if let Some(state) = at(&step.id) {
+                step.state = state;
+            }
+        }
+        if let Some(review) = self.review.as_mut() {
+            if let Some(hub) = review.hub.as_mut() {
+                if let Some(state) = at(&hub.id) {
+                    hub.state = state;
+                }
+            }
+        }
+        let rolled: Vec<Option<String>> =
+            self.stages.iter().map(|stage| self.rolled_up(&stage.key)).collect();
+        for (stage, state) in self.stages.iter_mut().zip(rolled) {
+            if let Some(state) = state {
+                stage.state = state;
+            }
+        }
+    }
+
+    /// A stage chip's state, rolled up the way `run_flow.py::build_flow` does:
+    /// the worst of the steps a stage draws, the integrate node's own state,
+    /// and the review hub's verdict (or the worst spoke when there is no hub).
+    fn rolled_up(&self, key: &str) -> Option<String> {
+        match key {
+            "intake" => Some("done".to_string()),
+            "design" => Some(worst(self.design.iter().map(|step| step.state.as_str()))),
+            "build" => Some(worst(
+                self.packages
+                    .iter()
+                    .flat_map(|package| package.lanes.iter())
+                    .map(|lane| lane.node.state.as_str()),
+            )),
+            "integrate" => Some(
+                self.integrate
+                    .as_ref()
+                    .map(|step| step.state.clone())
+                    .unwrap_or_else(|| "pending".to_string()),
+            ),
+            "review" => self.review.as_ref().map(|review| {
+                review
+                    .hub
+                    .as_ref()
+                    .map(|hub| hub.state.clone())
+                    .unwrap_or_else(|| worst(review.spokes.iter().map(|spoke| spoke.state.as_str())))
+            }),
+            "merge" => Some(
+                self.merge
+                    .as_ref()
+                    .map(|merge| merge.state.clone())
+                    .unwrap_or_else(|| "pending".to_string()),
+            ),
+            _ => None,
+        }
+    }
+}
+
+fn parse_timeline(value: &Value) -> Vec<TimelineEvent> {
+    let Some(items) = value.as_array() else {
+        return Vec::new();
+    };
+    items
+        .iter()
+        .filter_map(|item| {
+            if !item.is_object() {
+                return None;
+            }
+            let node = str_of(item, "node");
+            if node.is_empty() {
+                return None;
+            }
+            Some(TimelineEvent {
+                t: item.get("t").and_then(Value::as_f64)?,
+                node,
+                state: str_of(item, "state"),
+            })
+        })
+        .collect()
 }
 
 fn parse_step(value: &Value) -> Option<Step> {
@@ -679,11 +829,23 @@ pub(crate) fn render_flow_part_a(
     window: &mut Window,
     cx: &mut Context<MiniOrkPage>,
 ) -> AnyElement {
-    let map = Flow::parse(flow);
+    let mut map = Flow::parse(flow);
+    // "Live" is read off the page's own states, before any replay override: a
+    // run that is still running reloads on its own and needs no replay.
+    let live = map.steps().any(|step| step.state == "in_progress");
+    let run_id = page.args.get("run").cloned().unwrap_or_default();
+    if page.replay.active && page.replay.run == run_id {
+        map.apply_replay(page.replay.now);
+    }
     let layout = Layout::compute(&map);
     let strokes = connectors(&map, &layout);
     let mono = p::mono_font(cx);
     let mut pieces: Vec<AnyElement> = Vec::new();
+
+    // The replay controls, when the run carries a timeline to replay.
+    if !map.timeline.is_empty() {
+        pieces.push(replay_controls(page, &map, &run_id, live, &mono, cx));
+    }
 
     // A stage chip's jump glows behind the whole map for 1.5s (`flow_focus`).
     if let Some((key, _)) = &page.flow_focus {
@@ -1280,6 +1442,157 @@ pub(crate) fn render_flow_part_a(
             ),
         )
         .into_any_element()
+}
+
+/// The replay controls, in the legend's mono 11px style. They sit just under
+/// the map's Full screen control so the two top-left controls never overlap.
+/// A run that is still running gets a `● live` badge in place of the toggle.
+fn replay_controls(
+    page: &MiniOrkPage,
+    map: &Flow,
+    run_id: &str,
+    live: bool,
+    mono: &Font,
+    cx: &mut Context<MiniOrkPage>,
+) -> AnyElement {
+    let start = map.timeline.first().map(|event| event.t).unwrap_or(0.);
+    let end = map.timeline.last().map(|event| event.t).unwrap_or(0.);
+    let run = run_id.to_string();
+    let playing = page.replay.active && page.replay.playing;
+
+    let mut row = h_flex().absolute().top(px(40.)).left(px(12.)).gap(px(12.)).items_center();
+
+    if live {
+        row = row.child(
+            div().text_size(px(11.)).font(mono.clone()).text_color(c(p::BLUE)).child("● live"),
+        );
+    } else {
+        row = row.child(
+            div()
+                .id("flow-replay-toggle")
+                .cursor_pointer()
+                .text_size(px(11.))
+                .font(mono.clone())
+                .text_color(c(p::TEXT))
+                .child(if playing { "❚❚ Pause" } else { "▶ Replay" })
+                .on_click(cx.listener(
+                    move |page: &mut MiniOrkPage,
+                          _: &ClickEvent,
+                          _: &mut Window,
+                          cx: &mut Context<MiniOrkPage>| {
+                        if page.replay.active && page.replay.playing {
+                            // Pause: hold the clock, and keep the override so the
+                            // map keeps the mid-replay picture.
+                            page.replay.playing = false;
+                        } else {
+                            // Resume a paused clock, else start fresh at the
+                            // timeline's first `t`.
+                            let resuming = page.replay.active
+                                && page.replay.run == run
+                                && page.replay.now < page.replay.end;
+                            if !resuming {
+                                page.replay.run = run.clone();
+                                page.replay.start = start;
+                                page.replay.end = end;
+                                page.replay.now = start;
+                            }
+                            page.replay.active = true;
+                            page.replay.playing = true;
+                            page.replay.epoch += 1;
+                            replay_ticker(page.replay.epoch, cx);
+                        }
+                        cx.notify();
+                    },
+                )),
+        );
+    }
+
+    row = row.child(
+        div()
+            .id("flow-replay-restart")
+            .cursor_pointer()
+            .text_size(px(11.))
+            .font(mono.clone())
+            .text_color(c(p::SUB))
+            .child("↺ Restart")
+            .on_click(cx.listener(
+                |page: &mut MiniOrkPage,
+                 _: &ClickEvent,
+                 _: &mut Window,
+                 cx: &mut Context<MiniOrkPage>| {
+                    page.stop_replay();
+                    cx.notify();
+                },
+            )),
+    );
+
+    let mut speeds = h_flex().gap(px(6.)).items_center();
+    for (index, choice) in [0.5_f32, 1., 2.].iter().enumerate() {
+        if index > 0 {
+            speeds =
+                speeds.child(div().text_size(px(11.)).font(mono.clone()).text_color(c(p::DIM)).child("·"));
+        }
+        let selected = (page.replay.speed - *choice).abs() < 1e-3;
+        let colour = if selected { p::TEXT } else { p::SUB };
+        let choice = *choice;
+        speeds = speeds.child(
+            div()
+                .id(("flow-replay-speed", index))
+                .cursor_pointer()
+                .text_size(px(11.))
+                .font(mono.clone())
+                .text_color(c(colour))
+                .child(speed_label(choice))
+                .on_click(cx.listener(
+                    move |page: &mut MiniOrkPage,
+                          _: &ClickEvent,
+                          _: &mut Window,
+                          cx: &mut Context<MiniOrkPage>| {
+                        page.replay.speed = choice;
+                        cx.notify();
+                    },
+                )),
+        );
+    }
+    row.child(speeds).into_any_element()
+}
+
+/// `0.5×` / `1×` / `2×` — a whole number drops its `.0`.
+fn speed_label(speed: f32) -> String {
+    if (speed - speed.round()).abs() < 1e-3 {
+        format!("{}×", speed.round() as i64)
+    } else {
+        format!("{speed}×")
+    }
+}
+
+/// Tick the replay clock every 50 ms while `epoch` is still the page's current
+/// one. The clock advances `speed × span / 12s` per real second, so a whole
+/// timeline plays in about 12 seconds at 1×. A tick that crosses `end` stops
+/// the clock and drops the override, showing the real states again.
+fn replay_ticker(epoch: u64, cx: &mut Context<MiniOrkPage>) {
+    cx.spawn(async move |this, cx| loop {
+        cx.background_executor().timer(Duration::from_millis(50)).await;
+        let ticking = this.update(cx, |page, cx| {
+            if page.replay.epoch != epoch || !page.replay.playing {
+                return false;
+            }
+            let span = (page.replay.end - page.replay.start).max(0.);
+            page.replay.now += 0.05 * span * page.replay.speed as f64 / 12.;
+            if page.replay.now >= page.replay.end {
+                page.replay.now = page.replay.end;
+                page.replay.playing = false;
+                page.replay.active = false;
+            }
+            cx.notify();
+            page.replay.playing
+        });
+        // Stop on a stale epoch, a failed update, or the clock reaching its end.
+        if !matches!(ticking, Ok(true)) {
+            break;
+        }
+    })
+    .detach();
 }
 
 /// A marker inside a build lane: the same ring the design markers use, at the
