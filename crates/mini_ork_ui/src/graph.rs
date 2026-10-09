@@ -36,6 +36,9 @@ const NH: f32 = 76.;
 const GX: f32 = 74.;
 const GY: f32 = 18.;
 const STREAM_POLL: Duration = Duration::from_millis(1500);
+/// Height of the DAG strip at the top of a node tab — enough for a recipe's
+/// deepest column plus its head labels, without crowding the detail below.
+const NODE_TAB_DAG_H: f32 = 280.;
 /// The node inspector, in reading order: what happened, the live work, the
 /// code it changed, what it was given and produced, then the raw material.
 const TABS: [(&str, &str); 8] = [
@@ -239,7 +242,8 @@ pub struct MiniOrkGraph {
     steer: Arc<dyn ErasedEditor>,
     severity: &'static str,
     texts: Texts,
-    /// Hosted in a node tab: only the inspector, full width, no canvas.
+    /// Hosted in a node tab: the run's DAG on top (the node selected), the
+    /// node's own inspector below, full width.
     pub tab_mode: bool,
     _load: Task<()>,
     _subs: Vec<Subscription>,
@@ -1167,10 +1171,10 @@ impl MiniOrkGraph {
         ));
 
         v_flex()
-            .flex_none()
-            .when(self.tab_mode, |this| this.w_full().flex_1())
-            .when(!self.tab_mode, |this| this.w(px(600.)).border_l_1())
-            .h_full()
+            // In a node tab the inspector takes the space under the DAG strip;
+            // in the full-screen graph it is a fixed-width side panel.
+            .when(self.tab_mode, |this| this.w_full().flex_1().min_h_0())
+            .when(!self.tab_mode, |this| this.flex_none().w(px(600.)).h_full().border_l_1())
             .border_color(c(p::BORDER))
             .bg(c(p::CHROME))
             .child(header)
@@ -2188,6 +2192,18 @@ impl Render for MiniOrkGraph {
         let viewport = window.viewport_size();
         let selected = self.selected.as_ref().and_then(|id| self.node(id)).cloned();
         if self.tab_mode {
+            // A node tab leads with the run's DAG — the node highlighted, its
+            // edges blue — then the node's own detail underneath. Reusing the
+            // full-screen canvas keeps the two from drifting; only the height
+            // is bounded so the detail below stays visible.
+            let dag = div()
+                .id("node-tab-dag")
+                .flex_none()
+                .h(px(NODE_TAB_DAG_H))
+                .min_h_0()
+                .border_b_1()
+                .border_color(c(p::BORDER))
+                .child(if self.list_view { self.render_list(cx) } else { self.render_graph(cx) });
             let inspector = selected.map(|node| self.render_inspector(&node, window, cx));
             self.texts.end();
             return v_flex()
@@ -2196,6 +2212,7 @@ impl Render for MiniOrkGraph {
                 .size_full()
                 .bg(c(p::CHROME))
                 .text_color(c(p::TEXT))
+                .child(dag)
                 .children(inspector)
                 .into_any_element();
         }

@@ -1,9 +1,11 @@
-//! A DAG node as its own editor tab: the node inspector (Overview, Stream,
-//! Changes, Artifacts, …) full width, opened from a run's DAG or a Threads
-//! card. One tab per (run, node); opening it again brings it forward.
+//! A DAG node as its own editor tab: the run's DAG on top with this node
+//! selected, then the node inspector (Overview, Stream, Changes, Artifacts, …)
+//! below, full width. Opened from a run's story/flow/DAG, or a Threads card.
+//! One tab per (run, node); opening it again brings it forward.
 //!
-//! The tab hosts a `MiniOrkGraph` in tab mode — the same inspector the
-//! full-screen graph shows, without the canvas — so the two never drift.
+//! The tab hosts a `MiniOrkGraph` in tab mode — the same canvas and inspector
+//! the full-screen graph shows, so the two never drift — with the canvas
+//! pinned to the top strip and the inspector filling the rest.
 
 use std::collections::BTreeMap;
 

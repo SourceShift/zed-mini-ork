@@ -358,7 +358,30 @@ pub fn perform(
         run_cli(args, with_home, workspace, origin, cx);
     } else if let Some(key) = action.get("page").and_then(Value::as_str) {
         let tab = action.get("tab").and_then(Value::as_str).map(String::from);
-        crate::page::open_page(workspace, key.to_string(), tab, string_map(action.get("args")), window, cx);
+        let args = string_map(action.get("args"));
+        // `page run <tab> --arg run=R --arg node=N` is the "inspect this node"
+        // gesture — a story step, a flow-map node, a run-dock row. Open the
+        // node's own tab (the run's DAG up top with the node selected, the
+        // node's own detail below) rather than dropping `node` and merely
+        // switching the run page's tab. Every other `page` action is untouched.
+        if key == "run" {
+            if let (Some(run_id), Some(node)) = (args.get("run").cloned(), args.get("node").cloned()) {
+                if !node.is_empty() {
+                    crate::node_tab::open_node_tab(
+                        workspace,
+                        run_id,
+                        node,
+                        String::new(),
+                        None,
+                        WeakEntity::new_invalid(),
+                        window,
+                        cx,
+                    );
+                    return;
+                }
+            }
+        }
+        crate::page::open_page(workspace, key.to_string(), tab, args, window, cx);
     } else if let Some(set) = action.get("set") {
         let Origin::Page(page) = origin;
         page.update(cx, |page, cx| page.set_args(string_map(Some(set)), cx)).ok();
