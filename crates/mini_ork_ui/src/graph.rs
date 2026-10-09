@@ -245,6 +245,10 @@ pub struct MiniOrkGraph {
     /// Hosted in a node tab: the run's DAG on top (the node selected), the
     /// node's own inspector below, full width.
     pub tab_mode: bool,
+    /// The node tab's DAG strip has fit its zoom to the strip's width once
+    /// (re-armed by `set_model`), so the whole graph — including the
+    /// rightmost node — is visible without scrolling.
+    tab_fit: bool,
     _load: Task<()>,
     _subs: Vec<Subscription>,
 }
@@ -317,6 +321,7 @@ impl MiniOrkGraph {
             severity: "info",
             texts: Texts::default(),
             tab_mode: false,
+            tab_fit: false,
             _load: Task::ready(()),
             _subs: vec![filter_sub],
         };
@@ -329,6 +334,9 @@ impl MiniOrkGraph {
     /// The page re-read the run: node states, costs and durations move on.
     pub fn set_model(&mut self, model: Model, cx: &mut Context<Self>) {
         self.model = model;
+        if self.tab_mode {
+            self.tab_fit = false; // the graph may be wider now: re-fit
+        }
         cx.notify();
     }
 
@@ -2196,6 +2204,17 @@ impl Render for MiniOrkGraph {
             // edges blue — then the node's own detail underneath. Reusing the
             // full-screen canvas keeps the two from drifting; only the height
             // is bounded so the detail below stays visible.
+            if !self.tab_fit {
+                // Fit the whole DAG across the strip once, so the rightmost
+                // node (rollback, publisher) isn't cut off behind the panel
+                // edge. Never zooms in past 100% in a 280px-tall strip.
+                let vw = f32::from(window.viewport_size().width);
+                let w = self.model.width();
+                if vw > 0. && w > 0. {
+                    self.zoom = ((vw - 56.) / w).clamp(0.4, 1.);
+                    self.tab_fit = true;
+                }
+            }
             let dag = div()
                 .id("node-tab-dag")
                 .flex_none()
