@@ -298,9 +298,18 @@ pub fn model_image(lane: &str) -> Option<&'static str> {
     pick.iter().find(|(needle, _)| lane.contains(needle)).map(|(_, path)| *path)
 }
 
-/// A lane's mark at `size` px: the provider's logo (Orca's set), else Zed's
-/// tinted model icon (OpenAI), else a dot in the family colour.
+/// A lane's mark at `size` px: Zed's terminal icon for a command lane, else
+/// the provider's logo (Orca's set), else Zed's tinted model icon (OpenAI),
+/// else a dot in the family colour.
 pub fn lane_mark(lane: &str, size: f32) -> AnyElement {
+    if matches!(lane.to_ascii_lowercase().as_str(), "shell" | "command" | "cmd" | "") {
+        return gpui::svg()
+            .path(IconName::Terminal.path())
+            .size(px(size))
+            .flex_none()
+            .text_color(c(SUB))
+            .into_any_element();
+    }
     if let Some(path) = model_image(lane) {
         return gpui::img(path).size(px(size)).flex_none().rounded(px(2.)).into_any_element();
     }
@@ -318,8 +327,43 @@ pub fn lane_mark(lane: &str, size: f32) -> AnyElement {
         .mx(px((size - dot) / 2.))
         .flex_none()
         .rounded_full()
-        .bg(c(if lane.is_empty() || lane == "shell" { DIM } else { family(lane) }))
+        .bg(c(family(lane)))
         .into_any_element()
+}
+
+/// A human name for the worker a step's `lane` names — the label the step
+/// cards show beside the mark. Matched loosely (case-insensitive substring),
+/// the same way `model_image` matches, so a lane and its label agree.
+pub fn lane_label(lane: &str) -> String {
+    let lower = lane.to_ascii_lowercase();
+    let pick = [
+        ("opus", "Claude Opus"),
+        ("sonnet", "Claude Sonnet"),
+        ("haiku", "Claude Haiku"),
+        ("claude", "Claude"),
+        ("deepseek", "DeepSeek"),
+        ("glm", "GLM (z.ai)"),
+        ("zai", "GLM (z.ai)"),
+        ("zhipu", "GLM (z.ai)"),
+        ("minimax", "MiniMax"),
+        ("codex", "OpenAI Codex"),
+        ("gpt", "OpenAI Codex"),
+        ("openai", "OpenAI Codex"),
+        ("kimi", "Kimi"),
+        ("moonshot", "Kimi"),
+        ("qwen", "Qwen"),
+        ("gemini", "Gemini"),
+        ("mistral", "Mistral"),
+        ("grok", "Grok"),
+        ("xai", "Grok"),
+        ("shell", "command"),
+        ("command", "command"),
+        ("cmd", "command"),
+    ];
+    pick.iter()
+        .find(|(needle, _)| lower.contains(needle))
+        .map(|(_, label)| (*label).to_string())
+        .unwrap_or_else(|| lane.to_string())
 }
 
 /// The mark and colour of a run state.

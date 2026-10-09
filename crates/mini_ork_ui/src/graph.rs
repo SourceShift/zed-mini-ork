@@ -834,7 +834,7 @@ impl MiniOrkGraph {
                     h_flex()
                         .gap(px(6. * z))
                         .min_w_0()
-                        .child(p::text(m, 10. * z, mc))
+                        .child(p::lane_mark(&n.lane, 18. * z))
                         .child(
                             div()
                                 .min_w_0()
@@ -849,21 +849,17 @@ impl MiniOrkGraph {
                     h_flex()
                         .gap(px(5. * z))
                         .min_w_0()
-                        .child(p::lane_mark(&n.lane, 11. * z))
-                        .child(
-                            p::text(
-                                if n.role.is_empty() { n.lane.clone() } else { format!("{} · {}", n.lane, n.role) },
-                                11. * z,
-                                p::MUTED,
-                            )
-                            .truncate(),
-                        ),
+                        .child(p::text(p::lane_label(&n.lane), 11. * z, p::TEXT).truncate())
+                        .when(!n.role.is_empty(), |this| {
+                            this.child(p::text(format!("· {}", n.role), 11. * z, p::SUB).truncate())
+                        }),
                 )
                 .child(
                     h_flex()
                         .gap(px(8. * z))
                         .font(mono.clone())
                         .text_size(px(11. * z))
+                        .child(div().text_color(c(mc)).child(m))
                         .child(div().text_color(c(mc)).child(state_text(&n.state).to_string()))
                         .child(div().text_color(c(p::SUB)).child(n.cost.clone()))
                         .child(div().text_color(c(p::SUB)).child(n.dur.clone())),
@@ -1007,7 +1003,10 @@ impl MiniOrkGraph {
                                 .flex_none()
                                 .gap(px(5.))
                                 .child(p::lane_mark(&n.lane, 11.))
-                                .child(p::text(n.lane.clone(), 11.5, p::MUTED).truncate()),
+                                .child(p::text(p::lane_label(&n.lane), 11.5, p::TEXT).truncate())
+                                .when(!n.role.is_empty(), |this| {
+                                    this.child(p::text(format!("· {}", n.role), 11.5, p::SUB).truncate())
+                                }),
                         )
                         .child(p::text(state_text(&n.state).to_string(), 11.5, mc).w(px(80.)).flex_none())
                         .child(p::text(n.cost.clone(), 11.5, p::SUB).font(mono.clone()).w(px(60.)).flex_none())

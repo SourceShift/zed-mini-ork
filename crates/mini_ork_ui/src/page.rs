@@ -152,6 +152,10 @@ pub struct MiniOrkPage {
     dag_scroll: ScrollHandle,
     /// The run flow map scrolls sideways over its own track.
     flow_scroll: ScrollHandle,
+    /// The Graph tab's Steps · Flow map toggle: true draws the flow map and
+    /// hides the step graph (DAG). Default false = Steps. It lives on the
+    /// page, so it survives reloads of the same run.
+    show_flow_map: bool,
     /// The stage a flow-map chip just jumped to, with a sequence number the
     /// 1.5s highlight timer checks before clearing it (so a second click
     /// restarts the glow rather than letting the first timer end it).
@@ -210,6 +214,7 @@ impl MiniOrkPage {
             fade: 0,
             dag_scroll: ScrollHandle::new(),
             flow_scroll: ScrollHandle::new(),
+            show_flow_map: false,
             flow_focus: None,
             replay: Replay::default(),
             texts: Texts::default(),
@@ -1105,6 +1110,7 @@ impl MiniOrkPage {
                 let cost = str_of(node, "cost");
                 let status = if cost.is_empty() { status } else { format!("{status} · {cost}") };
                 let lane = str_of(node, "lane");
+                let role = str_of(node, "role");
                 let border = if selected {
                     c(p::BLUE)
                 } else if state == "running" {
@@ -1127,7 +1133,8 @@ impl MiniOrkPage {
                     .child(
                         h_flex()
                             .gap(px(6.))
-                            .child(p::text(mark, 10., colour))
+                            .min_w_0()
+                            .child(p::lane_mark(&lane, 18.))
                             .child(
                                 div()
                                     .min_w_0()
@@ -1141,10 +1148,18 @@ impl MiniOrkPage {
                     .child(
                         h_flex()
                             .gap(px(5.))
-                            .child(p::lane_mark(&lane, 11.))
-                            .child(p::text(lane, 11., p::MUTED).truncate()),
+                            .min_w_0()
+                            .child(p::text(p::lane_label(&lane), 11., p::TEXT).truncate())
+                            .when(!role.is_empty(), |this| {
+                                this.child(p::text(format!("· {role}"), 11., p::SUB).truncate())
+                            }),
                     )
-                    .child(p::text(status, 11., colour).font(mono.clone()));
+                    .child(
+                        h_flex()
+                            .gap(px(6.))
+                            .child(p::text(mark, 10., colour))
+                            .child(p::text(status, 11., colour).font(mono.clone())),
+                    );
                 el.cursor_pointer()
                     .hover(|s| s.border_color(c(p::BLUE)))
                     .on_click(cx.listener(move |this, _, window, cx| {
@@ -1195,6 +1210,45 @@ impl MiniOrkPage {
                 ),
             )
             .when(!legend.is_empty(), |this| this.child(p::text(legend, 11.5, p::SUB).mt(px(12.))))
+            .into_any_element()
+    }
+
+    /// The Graph tab's `Steps · Flow map` toggle: which of the two run views
+    /// leads. The choice is `show_flow_map` on the page, so it outlives a
+    /// reload of the same run.
+    fn render_graph_toggle(&self, cx: &mut Context<Self>) -> AnyElement {
+        let mono = p::mono_font(cx);
+        let steps_on = !self.show_flow_map;
+        h_flex()
+            .gap(px(8.))
+            .items_center()
+            .font(mono)
+            .text_size(px(11.))
+            .child(
+                div()
+                    .id("graph-toggle-steps")
+                    .text_color(c(if steps_on { p::TEXT } else { p::SUB }))
+                    .cursor_pointer()
+                    .hover(|s| s.text_color(c(p::TEXT)))
+                    .child("Steps")
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        this.show_flow_map = false;
+                        cx.notify();
+                    })),
+            )
+            .child(p::text("·", 11., p::DIM))
+            .child(
+                div()
+                    .id("graph-toggle-flow")
+                    .text_color(c(if steps_on { p::SUB } else { p::TEXT }))
+                    .cursor_pointer()
+                    .hover(|s| s.text_color(c(p::TEXT)))
+                    .child("Flow map")
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        this.show_flow_map = true;
+                        cx.notify();
+                    })),
+            )
             .into_any_element()
     }
 
@@ -1586,19 +1640,24 @@ impl Render for MiniOrkPage {
                 // The composer sections' editors are keyed by section index;
                 // sync them before the sections are drawn.
                 self.ensure_composers(&page, window, cx);
-                // On the Graph tab the flow map leads and the older column DAG
-                // below it is retired: the map carries its own full-screen
-                // button, so nothing is lost by dropping the section.
-                let flow_map = (str_of(&page, "tab") == "graph")
+                // The Graph tab leads with the step graph (the column DAG);
+                // the flow map sits behind the Steps · Flow map toggle. With
+                // Flow map chosen the map leads and the DAG section below it
+                // is retired, since the map carries its own full-screen button.
+                let on_graph = str_of(&page, "tab") == "graph";
+                let show_flow = on_graph && self.show_flow_map;
+                let flow_map = show_flow
                     .then(|| page.get("flow"))
                     .flatten()
                     .filter(|flow| flow.is_object())
                     .map(|flow| crate::flow::render_flow_part_a(self, flow, &self.flow_scroll, window, cx));
-                let hide_dag = flow_map.is_some();
+                let hide_dag = show_flow;
+                let toggle = on_graph.then(|| self.render_graph_toggle(cx));
                 v_flex()
                     .gap(px(14.))
                     .when(!self.dock, |this| this.child(self.render_header(&page, cx)))
                     .child(v_flex().children(self.render_tabs(&page, cx)).children(bar.map(|b| div().mt(px(-2.)).child(b))))
+                    .children(toggle)
                     .children(flow_map)
                     .child(
                         div().child(self.render_sections(&page, hide_dag, window, cx)).with_animation(
