@@ -8,7 +8,7 @@
 
 use std::path::{Path, PathBuf};
 
-use gpui::{App, Entity, PathPromptOptions, TaskExt as _, Window};
+use gpui::{App, Entity, PathPromptOptions, SharedString, TaskExt as _, Window};
 use serde_json::{Value, json};
 use workspace::{MultiWorkspace, OpenMode, OpenOptions, Workspace};
 
@@ -70,6 +70,34 @@ pub fn remember_home(home: &Path) {
     if let Ok(text) = serde_json::to_string_pretty(&registry) {
         std::fs::write(&file, text + "\n").ok();
     }
+}
+
+/// The git worktree this window is in, labelled the way stock Zed's title bar
+/// labels it: the main checkout reads `main`, a linked worktree the short name
+/// that tells it apart from the main one. `None` outside a repository, or when
+/// the worktree has no repository yet (a folder that was just opened).
+pub fn worktree_label(workspace: &Entity<Workspace>, cx: &App) -> Option<SharedString> {
+    let project = workspace.read(cx).project().read(cx);
+    let path = project.visible_worktrees(cx).next()?.read(cx).abs_path();
+    // The repository whose working directory contains this worktree; the
+    // longest match wins, so a worktree nested in another one resolves to
+    // itself.
+    let repository = project
+        .repositories(cx)
+        .values()
+        .filter(|repository| {
+            let root = &repository.read(cx).work_directory_abs_path;
+            path.as_ref() == root.as_ref() || path.starts_with(root.as_ref())
+        })
+        .max_by_key(|repository| repository.read(cx).work_directory_abs_path.as_os_str().len())?
+        .read(cx);
+    if repository.is_main_worktree() {
+        return Some("main".into());
+    }
+    project::git_store::linked_worktree_short_name(
+        repository.main_worktree_abs_path()?,
+        &repository.work_directory_abs_path,
+    )
 }
 
 /// The folder of this workspace's first visible worktree.

@@ -43,7 +43,10 @@ pub struct Header {
     pub cap_usd: f64,
     #[serde(default)]
     pub scheduler_on: bool,
+    /// Still on the wire; nothing renders it since the status bar dropped its
+    /// ContextNest item, and it is kept so the contract stays a full mirror.
     #[serde(default)]
+    #[allow(dead_code)]
     pub contextnest: bool,
     #[serde(default)]
     pub nodes: Nodes,
@@ -203,13 +206,18 @@ pub struct RunsPage {
 }
 
 pub async fn fetch_runs(bin: PathBuf, home: PathBuf, query: String, offset: usize, limit: usize) -> Result<RunsPage> {
+    let mut http = vec![("offset", offset.to_string()), ("limit", limit.to_string())];
     let mut argv = vec!["board".to_string(), "runs".into(), "--json".into()];
     if !query.trim().is_empty() {
         argv.push("--query".into());
         argv.push(query.trim().to_string());
+        http.push(("query", query.trim().to_string()));
     }
     argv.extend(["--offset".into(), offset.to_string(), "--limit".into(), limit.to_string()]);
-    let value = run_json(&bin, &argv, &home).await?;
+    let value = match crate::ide_http::get(&bin, &home, "/ide/runs", &http).await {
+        Some(value) => value,
+        None => run_json(&bin, &argv, &home).await?,
+    };
     if value.get("ok").and_then(Value::as_bool) == Some(false) {
         return Err(anyhow!("{}", value.get("error").and_then(Value::as_str).unwrap_or("search failed")));
     }
@@ -227,12 +235,17 @@ pub async fn fetch_node(
     view: String,
     offset: Option<u64>,
 ) -> Result<Value> {
-    let mut argv = vec!["board".to_string(), "node".into(), run, node, "--view".into(), view];
+    let mut argv = vec!["board".to_string(), "node".into(), run.clone(), node.clone(), "--view".into(), view.clone()];
+    let mut http = vec![("view", view)];
     if let Some(offset) = offset {
         argv.push("--offset".into());
         argv.push(offset.to_string());
+        http.push(("offset", offset.to_string()));
     }
-    let value = run_json(&bin, &argv, &home).await?;
+    let value = match crate::ide_http::get(&bin, &home, &format!("/ide/node/{run}/{node}"), &http).await {
+        Some(value) => value,
+        None => run_json(&bin, &argv, &home).await?,
+    };
     if value.get("ok").and_then(Value::as_bool) == Some(false) {
         return Err(anyhow!(
             "{}",
@@ -250,16 +263,26 @@ pub async fn fetch_page(
     tab: Option<String>,
     args: BTreeMap<String, String>,
 ) -> Result<Value> {
-    let mut argv = vec!["board".to_string(), "page".to_string(), key];
-    if let Some(tab) = tab {
+    let mut argv = vec!["board".to_string(), "page".to_string(), key.clone()];
+    if let Some(tab) = &tab {
         argv.push("--tab".into());
-        argv.push(tab);
+        argv.push(tab.clone());
     }
-    for (k, v) in args {
+    for (k, v) in &args {
         argv.push("--arg".into());
         argv.push(format!("{k}={v}"));
     }
-    let value = run_json(&bin, &argv, &home).await?;
+    let mut http = vec![("key", key)];
+    if let Some(tab) = tab {
+        http.push(("tab", tab));
+    }
+    for (k, v) in &args {
+        http.push(("arg", format!("{k}={v}")));
+    }
+    let value = match crate::ide_http::get(&bin, &home, "/ide/page", &http).await {
+        Some(value) => value,
+        None => run_json(&bin, &argv, &home).await?,
+    };
     if value.get("ok").and_then(Value::as_bool) == Some(false) {
         return Err(anyhow!(
             "{}",
@@ -288,9 +311,13 @@ pub async fn fetch_thumbs(
 /// only — cheap enough to poll), or the full `board --json` from a mini-ork
 /// that predates `--shell`.
 pub async fn fetch_board(bin: PathBuf, home: PathBuf) -> Result<Board> {
-    let value = match run_json(&bin, &["board".into(), "--json".into(), "--shell".into()], &home).await {
-        Ok(value) => value,
-        Err(_) => run_json(&bin, &["board".into(), "--json".into()], &home).await?,
+    let shell = [("shell", "1".to_string())];
+    let value = match crate::ide_http::get(&bin, &home, "/ide/board", &shell).await {
+        Some(value) => value,
+        None => match run_json(&bin, &["board".into(), "--json".into(), "--shell".into()], &home).await {
+            Ok(value) => value,
+            Err(_) => run_json(&bin, &["board".into(), "--json".into()], &home).await?,
+        },
     };
     serde_json::from_value(value).context("reading mini-ork board")
 }

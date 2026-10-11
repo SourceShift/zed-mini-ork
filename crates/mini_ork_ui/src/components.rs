@@ -3,7 +3,7 @@
 
 use gpui::{AnyElement, ClickEvent, Div, SharedString, Window, div, px, App};
 use serde_json::Value;
-use ui::prelude::*;
+use ui::{Chip, prelude::*};
 
 use crate::palette::{self as p, c, state_mark};
 
@@ -40,32 +40,24 @@ pub(crate) trait ThrottledSpinExt:
 
 impl<T: gpui::AnimationExt + ui::Transformable + Sized> ThrottledSpinExt for T {}
 
-/// An Orca card: 1px border, 10px corners, CARD background, 12px inset.
+/// An Orca card: 1px border, CARD background, 12px inset. Square corners, like
+/// Zed's own boxes — the radius is what made these read as foreign.
 pub fn card() -> Div {
-    div()
-        .bg(c(p::CARD))
-        .border_1()
-        .border_color(c(p::BORDER))
-        .rounded(px(p::RADIUS_CARD))
-        .p(px(12.))
+    div().bg(c(p::CARD)).border_1().border_color(c(p::BORDER)).p_3()
 }
 
 /// A state pill: the state word, uppercase at PILL size, in the state colour,
-/// on that colour at 15% alpha. Orca's "needs you" / "done" / "working" tags.
+/// on that colour at 15% alpha. Orca's "needs you" / "done" / "working" tags,
+/// drawn by `ui::Chip` so the pill's metrics and radius are Zed's.
 pub fn state_pill(state: &str) -> AnyElement {
     let (_, colour) = state_mark(state);
-    let tint = c(colour).opacity(0.15);
-    let label: SharedString = state.to_ascii_uppercase().into();
-    h_flex()
-        .flex_none()
-        .h(px(18.))
-        .px(px(8.))
-        .items_center()
-        .rounded_full()
-        .bg(tint)
-        .text_size(px(p::PILL))
-        .text_color(c(colour))
-        .child(label)
+    let tint = c(colour);
+    Chip::new(state.to_ascii_uppercase())
+        .label_size(LabelSize::XSmall)
+        .label_color(Color::Custom(tint))
+        .bg_color(tint.opacity(0.15))
+        .border_color(tint.opacity(0.25))
+        .height(px(18.))
         .into_any_element()
 }
 
@@ -79,7 +71,7 @@ pub fn status_mark(state: &str, size: f32, key: &str) -> AnyElement {
     let (glyph, colour) = state_mark(state);
     div()
         .flex_none()
-        .text_size(px(size))
+        .text_size(rems_from_px(size))
         .text_color(c(colour))
         .child(SharedString::from(glyph))
         .into_any_element()
@@ -90,12 +82,14 @@ pub fn status_mark(state: &str, size: f32, key: &str) -> AnyElement {
 pub fn section_head(title: &str, count: Option<usize>) -> Div {
     h_flex()
         .flex_none()
-        .gap(px(6.))
+        .gap_1p5()
         .items_center()
-        .text_size(px(p::META))
-        .font_weight(gpui::FontWeight::SEMIBOLD)
-        .text_color(c(p::MUTED))
-        .child(SharedString::from(title.to_string()))
+        .child(
+            Label::new(title.to_string())
+                .size(LabelSize::XSmall)
+                .weight(gpui::FontWeight::SEMIBOLD)
+                .color(Color::Muted),
+        )
         .when_some(count, |this, n| this.child(state_pill(&n.to_string())))
 }
 
@@ -145,7 +139,7 @@ pub fn split_button(
     });
     h_flex()
         .flex_none()
-        .gap(px(4.))
+        .gap_1()
         .items_center()
         .child(primary_button)
         .child(caret)

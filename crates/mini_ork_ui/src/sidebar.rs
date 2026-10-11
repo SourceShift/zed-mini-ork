@@ -15,7 +15,11 @@ use gpui::{
     Render, ScrollHandle, SharedString, Subscription, Task, WeakEntity, Window, WindowControlArea, px,
 };
 use ui_input::{ERASED_EDITOR_FACTORY, ErasedEditor, ErasedEditorEvent};
-use ui::{CommonAnimationExt as _, Tooltip, prelude::*, utils::{TRAFFIC_LIGHT_PADDING, platform_title_bar_height}};
+use ui::{
+    ContextMenu, DiffStat, Disclosure, Divider, Indicator, ListHeader, ListItem, ListItemSpacing,
+    PopoverMenu, Tooltip, prelude::*,
+    utils::{TRAFFIC_LIGHT_PADDING, platform_title_bar_height},
+};
 use workspace::{MultiWorkspace, MultiWorkspaceEvent, Sidebar, SidebarEvent, SidebarSide, Workspace};
 
 use crate::{
@@ -53,11 +57,33 @@ const ACTIVITIES: [(&str, &str, &str); 12] = [
     ("setup", "⚙", "Setup & health"),
 ];
 
+/// Activate `workspace` in this window, then start a mini-ork thread in it.
+///
+/// The switch has to come first: `store::new_thread` dispatches
+/// `NewExternalAgentThread`, which the window routes to the *active* workspace's
+/// agent panel, so a thread aimed at another project would otherwise land in the
+/// one already in front.
+fn start_thread_in(
+    multi_workspace: &WeakEntity<MultiWorkspace>,
+    workspace: &Entity<Workspace>,
+    window: &mut Window,
+    cx: &mut App,
+) {
+    if let Some(multi) = multi_workspace.upgrade() {
+        multi.update(cx, |multi, cx| multi.activate(workspace.clone(), None, window, cx));
+    }
+    store::new_thread(workspace, "", window, cx);
+}
+
 pub struct MiniOrkSidebar {
     multi_workspace: WeakEntity<MultiWorkspace>,
     focus_handle: FocusHandle,
     board_open: bool,
     board_width: f32,
+    /// The run state the board is filtered to (`needs_you`, `working`, …), or
+    /// `None` for every thread, newest first — the default, where a run's group
+    /// is told from its own row instead of from a heading.
+    board_filter: Option<String>,
     selected_run: Option<String>,
     bound: Option<(EntityId, EntityId)>,
     /// Full-text search over runs, and runs paged in beyond the board's first 50.
@@ -144,6 +170,7 @@ impl MiniOrkSidebar {
             focus_handle: cx.focus_handle(),
             board_open: true,
             board_width: BOARD_WIDTH,
+            board_filter: None,
             selected_run: None,
             bound: None,
             search,
@@ -405,7 +432,13 @@ impl MiniOrkSidebar {
         Some(page.read(cx).key.clone())
     }
 
-    fn render_strip(&self, board: Option<&Board>, workspace: Option<Entity<Workspace>>, window: &Window) -> AnyElement {
+    fn render_strip(
+        &self,
+        board: Option<&Board>,
+        workspace: Option<Entity<Workspace>>,
+        window: &Window,
+        cx: &App,
+    ) -> AnyElement {
         let height = platform_title_bar_height(window);
         let fullscreen = window.is_fullscreen() || window.is_simple_fullscreen();
         let header = board.map(|b| b.header.clone()).unwrap_or_default();
@@ -429,13 +462,13 @@ impl MiniOrkSidebar {
             .border_b_1()
             .border_color(c(p::BORDER))
             .when(!fullscreen && cfg!(target_os = "macos"), |this| this.pl(px(TRAFFIC_LIGHT_PADDING + 2.)))
-            .when(fullscreen || !cfg!(target_os = "macos"), |this| this.pl(px(12.)))
-            .gap(px(10.))
-            .text_size(px(12.5))
+            .when(fullscreen || !cfg!(target_os = "macos"), |this| this.pl_3())
+            .gap_2p5()
+            .text_size(rems_from_px(12.5_f32))
             .whitespace_nowrap()
             .overflow_hidden()
             .when(self.board_open && !project.is_empty(), |this| {
-                this.children(crate::title_bar::left_items(&header, &project, workspace, true))
+                this.children(crate::title_bar::left_items(&header, &project, workspace, true, cx))
             })
             .into_any_element()
     }
@@ -450,14 +483,14 @@ impl MiniOrkSidebar {
         let mono = p::mono_font(cx);
         let mut bar = v_flex()
             .flex_none()
-            .w(px(ACTIVITY_WIDTH))
+            .w(rems_from_px(ACTIVITY_WIDTH))
             .h_full()
             .bg(c(p::CHROME))
             .border_r_1()
             .border_color(c(p::BORDER))
             .items_center()
-            .py(px(6.))
-            .gap(px(2.));
+            .py_1p5()
+            .gap_0p5();
         for (i, (key, glyph, tooltip)) in ACTIVITIES.iter().enumerate() {
             if *key == "setup" {
                 bar = bar.child(div().flex_1());
@@ -472,13 +505,12 @@ impl MiniOrkSidebar {
             let button = div()
                 .id(SharedString::from(format!("activity-{key}")))
                 .relative()
-                .size(px(32.))
+                .size_8()
                 .flex()
                 .items_center()
                 .justify_center()
-                .rounded(px(6.))
                 .when(on, |this| this.bg(c(p::SELECTED)))
-                .text_size(px(15.))
+                .text_size(rems_from_px(15_f32))
                 .font(mono.clone())
                 .text_color(c(if on { p::TEXT } else { p::SUB }))
                 .cursor_pointer()
@@ -489,17 +521,17 @@ impl MiniOrkSidebar {
                     this.child(
                         div()
                             .absolute()
-                            .top(px(2.))
-                            .right(px(1.))
-                            .min_w(px(14.))
-                            .h(px(14.))
-                            .px(px(3.))
-                            .rounded(px(7.))
+                            .top(rems_from_px(2_f32))
+                            .right(rems_from_px(1_f32))
+                            .min_w_3p5()
+                            .h_3p5()
+                            .px(rems_from_px(3_f32))
+                            .rounded(rems_from_px(7_f32))
                             .bg(c(p::YELLOW))
                             .flex()
                             .items_center()
                             .justify_center()
-                            .text_size(px(9.5))
+                            .text_size(rems_from_px(9.5_f32))
                             .font_weight(gpui::FontWeight::SEMIBOLD)
                             .text_color(c(p::BG))
                             .child(needs_you.to_string()),
@@ -519,7 +551,7 @@ impl MiniOrkSidebar {
                 }));
             bar = bar.child(button);
             if i == 0 {
-                bar = bar.child(div().w(px(20.)).h(px(1.)).my(px(4.)).bg(c(p::BORDER)));
+                bar = bar.child(Divider::horizontal().w_5().my_1());
             }
         }
         bar.into_any_element()
@@ -532,16 +564,15 @@ impl MiniOrkSidebar {
         let row = |id: SharedString, title: String, subtitle: Option<String>| {
             v_flex()
                 .id(id)
-                .mx(px(2.))
-                .px(px(8.))
-                .py(px(5.))
-                .rounded(px(5.))
+                .mx_0p5()
+                .px_2()
+                .py(rems_from_px(5_f32))
                 .cursor_pointer()
                 .hover(|s| s.bg(c(p::HOVER)))
-                .child(div().text_size(px(12.5)).text_color(c(p::TEXT)).child(title))
+                .child(div().text_size(rems_from_px(12.5_f32)).text_color(c(p::TEXT)).child(title))
                 .when_some(subtitle, |this, sub| this.child(p::text(sub, 11., p::SUB)))
         };
-        let mut picker = v_flex().gap(px(2.)).pt(px(4.));
+        let mut picker = v_flex().gap_0p5().pt_1();
         for (i, root) in projects::known()
             .into_iter()
             .filter(|root| root.join(".mini-ork").is_dir())
@@ -568,6 +599,105 @@ impl MiniOrkSidebar {
             .into_any_element()
     }
 
+    /// The board header's "+": start a mini-ork thread in this project. When the
+    /// window holds more than one project, the same button asks which one first —
+    /// stock Zed heads that menu "New Thread In…". This board shows one project
+    /// at a time, so the menu is the only way to aim a new thread at a project
+    /// that is not the active one.
+    fn render_new_thread(&self, workspace: &Option<Entity<Workspace>>, cx: &App) -> AnyElement {
+        let open: Vec<Entity<Workspace>> = self
+            .multi_workspace
+            .upgrade()
+            .map(|multi| multi.read(cx).workspaces().cloned().collect())
+            .unwrap_or_default();
+        if open.len() < 2 {
+            // A single project makes a one-row menu: a click to open it and a
+            // click to pick the only answer.
+            let workspace = workspace.clone();
+            return IconButton::new("board-new-thread", IconName::Plus)
+                .icon_size(IconSize::Small)
+                .tooltip(Tooltip::text("New thread"))
+                .on_click(move |_, window, cx| {
+                    if let Some(workspace) = workspace.clone() {
+                        store::new_thread(&workspace, "", window, cx);
+                    }
+                })
+                .into_any_element();
+        }
+        let active = workspace.clone();
+        let multi_workspace = self.multi_workspace.clone();
+        let home = std::env::var("HOME").unwrap_or_default();
+        PopoverMenu::new("board-new-thread-menu")
+            .trigger_with_tooltip(
+                IconButton::new("board-new-thread", IconName::Plus).icon_size(IconSize::Small),
+                Tooltip::text("New thread in…"),
+            )
+            .menu(move |window, cx| {
+                // `.menu` is called as `Fn`, so nothing captured here may be
+                // moved out of it: each entry handler takes its own handle.
+                let multi = multi_workspace.clone();
+                let rows: Vec<(Entity<Workspace>, String, String, bool)> = open
+                    .iter()
+                    .map(|workspace| {
+                        let root = projects::current_root(workspace, cx);
+                        let name = root
+                            .as_ref()
+                            .and_then(|root| root.file_name())
+                            .map(|name| name.to_string_lossy().to_string())
+                            .unwrap_or_else(|| "mini-ork".to_string());
+                        let path = root
+                            .as_ref()
+                            .map(|root| root.to_string_lossy().replace(&home, "~"))
+                            .unwrap_or_default();
+                        (workspace.clone(), name, path, active.as_ref() == Some(workspace))
+                    })
+                    .collect();
+                Some(ContextMenu::build(window, cx, move |mut menu, _, _| {
+                    menu = menu.header("New Thread In…");
+                    for (workspace, name, path, is_active) in rows {
+                        let multi = multi.clone();
+                        menu = menu.custom_entry(
+                            move |_, _| {
+                                h_flex()
+                                    .w_full()
+                                    .gap_2()
+                                    .child(
+                                        div()
+                                            .w_3()
+                                            .text_color(c(p::GREEN))
+                                            .child(if is_active { "✓" } else { "" }),
+                                    )
+                                    .child(
+                                        v_flex()
+                                            .child(
+                                                div()
+                                                    .text_size(rems_from_px(12.5_f32))
+                                                    .text_color(c(p::TEXT))
+                                                    .when(is_active, |this| {
+                                                        this.font_weight(gpui::FontWeight::SEMIBOLD)
+                                                    })
+                                                    .child(name.clone()),
+                                            )
+                                            .child(
+                                                div()
+                                                    .text_size(rems_from_px(11_f32))
+                                                    .text_color(c(p::SUB))
+                                                    .child(path.clone()),
+                                            ),
+                                    )
+                                    .into_any_element()
+                            },
+                            move |window, cx| {
+                                start_thread_in(&multi, &workspace, window, cx)
+                            },
+                        );
+                    }
+                    menu
+                }))
+            })
+            .into_any_element()
+    }
+
     fn render_board(
         &self,
         board: Option<&Board>,
@@ -576,22 +706,21 @@ impl MiniOrkSidebar {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let mono = p::mono_font(cx);
         let runs: Vec<Run> = self.visible_runs(board);
         let counts = board.map(|b| b.counts.clone()).unwrap_or_default();
         let header = {
             let workspace = workspace.clone();
             h_flex()
                 .flex_none()
-                .h(px(36.))
-                .pl(px(12.))
-                .pr(px(8.))
-                .gap(px(8.))
+                .h_9()
+                .pl_3()
+                .pr_2()
+                .gap_2()
                 .border_b_1()
                 .border_color(c(p::BORDER))
                 .child(
                     div()
-                        .text_size(px(12.5))
+                        .text_size(rems_from_px(12.5_f32))
                         .font_weight(gpui::FontWeight::SEMIBOLD)
                         .text_color(c(p::TEXT))
                         .child("Threads"),
@@ -605,130 +734,135 @@ impl MiniOrkSidebar {
                     p::SUB,
                 ))
                 .child(div().flex_1())
-                .child(
-                    div()
-                        .id("board-new-thread")
-                        .size(px(24.))
-                        .flex()
-                        .items_center()
-                        .justify_center()
-                        .rounded(px(5.))
-                        .text_size(px(15.))
-                        .text_color(c(p::MUTED))
-                        .cursor_pointer()
-                        .hover(|s| s.bg(c(p::HOVER)).text_color(c(p::TEXT)))
-                        .tooltip(Tooltip::text("New thread"))
-                        .child("+")
-                        .on_click(move |_, window, cx| {
-                            if let Some(workspace) = workspace.clone() {
-                                store::new_thread(&workspace, "", window, cx);
-                            }
-                        }),
-                )
+                .when_some(self.board_filter.clone(), |this, state| {
+                    this.child(
+                        div()
+                            .id("board-filter-clear")
+                            .px_1p5()
+                            .py_0p5()
+                            .text_size(rems_from_px(11_f32))
+                            .text_color(c(p::MUTED))
+                            .cursor_pointer()
+                            .hover(|s| s.bg(c(p::HOVER)).text_color(c(p::TEXT)))
+                            .tooltip(Tooltip::text("Show every thread"))
+                            .child(format!("{} ✕", state_words(&state).0))
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                this.board_filter = None;
+                                cx.notify();
+                            })),
+                    )
+                })
+                .child(self.render_new_thread(&workspace, cx))
         };
         let search_row = h_flex()
             .flex_none()
-            .h(px(30.))
-            .mx(px(10.))
+            .h(rems_from_px(30_f32))
+            .mx_2p5()
             .mt(px(8.))
-            .px(px(8.))
-            .gap(px(6.))
-            .rounded(px(5.))
+            .px_2()
+            .gap_1p5()
             .border_1()
             .border_color(c(p::BORDER2))
             .bg(c(p::BG))
             .child(p::text("⌕", 12., p::SUB))
-            .child(div().flex_1().min_w_0().text_size(px(12.5)).child(self.search.render(window, cx)));
+            .child(div().flex_1().min_w_0().text_size(rems_from_px(12.5_f32)).child(self.search.render(window, cx)));
         let tiles = [
-            (counts.needs_you, "need you", p::YELLOW),
-            (counts.working, "working", p::BLUE),
-            (counts.failed, "failed", p::RED),
-            (counts.done, "done", p::GREEN),
+            ("needs_you", counts.needs_you, "need you", p::YELLOW),
+            ("working", counts.working, "working", p::BLUE),
+            ("failed", counts.failed, "failed", p::RED),
+            ("done", counts.done, "done", p::GREEN),
         ];
         let count_grid = h_flex()
             .flex_none()
-            .gap(px(4.))
-            .px(px(10.))
-            .py(px(8.))
+            .gap_1()
+            .px_2p5()
+            .py_2()
             .border_b_1()
             .border_color(c(p::BORDER))
-            .children(tiles.into_iter().map(|(n, label, colour)| {
+            .children(tiles.into_iter().map(|(state, n, label, colour)| {
+                let selected = self.board_filter.as_deref() == Some(state);
                 v_flex()
+                    .id(SharedString::from(format!("board-filter-{state}")))
                     .flex_1()
                     .items_center()
-                    .py(px(4.))
-                    .rounded(px(5.))
-                    .bg(c(p::BG))
+                    .py_1()
+                    .bg(c(if selected { p::HOVER } else { p::BG }))
+                    .border_1()
+                    .border_color(c(if selected { colour } else { p::BG }))
+                    .cursor_pointer()
+                    .tooltip(Tooltip::text(format!(
+                        "Only the threads that {label} — click again for all"
+                    )))
                     .child(
                         div()
-                            .text_size(px(14.))
+                            .text_size(rems_from_px(14_f32))
                             .font_weight(gpui::FontWeight::SEMIBOLD)
                             .text_color(c(colour))
                             .child(n.to_string()),
                     )
                     .child(p::text(label, 10.5, p::SUB))
+                    .on_click(cx.listener(move |this, _, _, cx| {
+                        this.board_filter =
+                            (this.board_filter.as_deref() != Some(state)).then(|| state.to_string());
+                        cx.notify();
+                    }))
             }));
 
         let now = now_epoch();
-        let groups = [
-            ("needs_you", "Needs you"),
-            ("working", "Working"),
-            ("queued", "Queued"),
-            ("failed", "Failed"),
-            ("done", "Done"),
-        ];
-        let mut list = v_flex().px(px(6.)).pt(px(6.)).pb(px(16.));
+        // Newest first, thread by thread: the board opens as one flat list, so
+        // a run is found by when it started rather than by which group it fell
+        // into. The tiles above narrow it to a single state.
+        let filter = self.board_filter.as_deref();
+        let mut shown: Vec<&Run> = runs
+            .iter()
+            .filter(|run| filter.is_none_or(|state| run.state == state))
+            .collect();
+        shown.sort_by_key(|run| std::cmp::Reverse(run.started_at.unwrap_or(0)));
+        // The extra left padding is room for `ListItem`'s disclosure, which
+        // hangs a rem outside the row's own padding.
+        let mut list = v_flex().pl_4().pr_1p5().pt_1p5().pb_4();
         if let Some(error) = error.filter(|_| runs.is_empty()) {
-            list = list.child(p::text(error, 12., p::SUB).p(px(8.)));
+            list = list.child(p::text(error, 12., p::SUB).p_2());
             // A window restored without a folder has nothing to read runs from:
             // offer the known projects right here instead of a dead end.
             if let Some(workspace) = workspace.as_ref().filter(|w| projects::current_root(w, cx).is_none()) {
                 list = list.child(Self::render_project_picker(workspace));
             }
         } else if board.is_none() {
-            list = list.child(p::text("Loading…", 12., p::SUB).p(px(8.)));
+            list = list.child(p::text("Loading…", 12., p::SUB).p_2());
         } else if runs.is_empty() && self.results.is_some() && !self.loading_more {
-            list = list.child(p::text(format!("No runs match “{}”.", self.query), 12., p::SUB).p(px(8.)));
+            list = list.child(p::text(format!("No runs match “{}”.", self.query), 12., p::SUB).p_2());
         } else if runs.is_empty() && self.results.is_none() {
             list = list.child(
-                p::text("No threads yet. Press + and say what you want done.", 12., p::SUB).p(px(8.)),
+                p::text("No threads yet. Press + and say what you want done.", 12., p::SUB).p_2(),
             );
-        }
-        for (state, label) in groups {
-            let rows: Vec<_> = runs.iter().filter(|run| run.state == state).collect();
-            if rows.is_empty() {
-                continue;
-            }
+        } else if let Some(state) = filter.filter(|_| shown.is_empty()) {
+            list = list.child(
+                p::text(format!("Nothing {}.", state_words(state).1), 12., p::SUB).p_2(),
+            );
+        } else if let Some(state) = filter {
             let (mark, colour) = p::state_mark(state);
             list = list.child(
-                h_flex()
-                    .gap(px(6.))
-                    .px(px(8.))
-                    .pt(px(10.))
-                    .pb(px(4.))
-                    .text_size(px(11.))
-                    .text_color(c(p::SUB))
-                    .child(div().text_color(c(colour)).child(mark))
-                    .child(format!("{} · {}", label.to_uppercase(), rows.len())),
+                ListHeader::new(format!("{} · {}", state_words(state).0, shown.len()))
+                    .start_slot(div().text_size(rems_from_px(11_f32)).text_color(c(colour)).child(mark)),
             );
-            for run in rows {
-                list = list.child(self.render_run(run, state, now, &mono, workspace, cx));
-            }
+        }
+        for run in shown {
+            list = list.child(self.render_run(run, &run.state, now, workspace, cx));
         }
         if self.loading_more {
-            list = list.child(p::text("Loading…", 11.5, p::SUB).px(px(8.)).py(px(6.)));
+            list = list.child(p::text("Loading…", 11.5, p::SUB).px_2().py_1p5());
         } else if self.has_more && !runs.is_empty() {
             list = list.child(
                 div()
                     .id("board-load-more")
-                    .mx(px(8.))
-                    .my(px(6.))
-                    .py(px(5.))
-                    .rounded(px(5.))
+                    .mx_2()
+                    .my_1p5()
+                    .py(rems_from_px(5_f32))
                     .border_1()
                     .border_color(c(p::BORDER2))
                     .text_center()
-                    .text_size(px(11.5))
+                    .text_size(rems_from_px(11.5_f32))
                     .text_color(c(p::MUTED))
                     .cursor_pointer()
                     .hover(|s| s.bg(c(p::HOVER)).text_color(c(p::TEXT)))
@@ -739,7 +873,7 @@ impl MiniOrkSidebar {
         let scroll = self.list_scroll.clone();
         v_flex()
             .flex_none()
-            .w(px(self.board_width))
+            .w(rems_from_px(self.board_width))
             .h_full()
             .bg(c(p::CHROME))
             .border_r_1()
@@ -777,23 +911,22 @@ impl MiniOrkSidebar {
         run: &Run,
         state: &str,
         now: i64,
-        mono: &gpui::Font,
         workspace: &Option<Entity<Workspace>>,
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let selected = self.selected_run.as_deref() == Some(run.id.as_str());
         let sub_colour = match state {
-            "failed" => p::RED,
-            "needs_you" => p::YELLOW,
-            _ => p::SUB,
+            "failed" => Color::Error,
+            "needs_you" => Color::Warning,
+            _ => Color::Placeholder,
         };
         let mut sub = run.recipe.clone();
         if !run.step.is_empty() {
             sub = if sub.is_empty() { run.step.clone() } else { format!("{sub} · {}", run.step) };
         }
-        if run.added > 0 || run.removed > 0 {
-            sub = format!("{sub} · +{} −{}", run.added, run.removed);
-        }
+        // `+N −M` is a `DiffStat` of its own in `sub_line`, not text spliced into
+        // the recipe line.
+        let has_diff = run.added > 0 || run.removed > 0;
         let (id, title) = (run.id.clone(), run.display_title());
         let open = {
             let (id, title, workspace) = (id.clone(), title.clone(), workspace.clone());
@@ -810,81 +943,118 @@ impl MiniOrkSidebar {
         };
         let head = h_flex()
             .w_full()
-            .gap(px(8.))
-            .child(div().w(px(14.)).flex_none().flex().justify_center().child(status_mark(state, &run.id)))
+            .gap_2()
             .child(
                 div()
-                    .flex_1()
-                    .min_w_0()
-                    .text_size(px(13.))
-                    .text_color(c(p::TEXT))
-                    .when(selected, |this| this.font_weight(gpui::FontWeight::SEMIBOLD))
-                    .truncate()
-                    .child(title.clone()),
+                    .w_3p5()
+                    .flex_none()
+                    .flex()
+                    .justify_center()
+                    .child(status_mark(state, &run.id)),
             )
             .child(
-                div()
+                Label::new(title.clone())
+                    .flex_1()
+                    .size(LabelSize::Small)
+                    .color(Color::Default)
+                    .when(selected, |this| this.weight(gpui::FontWeight::SEMIBOLD))
+                    .truncate(),
+            )
+            .child(
+                Label::new(age(run.started_at, now))
                     .flex_none()
-                    .text_size(px(11.))
-                    .text_color(c(p::SUB))
-                    .font(mono.clone())
-                    .child(age(run.started_at, now)),
+                    .size(LabelSize::XSmall)
+                    .color(Color::Placeholder)
+                    .buffer_font(cx),
             );
         let sub_line = h_flex()
             .w_full()
-            .pl(px(22.))
-            .gap(px(6.))
-            .child(div().flex_1().min_w_0().text_size(px(11.5)).text_color(c(sub_colour)).truncate().child(sub))
+            .pl(rems_from_px(22_f32))
+            .gap_1p5()
             .child(
-                div()
+                Label::new(sub)
+                    .flex_1()
+                    .size(LabelSize::XSmall)
+                    .color(sub_colour)
+                    .truncate(),
+            )
+            .child(
+                Label::new(format!("${:.2}", run.cost_usd))
                     .flex_none()
-                    .text_size(px(10.5))
-                    .text_color(c(p::DIM))
-                    .font(mono.clone())
-                    .child(format!("${:.2}", run.cost_usd)),
-            );
+                    .size(LabelSize::XSmall)
+                    .color(Color::Hidden)
+                    .buffer_font(cx),
+            )
+            .when(has_diff, |this| {
+                this.child(
+                    DiffStat::new(
+                        SharedString::from(format!("board-run-diff-{}", run.id)),
+                        run.added as usize,
+                        run.removed as usize,
+                    )
+                    .label_size(LabelSize::XSmall),
+                )
+            });
         let span = span_line(run.started_at, run.ended_at, state).map(|line| {
-            div().pl(px(22.)).text_size(px(10.5)).text_color(c(p::DIM)).font(mono.clone()).truncate().child(line)
+            div().pl(rems_from_px(22_f32)).child(
+                Label::new(line)
+                    .size(LabelSize::XSmall)
+                    .color(Color::Hidden)
+                    .buffer_font(cx),
+            )
         });
         let tooltip = span_tooltip(run.started_at, run.ended_at);
-        let carded = selected || matches!(state, "working" | "needs_you");
-        if !carded {
-            return v_flex()
-                .id(SharedString::from(format!("board-run-{}", run.id)))
+        let lines = || {
+            v_flex()
                 .w_full()
-                .px(px(8.))
-                .py(px(6.))
-                .gap(px(2.))
-                .rounded(px(6.))
-                .hover(|s| s.bg(c(p::HOVER)))
-                .cursor_pointer()
+                .gap_0p5()
                 .child(head)
                 .child(sub_line)
                 .children(span)
+        };
+        // A run's form is its own property — never the selection: promoting the
+        // selected row to a card resized it and shifted every row below.
+        // Selection only colours the row, through `toggle_state` (Zed's
+        // `ghost_element_selected`).
+        //
+        // Every run whose recipe the board resolved is a card that lists its
+        // nodes, not just the ones in flight or waiting on you. A run with no
+        // DAG — an unresolvable recipe, or a read that has not landed yet — has
+        // nothing to list and stays a plain row.
+        let Some(dag) = self.thumbs.get(&run.id).filter(|dag| !dag.nodes.is_empty()) else {
+            return ListItem::new(SharedString::from(format!("board-run-{}", run.id)))
+                .selectable(true)
+                .toggle_state(selected)
                 .when_some(tooltip, |this, tip| this.tooltip(Tooltip::text(tip)))
                 .on_click(open)
+                .child(lines())
                 .into_any_element();
-        }
+        };
 
         // The card: header, then "N nodes" that folds the node list away.
-        let dag = self.thumbs.get(&run.id);
         let folded = self.folded.contains(&run.id);
-        let seen = dag.map(|d| d.nodes.iter().filter(|n| n.state != "never_seen").count()).unwrap_or(0);
-        let total = dag.map(|d| d.nodes.len()).unwrap_or(0);
+        let seen = dag.nodes.iter().filter(|n| n.state != "never_seen").count();
+        let total = dag.nodes.len();
         let fold_id = run.id.clone();
+        // The fold is a `Disclosure` — Zed's own chevron — as a row of its own
+        // rather than `ListItem::toggle`: the toggle hangs an absolutely
+        // positioned chevron outside the row, and `outlined()` clips what leaves
+        // the border.
         let fold_row = (total > 0).then(|| {
             h_flex()
                 .id(SharedString::from(format!("board-fold-{}", run.id)))
-                .pl(px(22.))
-                .pr(px(2.))
-                .gap(px(6.))
-                .text_size(px(11.5))
-                .text_color(c(p::SUB))
+                .pl(rems_from_px(22_f32))
+                .gap_1p5()
                 .cursor_pointer()
-                .hover(|s| s.text_color(c(p::TEXT)))
-                .child(format!("{seen} of {total} nodes"))
-                .child(div().flex_1())
-                .child(if folded { "▸" } else { "▾" })
+                .child(Disclosure::new(
+                    SharedString::from(format!("board-fold-icon-{}", run.id)),
+                    !folded,
+                ))
+                .child(
+                    Label::new(format!("{seen} of {total} nodes"))
+                        .size(LabelSize::XSmall)
+                        .color(Color::Placeholder),
+                )
                 .on_click(cx.listener(move |this, _, _, cx| {
                     if !this.folded.remove(&fold_id) {
                         this.folded.insert(fold_id.clone());
@@ -892,37 +1062,66 @@ impl MiniOrkSidebar {
                     cx.notify();
                 }))
         });
-        let body: Option<AnyElement> = dag.filter(|_| !folded).map(|dag| {
-            let mut nodes = v_flex().gap(px(1.)).pl(px(18.));
-            for node in &dag.nodes {
-                nodes = nodes.child(self.render_node_row(run, node, now, mono, workspace, cx));
-            }
-            nodes.into_any_element()
-        });
-        v_flex()
-            .id(SharedString::from(format!("board-run-{}", run.id)))
-            .w_full()
-            .my(px(3.))
-            .p(px(8.))
-            .gap(px(4.))
-            .rounded(px(8.))
-            .bg(c(if selected { p::SELECTED } else { p::BG }))
-            .border_1()
-            .border_color(c(if selected { p::BORDER2 } else { p::BORDER }))
+        let body: Option<AnyElement> =
+            (!folded).then(|| self.render_nodes(run, dag, now, workspace, cx));
+        // Every row is a `ListItem`, so hover, selection and the card's border
+        // come from the theme rather than from colours of our own. The header
+        // keeps the click that opens the run: the fold row and the node rows
+        // below it toggle and navigate, and a click on those must not also open
+        // the run.
+        //
+        // `ListItem` lays its children out in a row (`h_flex`, clipped), so the
+        // header, the fold row and the node list have to be ONE vertical child:
+        // handed over separately, the fold chevron lands beside the header and
+        // the node list is squeezed to nothing.
+        ListItem::new(SharedString::from(format!("board-run-{}", run.id)))
+            .spacing(ListItemSpacing::Sparse)
+            .selectable(true)
+            .outlined()
+            .toggle_state(selected)
             .child(
                 v_flex()
-                    .id(SharedString::from(format!("board-run-head-{}", run.id)))
-                    .gap(px(2.))
-                    .cursor_pointer()
-                    .child(head)
-                    .child(sub_line)
-                    .children(span)
-                    .when_some(tooltip, |this, tip| this.tooltip(Tooltip::text(tip)))
-                    .on_click(open),
+                    .w_full()
+                    .gap_0p5()
+                    .child(
+                        v_flex()
+                            .id(SharedString::from(format!("board-run-head-{}", run.id)))
+                            .w_full()
+                            .gap_0p5()
+                            .cursor_pointer()
+                            .child(lines())
+                            .when_some(tooltip, |this, tip| this.tooltip(Tooltip::text(tip)))
+                            .on_click(open),
+                    )
+                    .children(fold_row)
+                    .children(body),
             )
-            .children(fold_row)
-            .children(body)
             .into_any_element()
+    }
+
+    /// The nodes of one run card: one to a line, every line starting at the
+    /// same left edge, so the card reads as a roster rather than a layout.
+    ///
+    /// `dag.layers` decides only the *order* — a layer is listed before the
+    /// layers that wait on it — so the roster reads in the order the recipe
+    /// runs its nodes, with nodes a recipe runs in parallel adjacent on
+    /// consecutive lines.
+    fn render_nodes(
+        &self,
+        run: &Run,
+        dag: &thumb::Thumb,
+        now: i64,
+        workspace: &Option<Entity<Workspace>>,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let mut rows = v_flex().w_full();
+        for &index in dag.layers.iter().flatten() {
+            let Some(node) = dag.nodes.get(index) else {
+                continue;
+            };
+            rows = rows.child(self.render_node_row(run, node, now, workspace, cx));
+        }
+        rows.into_any_element()
     }
 
     /// One node in a run card: status, model mark, name, elapsed. Clicking it
@@ -932,7 +1131,6 @@ impl MiniOrkSidebar {
         run: &Run,
         node: &thumb::TNode,
         now: i64,
-        mono: &gpui::Font,
         workspace: &Option<Entity<Workspace>>,
         cx: &mut Context<Self>,
     ) -> AnyElement {
@@ -943,17 +1141,12 @@ impl MiniOrkSidebar {
             (Some(start), _) if running => duration_label(now - start),
             _ => String::new(),
         };
-        let logo = p::lane_mark(&node.lane, 12.);
         let (run_id, title, node_id, workspace) =
             (run.id.clone(), run.display_title(), node.id.clone(), workspace.clone());
-        h_flex()
-            .id(SharedString::from(format!("board-node-{}-{}", run.id, node.id)))
-            .h(px(20.))
-            .px(px(4.))
-            .gap(px(6.))
-            .rounded(px(4.))
-            .cursor_pointer()
-            .hover(|s| s.bg(c(p::HOVER)))
+        ListItem::new(SharedString::from(format!("board-node-{}-{}", run.id, node.id)))
+            .indent_level(1)
+            .indent_step_size(px(18.))
+            .selectable(true)
             .tooltip(Tooltip::text(
                 [node.id.as_str(), node.kind.as_str(), node.lane.as_str(), &node.state.replace('_', " ")]
                     .iter()
@@ -962,25 +1155,55 @@ impl MiniOrkSidebar {
                     .collect::<Vec<_>>()
                     .join(" · "),
             ))
-            .child(node_mark(&node.state, &format!("{}-{}", run.id, node.id)))
-            .child(logo)
-            .child(
-                div()
-                    .flex_1()
-                    .min_w_0()
-                    .text_size(px(12.))
-                    .text_color(c(if running { p::TEXT } else if pending { p::DIM } else { p::MUTED }))
-                    .truncate()
-                    .child(node.id.clone()),
+            .start_slot(
+                h_flex()
+                    .gap_1p5()
+                    .child(node_mark(&node.state, &format!("{}-{}", run.id, node.id)))
+                    .child(p::lane_mark(&node.lane, 12.)),
             )
-            .child(div().flex_none().text_size(px(11.)).text_color(c(p::DIM)).font(mono.clone()).child(elapsed))
+            .end_slot(
+                Label::new(elapsed)
+                    .flex_none()
+                    .size(LabelSize::XSmall)
+                    .color(Color::Hidden)
+                    .buffer_font(cx),
+            )
+            .child(
+                Label::new(node.id.clone())
+                    .flex_1()
+                    .size(LabelSize::Small)
+                    .color(if running {
+                        Color::Default
+                    } else if pending {
+                        Color::Hidden
+                    } else {
+                        Color::Muted
+                    })
+                    .truncate(),
+            )
             .on_click(cx.listener(move |_, _, window, cx| {
                 let (run_id, title, node_id, workspace) =
                     (run_id.clone(), title.clone(), node_id.clone(), workspace.clone());
                 window.defer(cx, move |window, cx| {
-                    if let Some(workspace) = workspace {
-                        crate::node_tab::open_node_tab(&workspace, run_id, node_id, title, None, WeakEntity::new_invalid(), window, cx);
-                    }
+                    let Some(workspace) = workspace else {
+                        return;
+                    };
+                    // The tab is the same one the run page's DAG opens, but the
+                    // page handle it carries is not: the inspector's retry, gate
+                    // and merge steps act through `Origin::Page`, and an invalid
+                    // one swallows the action. Hand over the page for this run
+                    // when one is already open — from a card there is no other
+                    // source for it — so those steps work rather than silently
+                    // going nowhere.
+                    let page = workspace
+                        .read(cx)
+                        .items_of_type::<crate::page::MiniOrkPage>(cx)
+                        .find(|page| {
+                            page.read(cx).args.get("run").map(String::as_str) == Some(run_id.as_str())
+                        })
+                        .map(|page| page.downgrade())
+                        .unwrap_or_else(WeakEntity::new_invalid);
+                    crate::node_tab::open_node_tab(&workspace, run_id, node_id, title, None, page, window, cx);
                 });
             }))
             .into_any_element()
@@ -1002,14 +1225,14 @@ pub(crate) fn status_mark(state: &str, key: &str) -> AnyElement {
         "needs_you" | "needs" => p::YELLOW,
         _ => p::DIM,
     };
-    div().size(px(8.)).rounded_full().bg(c(colour)).into_any_element()
+    Indicator::dot().color(Color::Custom(c(colour))).into_any_element()
 }
 
 /// A node's status: spinner, ✓ in a ring, ✕ in a ring, or an empty ring.
 pub(crate) fn node_mark(state: &str, key: &str) -> AnyElement {
     let ring = |colour: u32| {
         div()
-            .size(px(12.))
+            .size_3()
             .flex_none()
             .rounded_full()
             .border_1()
@@ -1025,10 +1248,10 @@ pub(crate) fn node_mark(state: &str, key: &str) -> AnyElement {
             .with_throttled_rotate(SharedString::from(format!("node-spin-{key}")), 2)
             .into_any_element(),
         "done" => ring(p::GREEN)
-            .child(gpui::svg().path(IconName::Check.path()).size(px(8.)).text_color(c(p::GREEN)))
+            .child(gpui::svg().path(IconName::Check.path()).size_2().text_color(c(p::GREEN)))
             .into_any_element(),
         "failed" => ring(p::RED)
-            .child(gpui::svg().path(IconName::Close.path()).size(px(7.)).text_color(c(p::RED)))
+            .child(gpui::svg().path(IconName::Close.path()).size(rems_from_px(7_f32)).text_color(c(p::RED)))
             .into_any_element(),
         _ => ring(p::DIM).into_any_element(),
     }
@@ -1084,6 +1307,18 @@ fn span_tooltip(started: Option<i64>, ended: Option<i64>) -> Option<String> {
     Some(text)
 }
 
+/// A run state's board heading, and how the same state reads mid-sentence
+/// (`Nothing waiting on you.`).
+fn state_words(state: &str) -> (&'static str, &'static str) {
+    match state {
+        "needs_you" => ("Needs you", "waiting on you"),
+        "working" => ("Working", "working"),
+        "failed" => ("Failed", "failed"),
+        "done" => ("Done", "done"),
+        _ => ("Queued", "queued"),
+    }
+}
+
 fn now_epoch() -> i64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -1112,17 +1347,29 @@ impl Focusable for MiniOrkSidebar {
 }
 
 impl Sidebar for MiniOrkSidebar {
-    fn width(&self, _cx: &App) -> Pixels {
-        if self.board_open {
-            px(ACTIVITY_WIDTH + self.board_width)
-        } else {
-            px(ACTIVITY_WIDTH)
-        }
+    /// The workspace lays the sidebar out at exactly this width (`.w(sidebar_width)`
+    /// in `multi_workspace`), so the rail has to answer in real pixels — and the
+    /// rows inside it are sized in rems, which `rem_size` turns into pixels. If
+    /// this stayed a fixed pixel count the rows would outgrow the rail as soon as
+    /// the reader raised their UI font size and be clipped by it.
+    ///
+    /// `board_width` is kept in design pixels — the units the constants above are
+    /// written in, and what gets persisted — and scaled here instead. The factor
+    /// is `ui_font_size`, which is exactly what `setup_ui_font` hands to
+    /// `Window::set_rem_size`, so the two agree on what a rem is.
+    fn width(&self, cx: &App) -> Pixels {
+        let rem = theme::theme_settings(cx).ui_font_size(cx);
+        let design = if self.board_open { ACTIVITY_WIDTH + self.board_width } else { ACTIVITY_WIDTH };
+        rems_from_px(design).to_pixels(rem)
     }
 
     fn set_width(&mut self, width: Option<Pixels>, cx: &mut Context<Self>) {
+        // A drag arrives in real pixels and is stored in design pixels, for the
+        // same reason `width` above scales on the way out.
+        let rem = f32::from(theme::theme_settings(cx).ui_font_size(cx));
+        let design = |width: Pixels| f32::from(width) * 16. / rem;
         self.board_width = match width {
-            Some(width) => (f32::from(width) - ACTIVITY_WIDTH).max(BOARD_MIN),
+            Some(width) => (design(width) - ACTIVITY_WIDTH).max(BOARD_MIN),
             None => BOARD_WIDTH,
         };
         self.board_open = true;
@@ -1172,7 +1419,7 @@ impl Render for MiniOrkSidebar {
         self.ensure_thumbs(board.as_ref(), cx);
         let active_key = workspace.as_ref().and_then(|w| Self::active_page_key(w, cx));
         let needs_you = board.as_ref().map_or(0, |b| b.counts.needs_you);
-        let strip = self.render_strip(board.as_ref(), workspace.clone(), window);
+        let strip = self.render_strip(board.as_ref(), workspace.clone(), window, cx);
         let activity = self.render_activity_bar(&workspace, needs_you, active_key, cx);
         let board_column = self
             .board_open

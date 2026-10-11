@@ -49,13 +49,13 @@ pub fn sweep_bar(id: impl Into<ElementId>) -> AnyElement {
     div()
         .relative()
         .w_full()
-        .h(px(2.))
+        .h_0p5()
         .overflow_hidden()
         .child(
             h_flex()
                 .absolute()
                 .top_0()
-                .h(px(2.))
+                .h_0p5()
                 .w(relative(0.35))
                 .child(glow(clear, blue))
                 .child(glow(blue, clear))
@@ -76,9 +76,9 @@ pub fn sweep_bar(id: impl Into<ElementId>) -> AnyElement {
 /// Spinner + "Loading" + the source being read, in dim mono.
 pub fn loading_line(source: String, cx: &App) -> AnyElement {
     h_flex()
-        .gap(px(8.))
+        .gap_2()
         .min_w_0()
-        .text_size(px(11.5))
+        .text_size(rems_from_px(11.5_f32))
         .text_color(c(p::SUB))
         .child(
             Icon::new(IconName::LoadCircle)
@@ -98,8 +98,8 @@ fn bar(id: SharedString, width: gpui::DefiniteLength, height: f32, radius: f32, 
     div()
         .flex_none()
         .w(width)
-        .h(px(height))
-        .rounded(px(radius))
+        .h(rems_from_px(height))
+        .rounded(rems_from_px(radius))
         .bg(low)
         .with_animation(
             id,
@@ -135,17 +135,17 @@ pub fn skeleton_card(index: usize, shape: &Shape) -> Div {
     let pct = |v: f32| relative(v);
     let body: AnyElement = match shape.kind.as_str() {
         "table" => v_flex()
-            .gap(px(11.))
+            .gap(rems_from_px(11_f32))
             .child(
                 h_flex()
-                    .gap(px(16.))
+                    .gap_4()
                     .child(bar(id("h0"), pct(0.18), 7., 4., delay))
                     .child(bar(id("h1"), pct(0.30), 7., 4., delay))
                     .child(bar(id("h2"), pct(0.14), 7., 4., delay)),
             )
             .children((0..4).map(|j| {
                 h_flex()
-                    .gap(px(16.))
+                    .gap_4()
                     .child(bar(id(&format!("r{j}a")), pct(0.14), 9., 4., delay))
                     .child(bar(id(&format!("r{j}b")), pct(WIDTHS[j % 6] * 0.5), 9., 4., delay))
                     .child(bar(id(&format!("r{j}c")), pct(0.12), 9., 4., delay))
@@ -153,16 +153,15 @@ pub fn skeleton_card(index: usize, shape: &Shape) -> Div {
             .into_any_element(),
         "kv" => h_flex()
             .flex_wrap()
-            .gap(px(8.))
+            .gap_2()
             .children((0..4).map(|j| {
                 v_flex()
-                    .w(px(150.))
+                    .w(rems_from_px(150_f32))
                     .flex_grow(1.)
-                    .max_w(px(260.))
-                    .gap(px(7.))
-                    .px(px(10.))
-                    .py(px(8.))
-                    .rounded(px(6.))
+                    .max_w(rems_from_px(260_f32))
+                    .gap(rems_from_px(7_f32))
+                    .px_2p5()
+                    .py_2()
                     .border_1()
                     .border_color(c(p::BORDER))
                     .child(bar(id(&format!("k{j}a")), pct(0.5), 7., 4., delay))
@@ -170,46 +169,45 @@ pub fn skeleton_card(index: usize, shape: &Shape) -> Div {
             }))
             .into_any_element(),
         "list" | "inspector" => v_flex()
-            .gap(px(12.))
+            .gap_3()
             .children((0..3).map(|j| {
                 h_flex()
-                    .gap(px(10.))
+                    .gap_2p5()
                     .child(bar(id(&format!("l{j}m")), px(12.).into(), 12., 6., delay))
                     .child(
                         v_flex()
                             .flex_1()
-                            .gap(px(6.))
+                            .gap_1p5()
                             .child(bar(id(&format!("l{j}a")), pct(WIDTHS[j % 6]), 9., 4., delay))
                             .child(bar(id(&format!("l{j}b")), pct(0.4), 7., 4., delay)),
                     )
             }))
             .into_any_element(),
         "bars" => v_flex()
-            .gap(px(9.))
+            .gap(rems_from_px(9_f32))
             .children((0..3).map(|j| {
                 h_flex()
-                    .gap(px(10.))
+                    .gap_2p5()
                     .child(bar(id(&format!("b{j}a")), pct(0.22), 8., 4., delay))
                     .child(bar(id(&format!("b{j}b")), pct(WIDTHS[(j + 2) % 6] * 0.6), 8., 4., delay))
                     .child(bar(id(&format!("b{j}c")), pct(0.10), 8., 4., delay))
             }))
             .into_any_element(),
         "code" | "dag" => v_flex()
-            .gap(px(8.))
+            .gap_2()
             .children((0..4).map(|j| bar(id(&format!("c{j}")), pct(WIDTHS[j]), 8., 4., delay)))
             .into_any_element(),
         _ => h_flex()
-            .gap(px(6.))
+            .gap_1p5()
             .children((0..3).map(|j| bar(id(&format!("p{j}")), px(72.).into(), 20., 10., delay)))
             .into_any_element(),
     };
     v_flex()
         .flex_1()
         .min_w_0()
-        .px(px(14.))
-        .py(px(12.))
-        .gap(px(12.))
-        .rounded(px(8.))
+        .px_3p5()
+        .py_3()
+        .gap_3()
         .border_1()
         .border_color(c(p::BORDER))
         .bg(c(p::CHROME))
@@ -223,7 +221,7 @@ pub fn skeleton(shapes: &[Shape]) -> AnyElement {
     let mut pending: Vec<(usize, &Shape)> = Vec::new();
     let flush = |pending: &mut Vec<(usize, &Shape)>, rows: &mut Vec<AnyElement>| {
         for pair in pending.chunks(2) {
-            let mut row = h_flex().items_start().gap(px(12.));
+            let mut row = h_flex().items_start().gap_3();
             for (i, shape) in pair {
                 row = row.child(skeleton_card(*i, shape));
             }
@@ -243,5 +241,5 @@ pub fn skeleton(shapes: &[Shape]) -> AnyElement {
         }
     }
     flush(&mut pending, &mut rows);
-    v_flex().gap(px(12.)).children(rows).into_any_element()
+    v_flex().gap_3().children(rows).into_any_element()
 }
