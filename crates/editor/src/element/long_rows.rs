@@ -7,7 +7,7 @@ use sum_tree::Bias;
 use theme::Theme;
 use util::debug_panic;
 
-use super::LineWithInvisibles;
+use super::{LineFragment, LineWithInvisibles};
 use crate::{
     DisplayPoint, DisplayRow, Editor, EditorSnapshot, EditorStyle,
     display_map::{
@@ -15,7 +15,10 @@ use crate::{
         ToDisplayPoint, WindowedRowGeometry,
     },
     movement::language_aware_styling,
+    scroll::ScrollPixelOffset,
 };
+
+const RULER_WIDTH_TOLERANCE: ScrollPixelOffset = 0.1;
 
 pub(super) fn visible_highlight_ranges(
     snapshot: &EditorSnapshot,
@@ -111,6 +114,8 @@ pub(super) fn layout_long_row(
     let language_aware = shaper.language_aware;
     let shape = |chunks: &mut dyn Iterator<Item = HighlightedChunk<'_>>,
                  start: u32,
+                 row_bg: &[Vec<(Range<DisplayPoint>, Hsla)>],
+                 shape_without_backgrounds: bool,
                  window: &mut Window,
                  cx: &mut App| {
         LineWithInvisibles::from_chunks(
@@ -123,6 +128,7 @@ pub(super) fn layout_long_row(
             start as usize,
             |_| false,
             row_bg,
+            shape_without_backgrounds,
             window,
             cx,
         )
@@ -143,26 +149,47 @@ pub(super) fn layout_long_row(
     let geometry;
     if let Some((columns, _)) = snapshot.grid_window(display_row, row_len, &viewport, cell, &shaper)
     {
-        shaped = shape(&mut read(columns.clone()), columns.start, window, cx);
+        shaped = shape(
+            &mut read(columns.clone()),
+            columns.start,
+            row_bg,
+            false,
+            window,
+            cx,
+        );
         geometry = WindowedRowGeometry::new(row_len, cell, columns);
     } else {
         let ruled = snapshot.ruled_row(display_row, shaper);
         let columns = ruled.columns_for_viewport(&viewport, cell);
-        let pieces = ruled.render_pieces(columns.clone()).collect::<Vec<_>>();
+        let pieces = ruled
+            .ruler
+            .render_pieces(columns.clone())
+            .collect::<Vec<_>>();
         let read_range = pieces
             .first()
             .map_or(columns.start, |piece| piece.context.start)
             ..pieces.last().map_or(columns.end, |piece| piece.context.end);
         let chunks = read(read_range.clone()).collect::<Vec<_>>();
         let last = pieces.len().saturating_sub(1);
-        let window_start_x = ruled.x_range_for_columns(columns.clone()).start;
-        shaped = shape(&mut iter::empty(), columns.start, window, cx);
+        let window_start_x = ruled.ruler.x_range_for_columns(columns.clone()).start;
+        shaped = shape(&mut iter::empty(), columns.start, &[], false, window, cx);
         for (ix, piece) in pieces.into_iter().enumerate() {
             let mut part = shape(
                 &mut clip_chunks(&chunks, read_range.start, piece.context.clone()),
                 piece.context.start,
+                row_bg,
+                true,
                 window,
                 cx,
+            );
+            debug_assert!(
+                rendered_text_width(&part, &piece.context, &piece.chunk).is_none_or(|width| {
+                    (width - ScrollPixelOffset::from(piece.width)).abs() <= RULER_WIDTH_TOLERANCE
+                }),
+                "row {display_row:?} columns {:?} render {:?} px wide, the ruler expects {:?}",
+                piece.chunk,
+                rendered_text_width(&part, &piece.context, &piece.chunk),
+                piece.width,
             );
             if piece.context != piece.chunk {
                 part.trim_to(
@@ -273,6 +300,22 @@ fn clip_chunks<'a>(
             replacement: chunk.replacement.clone(),
         })
     })
+}
+
+fn rendered_text_width(
+    part: &LineWithInvisibles,
+    context: &Range<u32>,
+    chunk: &Range<u32>,
+) -> Option<ScrollPixelOffset> {
+    if part
+        .fragments
+        .iter()
+        .any(|fragment| matches!(fragment, LineFragment::Element { .. }))
+    {
+        return None;
+    }
+    let x_at = |column: u32| part.x_for_index((column - context.start) as usize);
+    Some(x_at(chunk.end) - x_at(chunk.start))
 }
 
 fn trailing_whitespace_start(

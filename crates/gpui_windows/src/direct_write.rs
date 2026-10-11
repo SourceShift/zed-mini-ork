@@ -377,8 +377,9 @@ impl PlatformTextSystem for DirectWriteTextSystem {
         else {
             return false;
         };
-        let (hmtx, gsub, gpos, morx, kern, kerx) = (
+        let (hmtx, gdef, gsub, gpos, morx, kern, kerx) = (
             table("hmtx"),
+            table("GDEF"),
             table("GSUB"),
             table("GPOS"),
             table("morx"),
@@ -391,6 +392,7 @@ impl PlatformTextSystem for DirectWriteTextSystem {
                 hhea: hhea.bytes(),
                 maxp: maxp.bytes(),
                 hmtx: hmtx.as_ref().map(FontTable::bytes),
+                gdef: gdef.as_ref().map(FontTable::bytes),
                 gsub: gsub.as_ref().map(FontTable::bytes),
                 gpos: gpos.as_ref().map(FontTable::bytes),
                 morx: morx.as_ref().map(FontTable::bytes),

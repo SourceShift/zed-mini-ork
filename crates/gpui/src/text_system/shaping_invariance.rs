@@ -1,10 +1,13 @@
 use collections::FxHashSet;
 use ttf_parser::{
     Face, GlyphId, RawFaceTables, Tag,
+    gdef::GlyphClass,
     gpos::{PairAdjustment, PositioningSubtable, SingleAdjustment},
     gsub::{SingleSubstitution, SubstitutionSubtable},
     morx,
-    opentype_layout::{ChainedContextLookup, ContextLookup, Coverage, LayoutTable, LookupIndex},
+    opentype_layout::{
+        ChainedContextLookup, ContextLookup, Coverage, LayoutTable, LookupIndex, LookupSubtable,
+    },
 };
 
 /// Raw font tables that decide how a platform text system shapes a font.
@@ -18,6 +21,8 @@ pub struct ShapingTables<'a> {
     pub maxp: &'a [u8],
     /// The `hmtx` table.
     pub hmtx: Option<&'a [u8]>,
+    /// The `GDEF` table.
+    pub gdef: Option<&'a [u8]>,
     /// The `GSUB` table.
     pub gsub: Option<&'a [u8]>,
     /// The `GPOS` table.
@@ -35,10 +40,10 @@ const DEFAULT_OFF_FEATURES: &[[u8; 4]] = &[
     *b"expt", *b"falt", *b"frac", *b"fwid", *b"halt", *b"hist", *b"hkna", *b"hlig", *b"hngl",
     *b"hojo", *b"hwid", *b"ital", *b"jalt", *b"jp04", *b"jp78", *b"jp83", *b"jp90", *b"lfbd",
     *b"lnum", *b"mgrk", *b"nalt", *b"nlck", *b"numr", *b"onum", *b"opbd", *b"ordn", *b"ornm",
-    *b"palt", *b"pcap", *b"pkna", *b"pnum", *b"pwid", *b"qwid", *b"rand", *b"rtbd", *b"ruby",
-    *b"salt", *b"sinf", *b"size", *b"smcp", *b"smpl", *b"subs", *b"sups", *b"swsh", *b"titl",
-    *b"tnam", *b"tnum", *b"trad", *b"twid", *b"unic", *b"vert", *b"vhal", *b"vkna", *b"vpal",
-    *b"vrt2", *b"vrtr", *b"zero",
+    *b"palt", *b"pcap", *b"pkna", *b"pnum", *b"pwid", *b"qwid", *b"rtbd", *b"ruby", *b"salt",
+    *b"sinf", *b"size", *b"smcp", *b"smpl", *b"subs", *b"sups", *b"swsh", *b"titl", *b"tnam",
+    *b"tnum", *b"trad", *b"twid", *b"unic", *b"vert", *b"vhal", *b"vkna", *b"vpal", *b"vrt2",
+    *b"vrtr", *b"zero",
 ];
 
 const AAT_DELETED_GLYPH: u16 = 0xFFFF;
@@ -46,6 +51,9 @@ const AAT_NO_INDEX: u16 = 0xFFFF;
 const AAT_START_STATES: [u16; 2] = [0, 1];
 const AAT_END_OF_TEXT_CLASS: u16 = 0;
 const AAT_OUT_OF_BOUNDS_CLASS: u16 = 1;
+const GSUB_EXTENSION_LOOKUP: u16 = 7;
+const GPOS_EXTENSION_LOOKUP: u16 = 9;
+const X_ADVANCE_DEVICE_FORMAT: u16 = 0x0040;
 
 /// Returns whether shaping any sequence of printable ASCII characters in this font yields glyph
 /// runs whose total advance equals the sum of the characters' own advances.
@@ -66,6 +74,7 @@ pub fn ascii_shaping_preserves_advances(
         hhea: tables.hhea,
         maxp: tables.maxp,
         hmtx: tables.hmtx,
+        gdef: tables.gdef,
         gsub: tables.gsub,
         gpos: tables.gpos,
         morx: tables.morx,
@@ -75,7 +84,7 @@ pub fn ascii_shaping_preserves_advances(
         return false;
     };
     let face_tables = face.tables();
-    if face_tables.morx.is_some() && requested_features.iter().any(|(_, value)| *value != 0) {
+    if face_tables.morx.is_some() && !requested_features.is_empty() {
         return false;
     }
     let advance = |glyph: GlyphId| advance(glyph.0);
@@ -83,14 +92,22 @@ pub fn ascii_shaping_preserves_advances(
         .iter()
         .map(|glyph| GlyphId(*glyph))
         .collect::<FxHashSet<_>>();
-    let gsub_lookups = face_tables
-        .gsub
-        .as_ref()
-        .map(|gsub| enabled_lookups(gsub, requested_features, nested_substitution_lookups));
-    let gpos_lookups = face_tables
-        .gpos
-        .as_ref()
-        .map(|gpos| enabled_lookups(gpos, requested_features, nested_positioning_lookups));
+    let gsub_lookups = match &face_tables.gsub {
+        Some(gsub) => {
+            match enabled_lookups(gsub, requested_features, nested_substitution_lookups) {
+                Some(lookups) => Some(lookups),
+                None => return false,
+            }
+        }
+        None => None,
+    };
+    let gpos_lookups = match &face_tables.gpos {
+        Some(gpos) => match enabled_lookups(gpos, requested_features, nested_positioning_lookups) {
+            Some(lookups) => Some(lookups),
+            None => return false,
+        },
+        None => None,
+    };
 
     let glyph_limit = face.number_of_glyphs() as usize;
     for _ in 0..=glyph_limit {
@@ -100,7 +117,11 @@ pub fn ascii_shaping_preserves_advances(
                 let Some(lookup) = gsub.lookups.get(*index) else {
                     return false;
                 };
-                for subtable in lookup.subtables.into_iter::<SubstitutionSubtable>() {
+                for subtable_index in 0..lookup.subtables.len() {
+                    let Some(Flat(subtable)) = lookup.subtables.get::<Substitution>(subtable_index)
+                    else {
+                        return false;
+                    };
                     if !substitution_preserves_advances(&subtable, &mut closure, &advance) {
                         return false;
                     }
@@ -111,7 +132,8 @@ pub fn ascii_shaping_preserves_advances(
             for chain in morx.chains {
                 for subtable in chain.subtables {
                     if chain.default_flags & subtable.feature_flags == 0
-                        || subtable.coverage.is_vertical()
+                        || (subtable.coverage.is_vertical()
+                            && !subtable.coverage.is_all_directions())
                     {
                         continue;
                     }
@@ -126,13 +148,27 @@ pub fn ascii_shaping_preserves_advances(
         }
     }
 
+    if let Some(gdef) = &face_tables.gdef
+        && closure.iter().any(|glyph| {
+            gdef.glyph_class(*glyph) == Some(GlyphClass::Mark) && advance(*glyph) != Some(0.)
+        })
+    {
+        return false;
+    }
+
     if let (Some(gpos), Some(lookups)) = (&face_tables.gpos, &gpos_lookups) {
         for index in lookups {
             let Some(lookup) = gpos.lookups.get(*index) else {
                 return false;
             };
-            for subtable in lookup.subtables.into_iter::<PositioningSubtable>() {
-                if !positioning_preserves_advances(&subtable, &closure) {
+            for subtable_index in 0..lookup.subtables.len() {
+                let (Some(Flat(subtable)), Some(AdvanceDevices(has_advance_devices))) = (
+                    lookup.subtables.get::<Positioning>(subtable_index),
+                    lookup.subtables.get::<AdvanceDevices>(subtable_index),
+                ) else {
+                    return false;
+                };
+                if !positioning_preserves_advances(&subtable, &closure, has_advance_devices) {
                     return false;
                 }
             }
@@ -178,7 +214,7 @@ fn enabled_lookups(
     table: &LayoutTable<'_>,
     requested_features: &[(String, u32)],
     nested: impl Fn(&LayoutTable<'_>, LookupIndex) -> Option<Vec<LookupIndex>>,
-) -> Vec<LookupIndex> {
+) -> Option<Vec<LookupIndex>> {
     let mut lookups = FxHashSet::default();
     if table.variations.is_some() {
         lookups.extend(0..table.lookups.len());
@@ -199,7 +235,7 @@ fn enabled_lookups(
     }
     let mut pending = lookups.iter().copied().collect::<Vec<_>>();
     while let Some(index) = pending.pop() {
-        for nested_index in nested(table, index).unwrap_or_default() {
+        for nested_index in nested(table, index)? {
             if lookups.insert(nested_index) {
                 pending.push(nested_index);
             }
@@ -207,7 +243,7 @@ fn enabled_lookups(
     }
     let mut lookups = lookups.into_iter().collect::<Vec<_>>();
     lookups.sort_unstable();
-    lookups
+    Some(lookups)
 }
 
 fn nested_substitution_lookups(
@@ -215,12 +251,9 @@ fn nested_substitution_lookups(
     index: LookupIndex,
 ) -> Option<Vec<LookupIndex>> {
     let mut nested = Vec::new();
-    for subtable in table
-        .lookups
-        .get(index)?
-        .subtables
-        .into_iter::<SubstitutionSubtable>()
-    {
+    let subtables = table.lookups.get(index)?.subtables;
+    for subtable_index in 0..subtables.len() {
+        let Flat(subtable) = subtables.get::<Substitution>(subtable_index)?;
         match subtable {
             SubstitutionSubtable::Context(context) => nested.extend(context_lookups(&context)),
             SubstitutionSubtable::ChainContext(context) => {
@@ -237,12 +270,9 @@ fn nested_positioning_lookups(
     index: LookupIndex,
 ) -> Option<Vec<LookupIndex>> {
     let mut nested = Vec::new();
-    for subtable in table
-        .lookups
-        .get(index)?
-        .subtables
-        .into_iter::<PositioningSubtable>()
-    {
+    let subtables = table.lookups.get(index)?.subtables;
+    for subtable_index in 0..subtables.len() {
+        let Flat(subtable) = subtables.get::<Positioning>(subtable_index)?;
         match subtable {
             PositioningSubtable::Context(context) => nested.extend(context_lookups(&context)),
             PositioningSubtable::ChainContext(context) => {
@@ -442,21 +472,66 @@ fn substitution_preserves_advances(
     }
 }
 
+type Substitution<'a> = Flat<SubstitutionSubtable<'a>, GSUB_EXTENSION_LOOKUP>;
+type Positioning<'a> = Flat<PositioningSubtable<'a>, GPOS_EXTENSION_LOOKUP>;
+
+struct Flat<T, const EXTENSION: u16>(T);
+
+impl<'a, T: LookupSubtable<'a>, const EXTENSION: u16> LookupSubtable<'a> for Flat<T, EXTENSION> {
+    fn parse(data: &'a [u8], kind: u16) -> Option<Self> {
+        if kind == EXTENSION && data.get(2..4)? == EXTENSION.to_be_bytes().as_slice() {
+            return None;
+        }
+        T::parse(data, kind).map(Self)
+    }
+}
+
+struct AdvanceDevices(bool);
+
+impl<'a> LookupSubtable<'a> for AdvanceDevices {
+    fn parse(data: &'a [u8], kind: u16) -> Option<Self> {
+        let read_u16 = |data: &[u8], offset: usize| {
+            Some(u16::from_be_bytes(
+                data.get(offset..offset + 2)?.try_into().ok()?,
+            ))
+        };
+        let (kind, data) = if kind == GPOS_EXTENSION_LOOKUP {
+            let offset = u32::from_be_bytes(data.get(4..8)?.try_into().ok()?);
+            (
+                read_u16(data, 2)?,
+                data.get(usize::try_from(offset).ok()?..)?,
+            )
+        } else {
+            (kind, data)
+        };
+        let value_formats = match kind {
+            1 => read_u16(data, 4)?,
+            2 => read_u16(data, 4)? | read_u16(data, 6)?,
+            _ => 0,
+        };
+        Some(Self(value_formats & X_ADVANCE_DEVICE_FORMAT != 0))
+    }
+}
+
 fn positioning_preserves_advances(
     subtable: &PositioningSubtable<'_>,
     closure: &FxHashSet<GlyphId>,
+    has_advance_devices: bool,
 ) -> bool {
     match subtable {
         PositioningSubtable::Single(single) => {
             let coverage = single.coverage();
             covered_closure_glyphs(&coverage, closure)
                 .into_iter()
-                .all(|glyph| match single {
-                    SingleAdjustment::Format1 { value, .. } => value.x_advance == 0,
-                    SingleAdjustment::Format2 { values, .. } => coverage
-                        .get(glyph)
-                        .and_then(|index| values.get(index))
-                        .is_some_and(|value| value.x_advance == 0),
+                .all(|glyph| {
+                    !has_advance_devices
+                        && match single {
+                            SingleAdjustment::Format1 { value, .. } => value.x_advance == 0,
+                            SingleAdjustment::Format2 { values, .. } => coverage
+                                .get(glyph)
+                                .and_then(|index| values.get(index))
+                                .is_some_and(|value| value.x_advance == 0),
+                        }
                 })
         }
         PositioningSubtable::Pair(pair) => {
@@ -472,9 +547,9 @@ fn positioning_preserves_advances(
                             classes, matrix, ..
                         } => matrix.get((classes.0.get(first), classes.1.get(*second))),
                     };
-                    if records
-                        .is_some_and(|(left, right)| left.x_advance != 0 || right.x_advance != 0)
-                    {
+                    if records.is_some_and(|(left, right)| {
+                        has_advance_devices || left.x_advance != 0 || right.x_advance != 0
+                    }) {
                         return false;
                     }
                 }
@@ -593,4 +668,57 @@ fn aat_machine_is_inert(
         }
     }
     true
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ttf_parser::RawFace;
+
+    #[test]
+    fn test_marks_with_advances_break_advance_preservation() {
+        let data = include_bytes!("../../../../assets/fonts/lilex/Lilex-Regular.ttf");
+        let raw = RawFace::parse(data, 0).unwrap();
+        let face = Face::parse(data, 0).unwrap();
+        let table = |tag: &[u8; 4]| raw.table(Tag::from_bytes(tag));
+        let ascii_glyphs = (0x20u8..=0x7E)
+            .map(|byte| face.glyph_index(char::from(byte)).unwrap().0)
+            .collect::<Vec<_>>();
+        let mark = face.glyph_index('a').unwrap().0;
+        let marking_gdef = [1, 0, 12, 0, 0, 0, 2, 1, mark, mark, 3]
+            .into_iter()
+            .flat_map(u16::to_be_bytes)
+            .collect::<Vec<_>>();
+        let preserves = |gdef| {
+            ascii_shaping_preserves_advances(
+                ShapingTables {
+                    head: table(b"head").unwrap(),
+                    hhea: table(b"hhea").unwrap(),
+                    maxp: table(b"maxp").unwrap(),
+                    hmtx: table(b"hmtx"),
+                    gdef,
+                    gsub: table(b"GSUB"),
+                    gpos: table(b"GPOS"),
+                    morx: table(b"morx"),
+                    kern: table(b"kern"),
+                    kerx: table(b"kerx"),
+                },
+                &ascii_glyphs,
+                &[],
+                |glyph| face.glyph_hor_advance(GlyphId(glyph)).map(f32::from),
+            )
+        };
+        assert_eq!(
+            (preserves(table(b"GDEF")), preserves(Some(&marking_gdef))),
+            (true, false)
+        );
+    }
+
+    #[test]
+    fn test_self_referencing_extension_lookups_are_rejected() {
+        let substitution = [0, 1, 0, 7, 0, 0, 0, 0];
+        let positioning = [0, 1, 0, 9, 0, 0, 0, 0];
+        assert!(Substitution::parse(&substitution, GSUB_EXTENSION_LOOKUP).is_none());
+        assert!(Positioning::parse(&positioning, GPOS_EXTENSION_LOOKUP).is_none());
+    }
 }

@@ -7,14 +7,13 @@ use std::{
 
 use collections::{FxHasher, HashMap};
 use gpui::{
-    Font, FontStyle, FontWeight, HighlightStyle, Hsla, LineLayout, Pixels, SharedString,
-    StrikethroughStyle, TextRun, UnderlineStyle, WindowTextSystem,
+    Font, FontStyle, FontWeight, HighlightStyle, Hsla, LineLayout, Pixels, StrikethroughStyle,
+    TextRun, UnderlineStyle, WindowTextSystem,
 };
 use language::LanguageAwareStyling;
-use multi_buffer::Anchor;
 use parking_lot::Mutex;
 use text::Bias;
-use unicode_bidi::BidiClass;
+
 use unicode_segmentation::{GraphemeCursor, UnicodeSegmentation};
 
 use crate::{
@@ -22,6 +21,7 @@ use crate::{
     display_map::{
         ChunkRendererId, ChunkReplacement, DisplayPoint, DisplayRow, DisplaySnapshot,
         HighlightedChunk,
+        long_rows::{DiagnosticKey, SyntaxStamp, diagnostic_keys, row_buffer_range},
     },
     scroll::ScrollPixelOffset,
 };
@@ -32,7 +32,8 @@ const MAX_CHUNK_LEN: u32 = 3 * CHUNK_LEN;
 const FORCED_BOUNDARY_SLACK: u32 = 1_024;
 const SHAPING_CONTEXT: u32 = 64;
 const MAX_SHAPED_LEN: u32 = 10_240;
-const BIDI_CHUNK_UNITS: u32 = MAX_SHAPED_LEN - FORCED_BOUNDARY_SLACK - 4;
+pub(super) const MAX_IDLE_REFRESHES: u8 = 3;
+
 const _: () = assert!(
     CHUNK_LEN + MAX_CHUNK_LEN + FORCED_BOUNDARY_SLACK + 4 + 2 * SHAPING_CONTEXT <= MAX_SHAPED_LEN
 );
@@ -61,7 +62,47 @@ impl RulerShaper {
         self.layout(&text, &runs)
     }
 
-    pub(crate) fn chunks<'a>(
+    pub(crate) fn compose_columns(
+        &self,
+        snapshot: &DisplaySnapshot,
+        row: DisplayRow,
+        columns: Range<u32>,
+    ) -> ComposedLayout {
+        let mut composed = ComposedLayout::default();
+        let mut text = String::new();
+        let mut runs = Vec::new();
+        for chunk in self.chunks(snapshot, row, columns) {
+            let Some(replacement) = &chunk.replacement else {
+                text.push_str(chunk.text);
+                runs.push(self.run(chunk.style, chunk.text.len()));
+                continue;
+            };
+            if !text.is_empty() {
+                composed.push_text(self.layout(&text, &runs));
+                text.clear();
+                runs.clear();
+            }
+            let width = match replacement {
+                ChunkReplacement::Str(replacement) => {
+                    self.layout(replacement, &[self.run(chunk.style, replacement.len())])
+                        .width
+                }
+                ChunkReplacement::Renderer(renderer) => {
+                    renderer.measured_width.unwrap_or_else(|| {
+                        self.layout(chunk.text, &[self.run(chunk.style, chunk.text.len())])
+                            .width
+                    })
+                }
+            };
+            composed.push_replacement(chunk.text.len(), width);
+        }
+        if !text.is_empty() {
+            composed.push_text(self.layout(&text, &runs));
+        }
+        composed
+    }
+
+    fn chunks<'a>(
         &'a self,
         snapshot: &'a DisplaySnapshot,
         row: DisplayRow,
@@ -111,6 +152,7 @@ impl RulerShaper {
         hasher.write_u8(self.language_aware.tree_sitter as u8);
         hasher.write_u8(self.language_aware.diagnostics as u8);
         hasher.write_u8(self.style.show_underlines as u8);
+        hasher.write_u32(self.style.unnecessary_code_fade.to_bits());
         hasher.finish()
     }
 
@@ -126,7 +168,141 @@ pub(crate) fn renderer_metrics_key(font: &Font, font_size: Pixels) -> u64 {
     hasher.finish()
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Default)]
+pub(crate) struct ComposedLayout {
+    pieces: Vec<ComposedPiece>,
+    len: usize,
+    width: Pixels,
+}
+
+struct ComposedPiece {
+    start: usize,
+    len: usize,
+    x: Pixels,
+    kind: PieceKind,
+}
+
+enum PieceKind {
+    Text(Arc<LineLayout>),
+    Replacement(Pixels),
+}
+
+impl ComposedLayout {
+    pub(crate) fn width(&self) -> Pixels {
+        self.width
+    }
+
+    pub(crate) fn x_for_index(&self, index: usize) -> Pixels {
+        let Some(piece) = self.piece_at(index) else {
+            return Pixels::ZERO;
+        };
+        match &piece.kind {
+            PieceKind::Text(layout) => piece.x + layout.x_for_index(index - piece.start),
+            PieceKind::Replacement(width) if index > piece.start => piece.x + *width,
+            PieceKind::Replacement(_) => piece.x,
+        }
+    }
+
+    pub(crate) fn closest_index_for_x(&self, x: Pixels) -> usize {
+        let ix = self
+            .pieces
+            .partition_point(|piece| piece.x <= x)
+            .saturating_sub(1);
+        let Some(piece) = self.pieces.get(ix) else {
+            return 0;
+        };
+        match &piece.kind {
+            PieceKind::Text(layout) => piece.start + layout.closest_index_for_x(x - piece.x),
+            PieceKind::Replacement(width) if x - piece.x > *width / 2. => piece.start + piece.len,
+            PieceKind::Replacement(_) => piece.start,
+        }
+    }
+
+    fn is_glyph_boundary(&self, index: usize) -> bool {
+        if index >= self.len {
+            return true;
+        }
+        self.piece_at(index).is_none_or(|piece| match &piece.kind {
+            PieceKind::Text(layout) => layout.is_glyph_boundary(index - piece.start),
+            PieceKind::Replacement(_) => index == piece.start,
+        })
+    }
+
+    fn piece_at(&self, index: usize) -> Option<&ComposedPiece> {
+        let ix = self
+            .pieces
+            .partition_point(|piece| piece.start <= index)
+            .saturating_sub(1);
+        self.pieces.get(ix)
+    }
+
+    fn push_text(&mut self, layout: Arc<LineLayout>) {
+        let (len, width) = (layout.len, layout.width);
+        self.push(len, width, PieceKind::Text(layout));
+    }
+
+    fn push_replacement(&mut self, len: usize, width: Pixels) {
+        self.push(len, width, PieceKind::Replacement(width));
+    }
+
+    fn push(&mut self, len: usize, width: Pixels, kind: PieceKind) {
+        self.pieces.push(ComposedPiece {
+            start: self.len,
+            len,
+            x: self.width,
+            kind,
+        });
+        self.len += len;
+        self.width += width;
+    }
+}
+
+#[derive(Default)]
+struct ReplacedChars(Vec<u64>);
+
+impl ReplacedChars {
+    fn insert(&mut self, offset: u32) {
+        let word = offset as usize / 64;
+        if self.0.len() <= word {
+            self.0.resize(word + 1, 0);
+        }
+        self.0[word] |= 1 << (offset % 64);
+    }
+
+    fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    fn contains(&self, offset: u32) -> bool {
+        self.0
+            .get(offset as usize / 64)
+            .is_some_and(|word| word & (1 << (offset % 64)) != 0)
+    }
+
+    fn in_range(&self, range: Range<u32>) -> impl Iterator<Item = u32> + '_ {
+        let end = (range.end as usize).min(self.0.len() * 64);
+        let mut offset = range.start as usize;
+        std::iter::from_fn(move || {
+            while offset < end {
+                let word = self.0[offset / 64] >> (offset % 64);
+                if word == 0 {
+                    offset = (offset / 64 + 1) * 64;
+                    continue;
+                }
+                let found = offset + word.trailing_zeros() as usize;
+                if found >= end {
+                    offset = end;
+                    return None;
+                }
+                offset = found + 1;
+                return Some(found as u32);
+            }
+            None
+        })
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 struct FontOverrides {
     weight: Option<FontWeight>,
     style: Option<FontStyle>,
@@ -178,30 +354,62 @@ pub(crate) struct RulerCacheVersion {
 
 pub(crate) struct RowRulerCache {
     version: RulerCacheVersion,
-    rulers: Mutex<HashMap<u32, Arc<RowRuler>>>,
+    rulers: Mutex<HashMap<u32, CachedRuler>>,
     previous: Mutex<HashMap<u32, Arc<RowRuler>>>,
-    renderer_widths: Mutex<(u64, HashMap<ChunkRendererId, Pixels>)>,
+    renderer_widths: Mutex<(u64, HashMap<InlayId, Pixels>)>,
+}
+
+struct CachedRuler {
+    ruler: Arc<RowRuler>,
+    idle_refreshes: u8,
+}
+
+pub(crate) enum MappedRow {
+    Unchanged(u32),
+    Changed(u32),
 }
 
 impl RowRulerCache {
     pub(crate) fn new(
         version: RulerCacheVersion,
         previous: Option<&RowRulerCache>,
-        mut retain: impl FnMut(&RowRuler) -> Option<u32>,
+        mut remap: impl FnMut(u32, &RowRuler, bool) -> MappedRow,
     ) -> Self {
         let (previous_rulers, retained, renderer_widths) = previous
             .map(|previous| {
-                let rulers = previous.rulers.lock();
-                let retained = rulers
-                    .values()
-                    .filter_map(|ruler| Some((retain(ruler)?, ruler.clone())))
-                    .collect::<HashMap<_, _>>();
-                let rulers = if rulers.is_empty() {
-                    previous.previous.lock().clone()
-                } else {
-                    rulers.clone()
-                };
-                (rulers, retained, previous.renderer_widths.lock().clone())
+                let rulers = previous
+                    .rulers
+                    .lock()
+                    .iter()
+                    .map(|(row, cached)| (*row, cached.ruler.clone(), cached.idle_refreshes))
+                    .collect::<Vec<_>>();
+                let mut retained = HashMap::default();
+                let mut reusable = HashMap::default();
+                for (row, ruler, idle_refreshes) in rulers.iter() {
+                    match remap(*row, ruler, *idle_refreshes < MAX_IDLE_REFRESHES) {
+                        MappedRow::Unchanged(row) => {
+                            retained.insert(
+                                row,
+                                CachedRuler {
+                                    ruler: ruler.clone(),
+                                    idle_refreshes: idle_refreshes + 1,
+                                },
+                            );
+                            reusable.insert(row, ruler.clone());
+                        }
+                        MappedRow::Changed(row) => {
+                            reusable.insert(row, ruler.clone());
+                        }
+                    }
+                }
+                if rulers.is_empty() {
+                    for (row, ruler) in previous.previous.lock().iter() {
+                        let (MappedRow::Unchanged(row) | MappedRow::Changed(row)) =
+                            remap(*row, ruler, false);
+                        reusable.insert(row, ruler.clone());
+                    }
+                }
+                (reusable, retained, previous.renderer_widths.lock().clone())
             })
             .unwrap_or_default();
         Self {
@@ -229,7 +437,7 @@ impl RowRulerCache {
         }
         let renderer_widths = &mut renderer_widths.1;
         for (id, width) in widths {
-            if matches!(id, ChunkRendererId::Inlay(_))
+            if let ChunkRendererId::Inlay(id) = id
                 && renderer_widths.insert(id, width) != Some(width)
             {
                 changed = true;
@@ -238,7 +446,10 @@ impl RowRulerCache {
         if changed {
             let mut rulers = self.rulers.lock();
             if !rulers.is_empty() {
-                *self.previous.lock() = std::mem::take(&mut *rulers);
+                *self.previous.lock() = std::mem::take(&mut *rulers)
+                    .into_iter()
+                    .map(|(row, cached)| (row, cached.ruler))
+                    .collect();
             }
         }
         changed
@@ -247,25 +458,26 @@ impl RowRulerCache {
     pub(crate) fn remove_renderer_widths(&self, inlays: &[InlayId]) {
         let mut renderer_widths = self.renderer_widths.lock();
         for inlay in inlays {
-            renderer_widths.1.remove(&ChunkRendererId::Inlay(*inlay));
+            renderer_widths.1.remove(inlay);
         }
     }
 
     pub(crate) fn get_or_build(
         &self,
-        wrap_row: u32,
+        tab_row: u32,
         shaper: &RulerShaper,
-        build: impl FnOnce(Option<&RowRuler>, &HashMap<ChunkRendererId, Pixels>) -> RowRuler,
+        build: impl FnOnce(Option<&RowRuler>, &HashMap<InlayId, Pixels>) -> RowRuler,
     ) -> Arc<RowRuler> {
-        if let Some(ruler) = self.rulers.lock().get(&wrap_row)
-            && shaper.matches(ruler)
+        if let Some(cached) = self.rulers.lock().get_mut(&tab_row)
+            && shaper.matches(&cached.ruler)
         {
-            return ruler.clone();
+            cached.idle_refreshes = 0;
+            return cached.ruler.clone();
         }
         let previous = self
             .previous
             .lock()
-            .get(&wrap_row)
+            .get(&tab_row)
             .filter(|previous| shaper.matches(previous))
             .cloned();
         let renderer_widths = self.renderer_widths.lock();
@@ -277,7 +489,13 @@ impl RowRulerCache {
         };
         let ruler = Arc::new(build(previous.as_deref(), widths));
         drop(renderer_widths);
-        self.rulers.lock().insert(wrap_row, ruler.clone());
+        self.rulers.lock().insert(
+            tab_row,
+            CachedRuler {
+                ruler: ruler.clone(),
+                idle_refreshes: 0,
+            },
+        );
         ruler
     }
 }
@@ -303,27 +521,20 @@ struct RulerChunk {
 #[derive(Debug)]
 pub(crate) struct RowRuler {
     metrics_fingerprint: u64,
-    uses_syntax: bool,
-    row_range: Range<Anchor>,
-    retainable: bool,
-    rtl: bool,
+    syntax: Option<SyntaxStamp>,
+    diagnostics: Vec<DiagnosticKey>,
     chunks: Vec<RulerChunk>,
     starts: Vec<u32>,
     xs: Vec<ScrollPixelOffset>,
 }
 
-#[derive(Clone, Copy)]
-struct BidiParagraph {
-    rtl: bool,
-    first_strong: u32,
-}
-
 struct RowText {
     text: String,
     fixed_spans: Vec<(Range<u32>, Pixels)>,
+    replaced: ReplacedChars,
+    replacement_widths: HashMap<(char, FontOverrides), Pixels>,
     segments: Vec<StyleSegment>,
     forced_boundaries: Vec<u32>,
-    bidi: Option<BidiParagraph>,
 }
 
 impl RowText {
@@ -331,13 +542,14 @@ impl RowText {
         snapshot: &DisplaySnapshot,
         row: DisplayRow,
         shaper: &RulerShaper,
-        renderer_widths: &HashMap<ChunkRendererId, Pixels>,
+        renderer_widths: &HashMap<InlayId, Pixels>,
     ) -> Self {
         let row_len = snapshot.line_len(row);
         let mut text = String::with_capacity(row_len as usize);
         let mut fixed_spans = Vec::<(Range<u32>, Pixels)>::new();
         let mut segments = Vec::<StyleSegment>::new();
-        let mut replacement_widths = HashMap::<(SharedString, FontOverrides), Pixels>::default();
+        let mut replaced = ReplacedChars::default();
+        let mut replacement_widths = HashMap::<(char, FontOverrides), Pixels>::default();
         for chunk in shaper.chunks(snapshot, row, 0..row_len) {
             let start = text.len() as u32;
             text.push_str(chunk.text);
@@ -367,15 +579,27 @@ impl RowText {
                 continue;
             };
             let width = match replacement {
-                ChunkReplacement::Str(replacement) => *replacement_widths
-                    .entry((replacement.clone(), overrides))
-                    .or_insert_with(|| {
-                        let run = shaper.run(chunk.style, replacement.len());
-                        shaper.layout(&replacement, &[run]).width
-                    }),
+                ChunkReplacement::Str(replacement) => {
+                    let mut characters = chunk.text.chars();
+                    if let (Some(character), None) = (characters.next(), characters.next()) {
+                        replaced.insert(start);
+                        replacement_widths
+                            .entry((character, overrides))
+                            .or_insert_with(|| {
+                                let run = shaper.run(chunk.style, replacement.len());
+                                shaper.layout(&replacement, &[run]).width
+                            });
+                        continue;
+                    }
+                    let run = shaper.run(chunk.style, replacement.len());
+                    shaper.layout(&replacement, &[run]).width
+                }
                 ChunkReplacement::Renderer(renderer) => renderer
                     .measured_width
-                    .or_else(|| renderer_widths.get(&renderer.id).copied())
+                    .or_else(|| match renderer.id {
+                        ChunkRendererId::Inlay(id) => renderer_widths.get(&id).copied(),
+                        ChunkRendererId::Fold(_) => None,
+                    })
                     .unwrap_or_else(|| {
                         let run = shaper.run(chunk.style, chunk.text.len());
                         shaper.layout(chunk.text, &[run]).width
@@ -383,49 +607,31 @@ impl RowText {
             };
             fixed_spans.push((start..end, width));
         }
-        let bidi = text
-            .bytes()
-            .any(|byte| matches!(byte, 0xD6..=0xDF | 0xE0 | 0xE2 | 0xEF | 0xF0))
-            && text.chars().any(is_bidi_char);
-        let bidi = bidi.then(|| {
-            let first_strong = text
-                .char_indices()
-                .find_map(|(offset, char)| strong_direction(char).map(|rtl| (offset, rtl)));
-            BidiParagraph {
-                rtl: first_strong.is_some_and(|(_, rtl)| rtl),
-                first_strong: first_strong.map_or(text.len(), |(offset, _)| offset) as u32,
-            }
-        });
         Self {
             text,
             fixed_spans,
+            replaced,
+            replacement_widths,
             segments,
             forced_boundaries: Vec::new(),
-            bidi,
         }
+    }
+
+    fn is_replacement_edge(&self, offset: u32) -> bool {
+        if self.replaced.is_empty() {
+            return false;
+        }
+        self.replaced.contains(offset)
+            || self.text[..offset as usize]
+                .chars()
+                .next_back()
+                .is_some_and(|before| self.replaced.contains(offset - before.len_utf8() as u32))
     }
 
     fn max_chunk_end(&self, start: u32) -> u32 {
-        let len = self.text.len() as u32;
-        if self.bidi.is_none() {
-            return start.saturating_add(MAX_CHUNK_LEN).min(len);
-        }
-        let mut units = 0;
-        for (offset, char) in self.text[start as usize..].char_indices() {
-            units += char.len_utf16() as u32;
-            if units > BIDI_CHUNK_UNITS {
-                return start + offset as u32;
-            }
-        }
-        len
-    }
-
-    fn target_chunk_end(&self, start: u32, limit: u32) -> u32 {
-        if self.bidi.is_some() {
-            self.max_chunk_end(start).min(limit)
-        } else {
-            start.saturating_add(CHUNK_LEN).min(limit)
-        }
+        start
+            .saturating_add(MAX_CHUNK_LEN)
+            .min(self.text.len() as u32)
     }
 
     fn exceeds_max_chunk_len(&self) -> bool {
@@ -472,9 +678,6 @@ impl RowText {
         boundaries: &GraphemeBoundaries,
         shaper: &RulerShaper,
     ) -> Option<u32> {
-        if self.bidi.is_some() {
-            return boundaries.next_matching(start, end, |_| true);
-        }
         let mut context_start = start.saturating_sub(SHAPING_CONTEXT).max(previous) as usize;
         while !self.text.is_char_boundary(context_start) {
             context_start += 1;
@@ -508,7 +711,8 @@ impl RowText {
                 .iter()
                 .take(2)
                 .any(|byte| may_be_shaping_isolated(*byte));
-            if beside_isolated_byte
+            if (beside_isolated_byte
+                || self.text.is_char_boundary(offset) && self.is_replacement_edge(position))
                 && self.is_shaping_boundary_between_graphemes(position)
                 && boundaries.is_boundary(position)
             {
@@ -560,10 +764,13 @@ impl RowText {
     }
 
     fn is_shaping_boundary_between_graphemes(&self, offset: u32) -> bool {
-        let offset = offset as usize;
-        if !self.text.is_char_boundary(offset) {
+        if !self.text.is_char_boundary(offset as usize) {
             return false;
         }
+        if self.is_replacement_edge(offset) {
+            return true;
+        }
+        let offset = offset as usize;
         let span_edge = self
             .fixed_spans
             .partition_point(|(span, _)| span.end < offset as u32);
@@ -580,30 +787,10 @@ impl RowText {
         ) else {
             return false;
         };
-        match self.bidi {
-            None => is_shaping_isolated(before) || is_shaping_isolated(after),
-            Some(paragraph) => {
-                if offset as u32 <= paragraph.first_strong || before.is_whitespace() {
-                    return false;
-                }
-                if after.is_whitespace() {
-                    self.text[offset..]
-                        .chars()
-                        .find(|char| !char.is_whitespace())
-                        .is_some_and(|char| strong_direction(char) == Some(paragraph.rtl))
-                } else {
-                    (is_shaping_isolated(before) || is_shaping_isolated(after))
-                        && strong_direction(before) == Some(paragraph.rtl)
-                        && strong_direction(after) == Some(paragraph.rtl)
-                }
-            }
-        }
+        is_shaping_isolated(before) || is_shaping_isolated(after)
     }
 
     fn context_of(&self, range: Range<u32>) -> Range<u32> {
-        if self.bidi.is_some() {
-            return range;
-        }
         let stretch_start = self
             .fixed_spans
             .partition_point(|(span, _)| span.end <= range.start);
@@ -675,6 +862,9 @@ impl RowText {
             }
         };
         hasher.write(&self.text.as_bytes()[context.start as usize..context.end as usize]);
+        for replaced in self.replaced.in_range(context.clone()) {
+            hasher.write_u32(replaced - context.start);
+        }
         for (segment_range, segment) in self.segments_in(context) {
             hasher.write_u32(segment_range.end - segment_range.start);
             segment.overrides.hash(&mut hasher);
@@ -682,7 +872,36 @@ impl RowText {
         hasher.finish()
     }
 
-    fn layout_range(&self, range: Range<u32>, shaper: &RulerShaper) -> Arc<LineLayout> {
+    fn layout_range(&self, range: Range<u32>, shaper: &RulerShaper) -> ComposedLayout {
+        let mut composed = ComposedLayout::default();
+        let mut text_start = range.start;
+        for start in self.replaced.in_range(range.clone()) {
+            let Some(character) = self.text[start as usize..].chars().next() else {
+                break;
+            };
+            if text_start < start {
+                composed.push_text(self.layout_text(text_start..start, shaper));
+            }
+            let overrides = self
+                .segments_in(start..start + 1)
+                .next()
+                .map(|(_, segment)| segment.overrides)
+                .unwrap_or_default();
+            let width = self
+                .replacement_widths
+                .get(&(character, overrides))
+                .copied()
+                .unwrap_or_default();
+            composed.push_replacement(character.len_utf8(), width);
+            text_start = start + character.len_utf8() as u32;
+        }
+        if text_start < range.end {
+            composed.push_text(self.layout_text(text_start..range.end, shaper));
+        }
+        composed
+    }
+
+    fn layout_text(&self, range: Range<u32>, shaper: &RulerShaper) -> Arc<LineLayout> {
         let runs = self
             .segments_in(range.clone())
             .map(|(segment_range, segment)| {
@@ -706,7 +925,7 @@ impl RowText {
         let end_x = if range.end < context.end {
             layout.x_for_index((range.end - context.start) as usize)
         } else {
-            layout.width
+            layout.width()
         };
         end_x - start_x
     }
@@ -730,36 +949,13 @@ fn is_shaping_isolated(char: char) -> bool {
         )
 }
 
-fn strong_direction(char: char) -> Option<bool> {
-    match unicode_bidi::bidi_class(char) {
-        BidiClass::L => Some(false),
-        BidiClass::R | BidiClass::AL => Some(true),
-        _ => None,
-    }
-}
-
-fn is_bidi_char(char: char) -> bool {
-    matches!(
-        u32::from(char),
-        0x0590..=0x08FF
-            | 0x200F
-            | 0x202B
-            | 0x202E
-            | 0x2067
-            | 0xFB1D..=0xFDFF
-            | 0xFE70..=0xFEFF
-            | 0x10800..=0x10FFF
-            | 0x1E800..=0x1EFFF
-    )
-}
-
 impl RowRuler {
     pub(crate) fn new(
         snapshot: &DisplaySnapshot,
         row: DisplayRow,
         shaper: &RulerShaper,
         previous: Option<&RowRuler>,
-        renderer_widths: &HashMap<ChunkRendererId, Pixels>,
+        renderer_widths: &HashMap<InlayId, Pixels>,
     ) -> Self {
         let mut row_text = RowText::read(snapshot, row, shaper, renderer_widths);
         if row_text.exceeds_max_chunk_len() {
@@ -792,31 +988,29 @@ impl RowRuler {
             xs.push(xs.last().copied().unwrap_or(0.) + ScrollPixelOffset::from(chunk.width));
         }
         let buffer = snapshot.buffer_snapshot();
-        let row_start_point =
-            snapshot.display_point_to_point(DisplayPoint::new(row, 0), Bias::Left);
-        let row_end_point = snapshot
-            .display_point_to_point(DisplayPoint::new(row, snapshot.line_len(row)), Bias::Right);
-        let row_start = buffer.point_to_offset(row_start_point);
-        let row_end = buffer.point_to_offset(row_end_point);
-        let retainable = row_start < row_end;
+        let tab_row = snapshot
+            .unwrapped_tab_point(DisplayPoint::new(row, 0), Bias::Left)
+            .row();
+        let buffer_range = row_buffer_range(snapshot.fold_snapshot(), tab_row);
         Self {
             metrics_fingerprint: shaper.metrics_fingerprint(),
-            uses_syntax: shaper.language_aware.tree_sitter,
-            row_range: buffer.anchor_after(row_start)..buffer.anchor_before(row_end),
-            retainable,
-            rtl: row_text.bidi.is_some_and(|paragraph| paragraph.rtl),
+            syntax: shaper
+                .language_aware
+                .tree_sitter
+                .then(|| SyntaxStamp::new(buffer, buffer_range.clone())),
+            diagnostics: diagnostic_keys(buffer, buffer_range),
             chunks,
             starts,
             xs,
         }
     }
 
-    pub(crate) fn row_range(&self) -> Option<&Range<Anchor>> {
-        self.retainable.then_some(&self.row_range)
+    pub(super) fn syntax(&self) -> Option<&SyntaxStamp> {
+        self.syntax.as_ref()
     }
 
-    pub(crate) fn uses_syntax(&self) -> bool {
-        self.uses_syntax
+    pub(super) fn diagnostics(&self) -> &[DiagnosticKey] {
+        &self.diagnostics
     }
 
     pub(crate) fn len(&self) -> u32 {
@@ -825,10 +1019,6 @@ impl RowRuler {
 
     pub(crate) fn width(&self) -> ScrollPixelOffset {
         self.xs.last().copied().unwrap_or(0.)
-    }
-
-    pub(crate) fn is_rtl(&self) -> bool {
-        self.rtl
     }
 
     pub(crate) fn x_for_column(
@@ -846,12 +1036,12 @@ impl RowRuler {
             .partition_point(|start| *start <= column)
             .saturating_sub(1);
         let start = self.starts[ix];
-        let x = self.visual_x(ix);
-        if self.chunks[ix].fixed || (column == start && !self.rtl) {
+        let x = self.xs[ix];
+        if self.chunks[ix].fixed || column == start {
             return x;
         }
         let context = self.chunk_context(ix);
-        let layout = shaper.layout_columns(snapshot, row, context.clone());
+        let layout = shaper.compose_columns(snapshot, row, context.clone());
         let origin = chunk_origin(&layout, &context, start);
         x + ScrollPixelOffset::from(layout.x_for_index((column - context.start) as usize) - origin)
     }
@@ -866,18 +1056,19 @@ impl RowRuler {
         if self.chunks.is_empty() {
             return 0;
         }
-        if !self.rtl {
-            if x <= 0. {
-                return 0;
-            }
-            if x >= self.width() {
-                return self.len();
-            }
+        if x <= 0. {
+            return 0;
         }
-        let x = x.clamp(0., self.width());
-        let ix = self.chunk_ix_for_x(x);
+        if x >= self.width() {
+            return self.len();
+        }
+        let ix = self
+            .xs
+            .partition_point(|chunk_x| *chunk_x <= x)
+            .saturating_sub(1)
+            .min(self.chunks.len() - 1);
         let start = self.starts[ix];
-        let chunk_x = self.visual_x(ix);
+        let chunk_x = self.xs[ix];
         let chunk = &self.chunks[ix];
         if chunk.fixed {
             return if x - chunk_x > ScrollPixelOffset::from(chunk.width) / 2. {
@@ -887,7 +1078,7 @@ impl RowRuler {
             };
         }
         let context = self.chunk_context(ix);
-        let layout = shaper.layout_columns(snapshot, row, context.clone());
+        let layout = shaper.compose_columns(snapshot, row, context.clone());
         let origin = chunk_origin(&layout, &context, start);
         let column =
             context.start + layout.closest_index_for_x(Pixels::from(x - chunk_x) + origin) as u32;
@@ -898,11 +1089,6 @@ impl RowRuler {
         if self.chunks.is_empty() {
             return 0..0;
         }
-        let x = if self.rtl {
-            self.width() - x.end..self.width() - x.start
-        } else {
-            x
-        };
         let last = self.chunks.len();
         let first = self
             .xs
@@ -918,11 +1104,7 @@ impl RowRuler {
 
     pub(crate) fn x_range_for_columns(&self, columns: Range<u32>) -> Range<ScrollPixelOffset> {
         let (first, end) = self.chunk_ixs_for_columns(columns);
-        if self.rtl {
-            self.width() - self.xs[end]..self.width() - self.xs[first]
-        } else {
-            self.xs[first]..self.xs[end]
-        }
+        self.xs[first]..self.xs[end]
     }
 
     pub(crate) fn render_pieces(
@@ -934,7 +1116,7 @@ impl RowRuler {
             chunk: self.starts[ix]..self.starts[ix + 1],
             context: self.chunk_context(ix),
             width: self.chunks[ix].width,
-            x: self.visual_x(ix),
+            x: self.xs[ix],
         })
     }
 
@@ -949,30 +1131,6 @@ impl RowRuler {
             .partition_point(|start| *start < columns.end)
             .clamp(first, self.chunks.len());
         (first, end)
-    }
-
-    fn visual_x(&self, ix: usize) -> ScrollPixelOffset {
-        if self.rtl {
-            self.width() - self.xs[ix + 1]
-        } else {
-            self.xs[ix]
-        }
-    }
-
-    fn chunk_ix_for_x(&self, x: ScrollPixelOffset) -> usize {
-        let last = self.chunks.len() - 1;
-        if self.rtl {
-            let mirrored = self.width() - x;
-            self.xs
-                .partition_point(|chunk_x| *chunk_x < mirrored)
-                .saturating_sub(1)
-                .min(last)
-        } else {
-            self.xs
-                .partition_point(|chunk_x| *chunk_x <= x)
-                .saturating_sub(1)
-                .min(last)
-        }
     }
 
     fn chunk_context(&self, ix: usize) -> Range<u32> {
@@ -1023,7 +1181,7 @@ impl RowRuler {
     }
 }
 
-fn chunk_origin(layout: &LineLayout, context: &Range<u32>, start: u32) -> Pixels {
+fn chunk_origin(layout: &ComposedLayout, context: &Range<u32>, start: u32) -> Pixels {
     if context.start < start {
         layout.x_for_index((start - context.start) as usize)
     } else {
@@ -1065,13 +1223,9 @@ fn chunk_row_text(
             .peek()
             .map_or(range.end, |(span, _)| span.start.min(range.end));
         let limit = stretch_end.min(row_text.next_forced_boundary_after(position));
-        let target = row_text.target_chunk_end(position, limit);
+        let target = position.saturating_add(CHUNK_LEN).min(limit);
         let end = if target >= limit {
             limit
-        } else if row_text.bidi.is_some() {
-            row_text
-                .last_shaping_boundary_in(position, target, boundaries)
-                .unwrap_or(limit)
         } else {
             boundaries
                 .next_matching(target, limit, |offset| {
@@ -1173,11 +1327,6 @@ impl<'a> GraphemeBoundaries<'a> {
         }
     }
 
-    #[cfg(test)]
-    fn at_or_after(&self, offset: u32, limit: u32) -> Option<u32> {
-        self.next_matching(offset, limit, |_| true)
-    }
-
     fn next_matching(
         &self,
         offset: u32,
@@ -1255,10 +1404,14 @@ impl<'a> GraphemeBoundaries<'a> {
 mod tests {
     use super::*;
     use crate::{
-        MAX_LINE_LEN, display_map::HighlightKey, test::editor_test_context::EditorTestContext,
+        Inlay, MAX_LINE_LEN, display_map::HighlightKey, hover_links::InlayHighlight,
+        test::editor_test_context::EditorTestContext,
     };
     use gpui::TestAppContext;
     use language::Point;
+    use multi_buffer::MultiBufferOffset;
+    use project::InlayId;
+    use rand::prelude::*;
     use settings::SettingsStore;
 
     #[gpui::test]
@@ -1272,11 +1425,11 @@ mod tests {
             "x".repeat(3_000)
         );
         let (ruler, snapshot, shaper) = ruler_for_text(&mut cx, &text);
-        let full_row = shaper.layout_columns(&snapshot, DisplayRow(0), 0..text.len() as u32);
+        let full_row = shaper.compose_columns(&snapshot, DisplayRow(0), 0..text.len() as u32);
 
         assert_eq!(ruler.len(), text.len() as u32);
-        assert!(ruler.chunks.len() > 3);
-        assert_eq!(ruler.chunks.iter().filter(|chunk| chunk.fixed).count(), 1);
+        assert!(ruler.chunks.len() >= 3);
+        assert_eq!(ruler.chunks.iter().filter(|chunk| chunk.fixed).count(), 0);
         let boundaries = GraphemeBoundaries::new(&text);
         assert!(
             ruler
@@ -1284,8 +1437,8 @@ mod tests {
                 .iter()
                 .all(|start| boundaries.is_boundary(*start))
         );
-        let tolerance = ScrollPixelOffset::from(full_row.width) * 1e-4;
-        assert!((ruler.width() - ScrollPixelOffset::from(full_row.width)).abs() < tolerance);
+        let tolerance = ScrollPixelOffset::from(full_row.width()) * 1e-4;
+        assert!((ruler.width() - ScrollPixelOffset::from(full_row.width())).abs() < tolerance);
         for column in (0..=text.len())
             .step_by(97)
             .filter(|column| text.is_char_boundary(*column))
@@ -1350,9 +1503,6 @@ mod tests {
             .count();
         assert!(prefix > 0 && suffix > 0);
         assert!(reused.chunks.len() - prefix - suffix <= 4);
-
-        let (before, _) = rulers_after_edit(&"🇺🇸".repeat(2_048), 0, "🇨");
-        assert_eq!(before.chunks.len(), 3);
     }
 
     #[gpui::test]
@@ -1448,39 +1598,19 @@ mod tests {
         );
         let ligatures = format!("\u{754c}aa{}", "!=".repeat(1_050));
         let punctuation = "!=".repeat(10_000);
-        let arabic = format!(
-            "{0} {1} {0}",
-            "\u{628}".repeat(3_000),
-            "\u{644}".repeat(1_000)
-        );
-        let hebrew = format!(
-            "{0} {1} {0}",
-            "\u{5d0}".repeat(3_000),
-            "\u{5d1}".repeat(4_000)
-        );
-
-        let numbers_first = format!(
-            "123 {} {}",
-            "\u{5d0}".repeat(9_000),
-            "\u{5d1}".repeat(1_000)
-        );
-        for (text, inner_starts, rtl) in [
-            (&spaced, vec![5_000], false),
-            (&ligatures, Vec::new(), false),
+        for (text, inner_starts) in [
+            (&spaced, vec![5_000]),
+            (&ligatures, Vec::new()),
             (
                 &punctuation,
                 vec![MAX_CHUNK_LEN, 2 * MAX_CHUNK_LEN, 3 * MAX_CHUNK_LEN],
-                false,
             ),
-            (&arabic, Vec::new(), true),
-            (&hebrew, vec![14_001], true),
-            (&numbers_first, vec![18_004], true),
         ] {
             let (ruler, ..) = ruler_for_text(&mut cx, text);
             let mut starts = vec![0];
             starts.extend(inner_starts);
             starts.push(text.len() as u32);
-            assert_eq!((&ruler.starts, ruler.is_rtl()), (&starts, rtl));
+            assert_eq!(ruler.starts, starts);
             let contexts = ruler
                 .chunks
                 .iter()
@@ -1491,12 +1621,6 @@ mod tests {
             } else {
                 assert_eq!(contexts, vec![(0, 0); ruler.chunks.len()]);
             }
-            assert!(
-                !rtl || ruler
-                    .chunks
-                    .iter()
-                    .all(|chunk| chunk.len / 2 <= BIDI_CHUNK_UNITS)
-            );
         }
     }
 
@@ -1519,7 +1643,7 @@ mod tests {
             })
         };
         let commented = ruler_for(&mut cx);
-        assert!(commented.uses_syntax());
+        assert!(commented.syntax().is_some());
         cx.update_editor(|editor, _, cx| {
             editor.edit([(Point::new(0, 0)..Point::new(0, 2), "")], cx)
         });
@@ -1534,15 +1658,18 @@ mod tests {
     fn test_grapheme_boundary_search_is_bounded_by_the_limit() {
         let text = format!("a{}b", "\u{301}".repeat(100));
         let cluster_end = text.len() as u32 - 1;
+        let at_or_after = |boundaries: &GraphemeBoundaries, offset, limit| {
+            boundaries.next_matching(offset, limit, |_| true)
+        };
         let boundaries = GraphemeBoundaries::new(&text);
-        assert_eq!(boundaries.at_or_after(1, 50), None);
-        assert_eq!(boundaries.at_or_after(1, cluster_end), None);
+        assert_eq!(at_or_after(&boundaries, 1, 50), None);
+        assert_eq!(at_or_after(&boundaries, 1, cluster_end), None);
         assert_eq!(
-            boundaries.at_or_after(1, text.len() as u32),
+            at_or_after(&boundaries, 1, text.len() as u32),
             Some(cluster_end)
         );
         assert_eq!(
-            boundaries.at_or_after(cluster_end, text.len() as u32),
+            at_or_after(&boundaries, cluster_end, text.len() as u32),
             Some(cluster_end)
         );
         assert!(boundaries.is_boundary(cluster_end));
@@ -1550,9 +1677,9 @@ mod tests {
 
         let flags = "🇺🇸".repeat(10);
         let boundaries = GraphemeBoundaries::new(&flags);
-        assert_eq!(boundaries.at_or_after(1, 7), None);
-        assert_eq!(boundaries.at_or_after(1, 8), Some(8));
-        assert_eq!(boundaries.at_or_after(9, flags.len() as u32), Some(16));
+        assert_eq!(at_or_after(&boundaries, 1, 7), None);
+        assert_eq!(at_or_after(&boundaries, 1, 8), Some(8));
+        assert_eq!(at_or_after(&boundaries, 9, flags.len() as u32), Some(16));
 
         for len in [63, 127, 6207] {
             let text = format!("🇺🇸a{}", "b".repeat(len - "🇺🇸a".len()));
@@ -1593,6 +1720,222 @@ mod tests {
         }
     }
 
+    #[gpui::test]
+    async fn test_ruler_chunks_stay_bounded_on_replacement_heavy_rows(cx: &mut TestAppContext) {
+        init_test(cx);
+        let mut cx = EditorTestContext::new(cx).await;
+        let pairs = 8 * CHUNK_LEN;
+        let text = "\u{1}a".repeat(pairs as usize);
+        let (ruler, snapshot, shaper) = ruler_for_text(&mut cx, &text);
+        assert_eq!(ruler.len(), text.len() as u32);
+        assert!(ruler.chunks.len() <= (text.len() / CHUNK_LEN as usize) + 1);
+
+        let symbol = crate::display_map::replacement('\u{1}')
+            .map(String::from)
+            .unwrap_or_default();
+        let width_of = |text: &str| shaper.layout(text, &[shaper.run(None, text.len())]).width;
+        let pair_width = ScrollPixelOffset::from(width_of(&symbol) + width_of("a"));
+        let tolerance = pair_width * pairs as ScrollPixelOffset * 1e-4;
+        for pair in [0, 1, CHUNK_LEN / 2 + 1, pairs - 1, pairs] {
+            let x = ruler.x_for_column(2 * pair, &snapshot, DisplayRow(0), &shaper);
+            let expected = pair_width * pair as ScrollPixelOffset;
+            assert!(
+                (x - expected).abs() < tolerance,
+                "pair {pair}: {x} != {expected}"
+            );
+            assert_eq!(
+                ruler.column_for_x(x, &snapshot, DisplayRow(0), &shaper),
+                2 * pair
+            );
+        }
+    }
+
+    #[gpui::test(iterations = 20)]
+    async fn test_cached_rulers_match_fresh_rulers_after_random_changes(
+        cx: &mut TestAppContext,
+        mut rng: StdRng,
+    ) {
+        init_test(cx);
+        let mut cx = EditorTestContext::new(cx).await;
+        let alphabet = ["漢", "a", "b", " ", "\t", "\u{1}", "é", "\n"];
+        let random_text = |rng: &mut StdRng, len: usize, newlines: bool| {
+            let choices = if newlines {
+                &alphabet[..]
+            } else {
+                &alphabet[..alphabet.len() - 1]
+            };
+            (0..len)
+                .map(|_| choices[rng.random_range(0..choices.len())])
+                .collect::<String>()
+        };
+        let rows = (0..4)
+            .map(|_| random_text(&mut rng, 700, false))
+            .collect::<Vec<_>>();
+        cx.set_state(&format!("ˇ{}", rows.join("\n")));
+
+        let mut inlay_ids = Vec::new();
+        let mut next_inlay_id = 0;
+        let mut retained_count = 0;
+        for _ in 0..20 {
+            let before = long_row_rulers(&mut cx);
+            let operation = rng.random_range(0..10);
+            cx.update_editor(|editor, window, cx| {
+                let buffer = editor.buffer().read(cx).snapshot(cx);
+                let random_offset = |rng: &mut StdRng| {
+                    buffer.clip_offset(
+                        rng.random_range(MultiBufferOffset(0)..=buffer.len()),
+                        Bias::Left,
+                    )
+                };
+                match operation {
+                    0..=4 => {
+                        let start = random_offset(&mut rng);
+                        let end = buffer.clip_offset(
+                            (start + rng.random_range(0..4usize)).min(buffer.len()),
+                            Bias::Right,
+                        );
+                        let len = rng.random_range(0..4);
+                        let text = random_text(&mut rng, len, true);
+                        editor.edit([(start..end, text)], cx);
+                    }
+                    5..=6 => {
+                        let offset = random_offset(&mut rng);
+                        let position = if rng.random_bool(0.5) {
+                            buffer.anchor_before(offset)
+                        } else {
+                            buffer.anchor_after(offset)
+                        };
+                        let id = next_inlay_id;
+                        next_inlay_id += 1;
+                        inlay_ids.push(id);
+                        let len = rng.random_range(1..4);
+                        let text = random_text(&mut rng, len, false);
+                        let inlay = Inlay::mock_hint(id, position, text.as_str());
+                        editor
+                            .display_map
+                            .update(cx, |map, cx| map.splice_inlays(&[], vec![inlay], cx));
+                    }
+                    7 => {
+                        if !inlay_ids.is_empty() {
+                            let id = inlay_ids.swap_remove(rng.random_range(0..inlay_ids.len()));
+                            editor.display_map.update(cx, |map, cx| {
+                                map.splice_inlays(&[InlayId::Hint(id)], Vec::new(), cx)
+                            });
+                        }
+                    }
+                    8 => {
+                        let start = random_offset(&mut rng);
+                        let end = buffer.clip_offset(
+                            (start + rng.random_range(1..20usize)).min(buffer.len()),
+                            Bias::Right,
+                        );
+                        editor.fold_ranges(vec![start..end], false, window, cx);
+                    }
+                    _ => {
+                        editor.unfold_ranges(
+                            &[MultiBufferOffset(0)..buffer.len()],
+                            true,
+                            false,
+                            cx,
+                        );
+                    }
+                }
+            });
+
+            for (row, cached, fresh) in long_row_rulers(&mut cx) {
+                retained_count += before
+                    .iter()
+                    .filter(|(_, previous, _)| Arc::ptr_eq(previous, &cached))
+                    .count();
+                assert_eq!(
+                    cached.len(),
+                    fresh.len(),
+                    "row {row:?} after operation {operation}"
+                );
+                assert!(
+                    (cached.width() - fresh.width()).abs() <= fresh.width() * 1e-5,
+                    "row {row:?} after operation {operation}: {} != {}",
+                    cached.width(),
+                    fresh.width()
+                );
+            }
+        }
+        assert!(retained_count > 0);
+    }
+
+    #[gpui::test]
+    async fn test_rulers_rebuild_when_boundary_edits_move_edge_inlays(cx: &mut TestAppContext) {
+        init_test(cx);
+        let long = "漢".repeat(MAX_LINE_LEN);
+        for (id, inlay_at_row_end) in [(0, true), (1, false)] {
+            let mut cx = EditorTestContext::new(cx).await;
+            cx.set_state(&format!("ˇ{long}\nz"));
+            cx.update_editor(|editor, _, cx| {
+                let buffer = editor.buffer().read(cx).snapshot(cx);
+                let position = if inlay_at_row_end {
+                    buffer.anchor_after(MultiBufferOffset(long.len()))
+                } else {
+                    buffer.anchor_before(MultiBufferOffset(0))
+                };
+                let inlay = Inlay::mock_hint(id, position, "x");
+                editor
+                    .display_map
+                    .update(cx, |map, cx| map.splice_inlays(&[], vec![inlay], cx));
+            });
+            let with_inlay = displayed_row_ruler(&mut cx, 0);
+            assert_eq!(with_inlay.len(), long.len() as u32 + 1);
+
+            let (at, inserted, long_row) = if inlay_at_row_end {
+                (Point::new(0, long.len() as u32), "\n", 0)
+            } else {
+                (Point::zero(), "y\n", 1)
+            };
+            cx.update_editor(|editor, _, cx| editor.edit([(at..at, inserted)], cx));
+            let without_inlay = displayed_row_ruler(&mut cx, long_row);
+            assert!(!Arc::ptr_eq(&with_inlay, &without_inlay));
+            assert_eq!(without_inlay.len(), long.len() as u32);
+        }
+    }
+
+    #[gpui::test]
+    async fn test_multiline_inlay_highlights_rebuild_continuation_rows(cx: &mut TestAppContext) {
+        init_test(cx);
+        let mut cx = EditorTestContext::new(cx).await;
+        cx.set_state("ˇab");
+        let inlay_text = format!("p\n{}\nr", "漢".repeat(MAX_LINE_LEN));
+        let inlay_position = cx.update_editor(|editor, _, cx| {
+            let position = editor
+                .buffer()
+                .read(cx)
+                .snapshot(cx)
+                .anchor_after(MultiBufferOffset(1));
+            let inlay = Inlay::mock_hint(0, position, inlay_text.as_str());
+            editor
+                .display_map
+                .update(cx, |map, cx| map.splice_inlays(&[], vec![inlay], cx));
+            position
+        });
+        let before = displayed_row_ruler(&mut cx, 1);
+        assert_eq!(before.len(), (inlay_text.len() - "p\n\nr".len()) as u32);
+
+        cx.update_editor(|editor, _, cx| {
+            editor.highlight_inlays(
+                HighlightKey::HoveredLinkState,
+                vec![InlayHighlight {
+                    inlay: InlayId::Hint(0),
+                    inlay_position,
+                    range: 2..5,
+                }],
+                HighlightStyle {
+                    font_weight: Some(FontWeight::BOLD),
+                    ..HighlightStyle::default()
+                },
+                cx,
+            )
+        });
+        assert!(!Arc::ptr_eq(&before, &displayed_row_ruler(&mut cx, 1)));
+    }
+
     fn ruler_for_text(
         cx: &mut EditorTestContext,
         text: &str,
@@ -1607,6 +1950,32 @@ mod tests {
         });
         let ruler = RowRuler::new(&snapshot, DisplayRow(0), &shaper, None, &HashMap::default());
         (ruler, snapshot, shaper)
+    }
+
+    fn long_row_rulers(cx: &mut EditorTestContext) -> Vec<(DisplayRow, Arc<RowRuler>, RowRuler)> {
+        cx.update_editor(|editor, window, cx| {
+            let snapshot = editor.snapshot(window, cx).display_snapshot;
+            let details = editor.text_layout_details(window, cx);
+            (0..=snapshot.max_point().row().0)
+                .map(DisplayRow)
+                .filter(|row| snapshot.is_long_unwrapped_row(*row))
+                .map(|row| {
+                    let shaper = details.ruler_shaper(&snapshot, row);
+                    let fresh = RowRuler::new(&snapshot, row, &shaper, None, &HashMap::default());
+                    (row, snapshot.ruled_row(row, shaper).ruler, fresh)
+                })
+                .collect()
+        })
+    }
+
+    fn displayed_row_ruler(cx: &mut EditorTestContext, row: u32) -> Arc<RowRuler> {
+        cx.update_editor(|editor, window, cx| {
+            let snapshot = editor.snapshot(window, cx).display_snapshot;
+            let shaper = editor
+                .text_layout_details(window, cx)
+                .ruler_shaper(&snapshot, DisplayRow(row));
+            snapshot.ruled_row(DisplayRow(row), shaper).ruler
+        })
     }
 
     fn init_test(cx: &mut TestAppContext) {

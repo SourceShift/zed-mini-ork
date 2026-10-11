@@ -1206,7 +1206,7 @@ impl InlaySnapshot {
         summary
     }
 
-    pub fn has_inlays_matching(
+    pub(super) fn has_inlays_matching(
         &self,
         range: Range<InlayPoint>,
         mut predicate: impl FnMut(&Inlay, Range<usize>) -> bool,

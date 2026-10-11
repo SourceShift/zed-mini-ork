@@ -1,4 +1,4 @@
-use std::{fmt::Debug, ops::Range, sync::Arc};
+use std::{fmt::Debug, num::NonZeroU32, ops::Range, sync::Arc};
 
 use collections::HashMap;
 use gpui::{Font, HighlightStyle, LineLayout, Pixels, TextAlign, WindowTextSystem};
@@ -6,6 +6,7 @@ use multi_buffer::{Anchor, MultiBufferOffset, MultiBufferRow, MultiBufferSnapsho
 use parking_lot::Mutex;
 use project::InlayId;
 use sum_tree::{Bias, TreeMap};
+use text::BufferId;
 use util::debug_panic;
 
 use crate::{
@@ -16,13 +17,18 @@ use crate::{
 
 use super::{
     DisplayMap, DisplayPoint, DisplayRow, DisplaySnapshot, FoldPoint, HighlightKey,
-    HighlightStyleInterner, WrapPoint, WrapRow,
+    HighlightStyleInterner,
     block_map::BlockSnapshot,
+    fold_map::{FoldEdit, FoldSnapshot},
     inlay_map::has_chunk_renderer,
-    row_ruler::{RenderPiece, RowRuler, RowRulerCache, RulerCacheVersion, RulerShaper},
+    row_ruler::{
+        MAX_IDLE_REFRESHES, MappedRow, RowRuler, RowRulerCache, RulerCacheVersion, RulerShaper,
+    },
+    tab_map::{TabEdit, TabMap, TabPoint, TabSnapshot},
 };
 
 const MAX_TRACKED_RULER_DIRT: usize = 64;
+const MAX_PENDING_TAB_EDITS: usize = 256;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) struct GridCell {
@@ -106,11 +112,11 @@ impl HorizontalViewport {
         }
     }
 
-    pub(crate) fn first_column(&self) -> usize {
+    fn first_column(&self) -> usize {
         self.scroll_columns.max(0.).floor() as usize
     }
 
-    pub(crate) fn column_count(&self) -> usize {
+    fn column_count(&self) -> usize {
         (self.visible_columns.max(0.).ceil() as usize).max(1)
     }
 
@@ -130,7 +136,7 @@ impl HorizontalViewport {
 pub(crate) struct RuledRow {
     snapshot: Arc<DisplaySnapshot>,
     row: DisplayRow,
-    pub(super) ruler: Arc<RowRuler>,
+    pub(crate) ruler: Arc<RowRuler>,
     shaper: RulerShaper,
 }
 
@@ -155,21 +161,6 @@ impl RuledRow {
         let left = viewport.scroll_columns.max(0.) * cell_width;
         self.ruler
             .columns_for_x_range(left - visible_width / 2.0..left + visible_width * 1.5)
-    }
-
-    pub(crate) fn render_pieces(
-        &self,
-        columns: Range<u32>,
-    ) -> impl Iterator<Item = RenderPiece> + '_ {
-        self.ruler.render_pieces(columns)
-    }
-
-    pub(crate) fn x_range_for_columns(&self, columns: Range<u32>) -> Range<ScrollPixelOffset> {
-        self.ruler.x_range_for_columns(columns)
-    }
-
-    pub(crate) fn is_rtl(&self) -> bool {
-        self.ruler.is_rtl()
     }
 
     fn x_for_column(&self, column: u32) -> ScrollPixelOffset {
@@ -228,14 +219,14 @@ impl WindowedRowGeometry {
 
     pub(crate) fn start_x(&self) -> ScrollPixelOffset {
         match &self.ruled {
-            Some(ruled) => ruled.x_range_for_columns(self.window.clone()).start,
+            Some(ruled) => ruled.ruler.x_range_for_columns(self.window.clone()).start,
             None => self.column_x(self.window.start),
         }
     }
 
     pub(crate) fn end_x(&self) -> ScrollPixelOffset {
         match &self.ruled {
-            Some(ruled) => ruled.x_range_for_columns(self.window.clone()).end,
+            Some(ruled) => ruled.ruler.x_range_for_columns(self.window.clone()).end,
             None => self.column_x(self.window.end),
         }
     }
@@ -269,39 +260,19 @@ impl WindowedRowGeometry {
     }
 
     pub(crate) fn reaches_left_edge(&self) -> bool {
-        if self.is_rtl() {
-            self.window.end >= self.row_len
-        } else {
-            self.window.start == 0
-        }
+        self.window.start == 0
     }
 
     pub(crate) fn reaches_right_edge(&self) -> bool {
-        if self.is_rtl() {
-            self.window.start == 0
-        } else {
-            self.window.end >= self.row_len
-        }
+        self.window.end >= self.row_len
     }
 
     pub(crate) fn column_left_of_window_for_x(&self, x: ScrollPixelOffset) -> u32 {
-        if self.is_rtl() {
-            self.column_for_x(x).max(self.window.end)
-        } else {
-            self.column_for_x(x).min(self.window.start)
-        }
+        self.column_for_x(x).min(self.window.start)
     }
 
     pub(crate) fn column_right_of_window_for_x(&self, x: ScrollPixelOffset) -> u32 {
-        if self.is_rtl() {
-            self.column_for_x(x).min(self.window.start)
-        } else {
-            self.column_for_x(x).max(self.window.end)
-        }
-    }
-
-    fn is_rtl(&self) -> bool {
-        self.ruled.as_ref().is_some_and(RuledRow::is_rtl)
+        self.column_for_x(x).max(self.window.end)
     }
 }
 
@@ -406,10 +377,12 @@ impl DisplaySnapshot {
     }
 
     pub(crate) fn ruled_row(&self, display_row: DisplayRow, shaper: RulerShaper) -> RuledRow {
-        let wrap_row = self.wrap_row(display_row);
+        let tab_row = self
+            .unwrapped_tab_point(DisplayPoint::new(display_row, 0), Bias::Left)
+            .row();
         let ruler = self
             .row_rulers
-            .get_or_build(wrap_row, &shaper, |previous, renderer_widths| {
+            .get_or_build(tab_row, &shaper, |previous, renderer_widths| {
                 RowRuler::new(self, display_row, &shaper, previous, renderer_widths)
             });
         RuledRow {
@@ -455,19 +428,130 @@ impl DisplaySnapshot {
             })
             && !self.control_rows.contains_control(buffer, buffer_offsets)
     }
+}
 
-    fn wrap_row(&self, display_row: DisplayRow) -> u32 {
-        self.block_snapshot
-            .to_wrap_point(DisplayPoint::new(display_row, 0).0, Bias::Left)
-            .row()
-            .0
+pub(super) struct RecordedTabMap {
+    tab_map: TabMap,
+    pending: Option<Vec<Vec<TabEdit>>>,
+    pending_len: usize,
+}
+
+impl RecordedTabMap {
+    pub(super) fn new(tab_map: TabMap) -> Self {
+        Self {
+            tab_map,
+            pending: Some(Vec::new()),
+            pending_len: 0,
+        }
+    }
+
+    pub(super) fn sync(
+        &mut self,
+        fold_snapshot: FoldSnapshot,
+        fold_edits: Vec<FoldEdit>,
+        tab_size: NonZeroU32,
+    ) -> (TabSnapshot, Vec<TabEdit>) {
+        let (snapshot, edits) = self.tab_map.sync(fold_snapshot, fold_edits, tab_size);
+        if !edits.is_empty()
+            && let Some(pending) = &mut self.pending
+        {
+            self.pending_len += edits.len();
+            if self.pending_len > MAX_PENDING_TAB_EDITS {
+                self.pending = None;
+            } else {
+                pending.push(edits.clone());
+            }
+        }
+        (snapshot, edits)
+    }
+
+    fn take_edits(&mut self) -> Option<Vec<Vec<TabEdit>>> {
+        self.pending_len = 0;
+        std::mem::replace(&mut self.pending, Some(Vec::new()))
     }
 }
 
 #[derive(Default)]
 pub(super) struct RulerDirt {
+    pub(super) styles: DirtyRanges,
+    pub(super) buffer_edits: DirtyRanges,
+}
+
+#[derive(Default)]
+pub(super) struct DirtyRanges {
     all: bool,
     ranges: Vec<Range<Anchor>>,
+}
+
+impl DirtyRanges {
+    pub(super) fn mark(&mut self, ranges: impl IntoIterator<Item = Range<Anchor>>) {
+        if self.all {
+            return;
+        }
+        self.ranges.extend(ranges);
+        if self.ranges.len() > MAX_TRACKED_RULER_DIRT {
+            self.mark_all();
+        }
+    }
+
+    pub(super) fn mark_all(&mut self) {
+        self.all = true;
+        self.ranges.clear();
+    }
+}
+
+#[derive(Debug)]
+pub(super) struct SyntaxStamp {
+    versions: Vec<(BufferId, usize)>,
+    unstyled: bool,
+}
+
+impl SyntaxStamp {
+    pub(super) fn new(buffer: &MultiBufferSnapshot, range: Range<MultiBufferOffset>) -> Self {
+        let ranges = buffer.range_to_buffer_ranges(range);
+        Self {
+            versions: ranges
+                .iter()
+                .map(|(buffer, ..)| (buffer.remote_id(), buffer.syntax_update_count()))
+                .collect(),
+            unstyled: ranges.iter().all(|(buffer, range, _)| {
+                buffer
+                    .syntax_layers_for_range(range.start.0..range.end.0, true)
+                    .next()
+                    .is_none()
+            }),
+        }
+    }
+
+    fn still_applies(&self, current: &Self) -> bool {
+        let same_buffers = || {
+            self.versions
+                .iter()
+                .map(|(buffer_id, _)| buffer_id)
+                .eq(current.versions.iter().map(|(buffer_id, _)| buffer_id))
+        };
+        self.versions == current.versions || self.unstyled && current.unstyled && same_buffers()
+    }
+}
+
+pub(super) type DiagnosticKey = (usize, usize, lsp::DiagnosticSeverity, bool, bool);
+
+pub(super) fn diagnostic_keys(
+    buffer: &MultiBufferSnapshot,
+    range: Range<MultiBufferOffset>,
+) -> Vec<DiagnosticKey> {
+    buffer
+        .diagnostics_in_range(range.clone())
+        .map(|entry| {
+            (
+                entry.range.start.0.wrapping_sub(range.start.0),
+                entry.range.end.0.wrapping_sub(range.start.0),
+                entry.diagnostic.severity,
+                entry.diagnostic.underline,
+                entry.diagnostic.is_unnecessary,
+            )
+        })
+        .collect()
 }
 
 #[derive(Default)]
@@ -477,6 +561,7 @@ struct ControlRow {
     range: Range<Anchor>,
     end: MultiBufferOffset,
     has_control: bool,
+    idle_refreshes: u8,
 }
 
 impl ControlRows {
@@ -485,6 +570,7 @@ impl ControlRows {
             .0
             .lock()
             .values()
+            .filter(|row| row.idle_refreshes < MAX_IDLE_REFRESHES)
             .filter_map(|row| {
                 let start = row.range.start.to_offset(buffer);
                 let end = row.range.end.to_offset(buffer);
@@ -513,6 +599,7 @@ impl ControlRows {
                             range: row.range.clone(),
                             end,
                             has_control: row.has_control,
+                            idle_refreshes: row.idle_refreshes + 1,
                         },
                     )
                 })
@@ -529,9 +616,10 @@ impl ControlRows {
         if range.is_empty() {
             return false;
         }
-        if let Some(row) = self.0.lock().get(&range.start)
+        if let Some(row) = self.0.lock().get_mut(&range.start)
             && row.end == range.end
         {
+            row.idle_refreshes = 0;
             return row.has_control;
         }
         let has_control = !buffer.bytes_in_range(range.clone()).all(all_grid_bytes);
@@ -541,6 +629,7 @@ impl ControlRows {
                 range: buffer.anchor_before(range.start)..buffer.anchor_after(range.end),
                 end: range.end,
                 has_control,
+                idle_refreshes: 0,
             },
         );
         has_control
@@ -568,91 +657,70 @@ impl DisplayMap {
             tab_size: tab_snapshot.tab_size,
             masked: self.masked,
         };
+        let tab_edits = self.tab_map.take_edits();
         let previous_version = self.row_rulers.version();
-        if previous_version == version {
+        if previous_version == version && tab_edits.as_ref().is_some_and(Vec::is_empty) {
             return;
         }
         let dirt = std::mem::take(&mut self.ruler_dirt);
-        let old_buffer = self.ruler_old_buffer.replace(buffer.clone());
-        let dirty_offsets = dirt
-            .ranges
-            .iter()
-            .map(|range| range.start.to_offset(buffer)..range.end.to_offset(buffer))
-            .collect::<Vec<_>>();
-        self.control_rows = if dirt.all {
+        self.control_rows = if dirt.buffer_edits.all {
             Arc::default()
         } else {
-            Arc::new(self.control_rows.edited(buffer, &dirty_offsets))
+            let edited = dirt
+                .buffer_edits
+                .ranges
+                .iter()
+                .map(|range| range.start.to_offset(buffer)..range.end.to_offset(buffer))
+                .collect::<Vec<_>>();
+            Arc::new(self.control_rows.edited(buffer, &edited))
         };
-        let retain_any = !dirt.all
-            && previous_version.diagnostics_max_severity == version.diagnostics_max_severity
-            && previous_version.tab_size == version.tab_size
-            && previous_version.masked == version.masked;
+        let all_changed = dirt.styles.all
+            || tab_edits.is_none()
+            || previous_version.diagnostics_max_severity != version.diagnostics_max_severity
+            || previous_version.tab_size != version.tab_size
+            || previous_version.masked != version.masked;
+        let tab_edits = tab_edits.unwrap_or_default();
         let diagnostics_changed = previous_version.non_text_state != version.non_text_state;
-        let retain = |ruler: &RowRuler| -> Option<u32> {
-            if !retain_any {
-                return None;
-            }
-            let row_range = ruler.row_range()?;
-            let start = row_range.start.to_offset(buffer);
-            let end = row_range.end.to_offset(buffer);
-            if dirty_offsets.iter().any(|dirty| {
-                if dirty.is_empty() {
-                    start <= dirty.start && dirty.start <= end
-                } else {
-                    dirty.start < end && start < dirty.end
-                }
-            }) {
-                return None;
-            }
-            let old_buffer = old_buffer.as_ref()?;
-            let old_range =
-                row_range.start.to_offset(old_buffer)..row_range.end.to_offset(old_buffer);
-            if diagnostics_changed
-                && !same_diagnostics(old_buffer, old_range.clone(), buffer, start..end)
-            {
-                return None;
-            }
-            if ruler.uses_syntax() && !same_syntax(old_buffer, old_range, buffer, start..end) {
-                return None;
-            }
-            let wrap_row = wrap_row_for_offset(block_snapshot, start);
-            (row_buffer_range(block_snapshot, wrap_row) == (start..end)).then_some(wrap_row)
-        };
-        self.row_rulers = Arc::new(RowRulerCache::new(version, Some(&self.row_rulers), retain));
-    }
-
-    pub(super) fn mark_rulers_dirty(&mut self, ranges: impl IntoIterator<Item = Range<Anchor>>) {
-        if self.ruler_dirt.all {
-            return;
-        }
-        for range in ranges {
-            if self.ruler_dirt.ranges.len() >= MAX_TRACKED_RULER_DIRT {
-                self.mark_all_rulers_dirty();
-                return;
-            }
-            self.ruler_dirt.ranges.push(range);
-        }
-    }
-
-    pub(super) fn mark_rulers_dirty_in<T: ToOffset>(
-        &mut self,
-        ranges: impl IntoIterator<Item = Range<T>>,
-        buffer: &MultiBufferSnapshot,
-    ) {
-        let ranges = ranges
-            .into_iter()
+        let fold_snapshot = &tab_snapshot.fold_snapshot;
+        let restyled_rows = dirt
+            .styles
+            .ranges
+            .iter()
             .map(|range| {
-                buffer.anchor_before(range.start.to_offset(buffer))
-                    ..buffer.anchor_after(range.end.to_offset(buffer))
+                tab_row_for_offset(fold_snapshot, range.start.to_offset(buffer))
+                    ..=tab_row_for_offset(fold_snapshot, range.end.to_offset(buffer))
             })
             .collect::<Vec<_>>();
-        self.mark_rulers_dirty(ranges);
+        let remap = |row: u32, ruler: &RowRuler, recently_used: bool| {
+            let mapped = map_row_through_tab_edits(row, ruler.len(), &tab_edits);
+            let MappedRow::Unchanged(row) = mapped else {
+                return mapped;
+            };
+            if !recently_used || all_changed || restyled_rows.iter().any(|rows| rows.contains(&row))
+            {
+                return MappedRow::Changed(row);
+            }
+            if diagnostics_changed || ruler.syntax().is_some() {
+                let range = row_buffer_range(fold_snapshot, row);
+                if diagnostics_changed
+                    && ruler.diagnostics() != diagnostic_keys(buffer, range.clone())
+                {
+                    return MappedRow::Changed(row);
+                }
+                if ruler
+                    .syntax()
+                    .is_some_and(|stamp| !stamp.still_applies(&SyntaxStamp::new(buffer, range)))
+                {
+                    return MappedRow::Changed(row);
+                }
+            }
+            mapped
+        };
+        self.row_rulers = Arc::new(RowRulerCache::new(version, Some(&self.row_rulers), remap));
     }
 
     pub(super) fn mark_all_rulers_dirty(&mut self) {
-        self.ruler_dirt.all = true;
-        self.ruler_dirt.ranges.clear();
+        self.ruler_dirt.styles.mark_all();
     }
 
     pub(super) fn mark_text_highlight_dirty(
@@ -677,7 +745,7 @@ impl DisplayMap {
             .chain(anchor_hull(ranges, buffer))
             .collect::<Vec<_>>();
         self.highlight_version += 1;
-        self.mark_rulers_dirty(dirty);
+        self.ruler_dirt.styles.mark(dirty);
     }
 
     pub(super) fn mark_inlay_highlight_dirty(
@@ -694,12 +762,19 @@ impl DisplayMap {
         if !affects_shaping(&style) && !previous_affects_shaping {
             return;
         }
+        self.highlight_version += 1;
+        if highlights
+            .iter()
+            .any(|highlight| self.inlay_spans_rows(highlight.inlay))
+        {
+            self.mark_all_rulers_dirty();
+            return;
+        }
         let dirty = highlights
             .iter()
             .map(|highlight| highlight.inlay_position..highlight.inlay_position)
             .collect::<Vec<_>>();
-        self.highlight_version += 1;
-        self.mark_rulers_dirty(dirty);
+        self.ruler_dirt.styles.mark(dirty);
     }
 
     pub(super) fn mark_removed_highlights_dirty(
@@ -707,6 +782,15 @@ impl DisplayMap {
         text: Option<&(HighlightStyle, Vec<Range<Anchor>>)>,
         inlays: Option<&TreeMap<InlayId, (HighlightStyle, InlayHighlight)>>,
     ) {
+        if inlays.is_some_and(|inlays| {
+            inlays
+                .iter()
+                .any(|(id, (style, _))| affects_shaping(style) && self.inlay_spans_rows(*id))
+        }) {
+            self.highlight_version += 1;
+            self.mark_all_rulers_dirty();
+            return;
+        }
         let dirty = text
             .filter(|(style, _)| affects_shaping(style))
             .into_iter()
@@ -720,7 +804,7 @@ impl DisplayMap {
             .collect::<Vec<_>>();
         if !dirty.is_empty() {
             self.highlight_version += 1;
-            self.mark_rulers_dirty(dirty);
+            self.ruler_dirt.styles.mark(dirty);
         }
     }
 
@@ -729,6 +813,12 @@ impl DisplayMap {
             self.highlight_version += 1;
             self.mark_all_rulers_dirty();
         }
+    }
+
+    fn inlay_spans_rows(&self, id: InlayId) -> bool {
+        self.inlay_map
+            .current_inlays()
+            .any(|inlay| inlay.id == id && inlay.text().max_point().row > 0)
     }
 }
 
@@ -743,54 +833,34 @@ fn all_grid_bytes(bytes: &[u8]) -> bool {
     !found_control
 }
 
-fn same_diagnostics(
-    old_buffer: &MultiBufferSnapshot,
-    old_range: Range<MultiBufferOffset>,
-    buffer: &MultiBufferSnapshot,
-    range: Range<MultiBufferOffset>,
-) -> bool {
-    let key = |base: MultiBufferOffset| {
-        move |entry: language::DiagnosticEntryRef<'_, MultiBufferOffset>| {
-            (
-                entry.range.start.0.wrapping_sub(base.0),
-                entry.range.end.0.wrapping_sub(base.0),
-                entry.diagnostic.severity,
-                entry.diagnostic.underline,
-                entry.diagnostic.is_unnecessary,
-            )
+fn map_row_through_tab_edits(row: u32, len: u32, patches: &[Vec<TabEdit>]) -> MappedRow {
+    let mut row = row;
+    let mut kept = true;
+    for edits in patches {
+        let row_start = TabPoint::new(row, 0);
+        let row_end = TabPoint::new(row, len);
+        let old_row = row;
+        let ix = edits.partition_point(|edit| edit.old.end <= row_start);
+        if let Some(edit) = ix.checked_sub(1).and_then(|ix| edits.get(ix)) {
+            kept &= edit.old.end < row_start || edit.new.end.column() == 0;
+            row = row - edit.old.end.row() + edit.new.end.row();
         }
-    };
-    old_buffer
-        .diagnostics_in_range(old_range.clone())
-        .map(key(old_range.start))
-        .eq(buffer
-            .diagnostics_in_range(range.clone())
-            .map(key(range.start)))
-}
-
-fn same_syntax(
-    old_buffer: &MultiBufferSnapshot,
-    old_range: Range<MultiBufferOffset>,
-    buffer: &MultiBufferSnapshot,
-    range: Range<MultiBufferOffset>,
-) -> bool {
-    let old_ranges = old_buffer.range_to_buffer_ranges(old_range);
-    let new_ranges = buffer.range_to_buffer_ranges(range);
-    let unstyled = |buffer: &language::BufferSnapshot,
-                    range: &Range<multi_buffer::BufferOffset>| {
-        buffer
-            .syntax_layers_for_range(range.start.0..range.end.0, true)
-            .next()
-            .is_none()
-    };
-    old_ranges.len() == new_ranges.len()
-        && old_ranges.iter().zip(&new_ranges).all(
-            |((old_buffer, old_range, _), (new_buffer, new_range, _))| {
-                old_buffer.remote_id() == new_buffer.remote_id()
-                    && (old_buffer.syntax_update_count() == new_buffer.syntax_update_count()
-                        || unstyled(old_buffer, old_range) && unstyled(new_buffer, new_range))
-            },
-        )
+        if let Some(edit) = edits.get(ix)
+            && edit.old.start <= row_end
+        {
+            kept = false;
+            row = if edit.old.start.row() == old_row {
+                edit.new.start.row()
+            } else {
+                edit.new.end.row()
+            };
+        }
+    }
+    if kept {
+        MappedRow::Unchanged(row)
+    } else {
+        MappedRow::Changed(row)
+    }
 }
 
 fn anchor_hull(ranges: &[Range<Anchor>], buffer: &MultiBufferSnapshot) -> Option<Range<Anchor>> {
@@ -805,34 +875,23 @@ fn anchor_hull(ranges: &[Range<Anchor>], buffer: &MultiBufferSnapshot) -> Option
     Some(start..end)
 }
 
-fn wrap_row_for_offset(block_snapshot: &BlockSnapshot, offset: MultiBufferOffset) -> u32 {
-    let wrap_snapshot = &block_snapshot.wrap_snapshot;
-    let tab_snapshot = &wrap_snapshot.tab_snapshot;
-    let fold_snapshot = &tab_snapshot.fold_snapshot;
+fn tab_row_for_offset(fold_snapshot: &FoldSnapshot, offset: MultiBufferOffset) -> u32 {
     let inlay_snapshot = &fold_snapshot.inlay_snapshot;
     let inlay_point = inlay_snapshot.to_point(inlay_snapshot.to_inlay_offset(offset));
-    let fold_point = fold_snapshot.to_fold_point(inlay_point, Bias::Left);
-    let tab_point = tab_snapshot.fold_point_to_tab_point(fold_point);
-    wrap_snapshot.tab_point_to_wrap_point(tab_point).row().0
+    fold_snapshot.to_fold_point(inlay_point, Bias::Left).row()
 }
 
-fn row_buffer_range(block_snapshot: &BlockSnapshot, wrap_row: u32) -> Range<MultiBufferOffset> {
-    let wrap_snapshot = &block_snapshot.wrap_snapshot;
-    let tab_snapshot = &wrap_snapshot.tab_snapshot;
-    let fold_snapshot = &tab_snapshot.fold_snapshot;
+pub(super) fn row_buffer_range(
+    fold_snapshot: &FoldSnapshot,
+    tab_row: u32,
+) -> Range<MultiBufferOffset> {
     let inlay_snapshot = &fold_snapshot.inlay_snapshot;
-    let to_buffer = |wrap_point: WrapPoint, bias: Bias| {
-        let tab_point = wrap_snapshot.to_tab_point(wrap_point);
-        let fold_point = tab_snapshot.tab_point_to_fold_point(tab_point, bias).0;
+    let to_buffer = |fold_point: FoldPoint| {
         let inlay_point = fold_point.to_inlay_point(fold_snapshot);
         inlay_snapshot.to_buffer_offset(inlay_snapshot.to_offset(inlay_point))
     };
-    let wrap_row = WrapRow(wrap_row);
-    to_buffer(WrapPoint::new(wrap_row, 0), Bias::Left)
-        ..to_buffer(
-            WrapPoint::new(wrap_row, wrap_snapshot.line_len(wrap_row)),
-            Bias::Right,
-        )
+    to_buffer(FoldPoint::new(tab_row, 0))
+        ..to_buffer(FoldPoint::new(tab_row, fold_snapshot.line_len(tab_row)))
 }
 
 fn font_is_grid_exact(

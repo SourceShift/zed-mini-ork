@@ -668,26 +668,7 @@ impl WindowTextSystem {
             "text argument should not contain newlines"
         );
 
-        let mut decoration_runs = SmallVec::<[DecorationRun; 32]>::new();
-        for run in runs {
-            if let Some(last_run) = decoration_runs.last_mut()
-                && last_run.color == run.color
-                && last_run.underline == run.underline
-                && last_run.strikethrough == run.strikethrough
-                && last_run.background_color == run.background_color
-            {
-                last_run.len += run.len as u32;
-                continue;
-            }
-            decoration_runs.push(DecorationRun {
-                len: run.len as u32,
-                color: run.color,
-                background_color: run.background_color,
-                underline: run.underline,
-                strikethrough: run.strikethrough,
-            });
-        }
-
+        let decoration_runs = decoration_runs(runs);
         let layout = self.layout_line(&text, font_size, runs, force_width);
 
         ShapedLine {
@@ -716,26 +697,7 @@ impl WindowTextSystem {
         force_width: Option<Pixels>,
         materialize_text: impl FnOnce() -> SharedString,
     ) -> ShapedLine {
-        let mut decoration_runs = SmallVec::<[DecorationRun; 32]>::new();
-        for run in runs {
-            if let Some(last_run) = decoration_runs.last_mut()
-                && last_run.color == run.color
-                && last_run.underline == run.underline
-                && last_run.strikethrough == run.strikethrough
-                && last_run.background_color == run.background_color
-            {
-                last_run.len += run.len as u32;
-                continue;
-            }
-            decoration_runs.push(DecorationRun {
-                len: run.len as u32,
-                color: run.color,
-                background_color: run.background_color,
-                underline: run.underline,
-                strikethrough: run.strikethrough,
-            });
-        }
-
+        let decoration_runs = decoration_runs(runs);
         let mut used_force_width = force_width;
         let layout = self.layout_line_by_hash(
             text_hash,
@@ -1465,6 +1427,29 @@ pub fn font_name_with_fallbacks_shared<'a>(
         ".ZedMono" | "Zed Plex Mono" => const { &SharedString::new_static("Lilex") },
         _ => name,
     }
+}
+
+fn decoration_runs(runs: &[TextRun]) -> SmallVec<[DecorationRun; 32]> {
+    let mut decoration_runs = SmallVec::<[DecorationRun; 32]>::new();
+    for run in runs {
+        if let Some(last_run) = decoration_runs.last_mut()
+            && last_run.color == run.color
+            && last_run.underline == run.underline
+            && last_run.strikethrough == run.strikethrough
+            && last_run.background_color == run.background_color
+        {
+            last_run.len += run.len as u32;
+            continue;
+        }
+        decoration_runs.push(DecorationRun {
+            len: run.len as u32,
+            color: run.color,
+            background_color: run.background_color,
+            underline: run.underline,
+            strikethrough: run.strikethrough,
+        });
+    }
+    decoration_runs
 }
 
 #[cfg(test)]

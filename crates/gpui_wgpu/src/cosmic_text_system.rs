@@ -308,6 +308,7 @@ impl PlatformTextSystem for CosmicTextSystem {
                 hhea,
                 maxp,
                 hmtx: table(b"hmtx"),
+                gdef: table(b"GDEF"),
                 gsub: table(b"GSUB"),
                 gpos: table(b"GPOS"),
                 morx: table(b"morx"),

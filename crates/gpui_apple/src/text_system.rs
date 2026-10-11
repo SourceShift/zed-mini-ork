@@ -247,8 +247,9 @@ impl PlatformTextSystem for AppleTextSystem {
         else {
             return false;
         };
-        let (hmtx, gsub, gpos, morx, kern, kerx) = (
+        let (hmtx, gdef, gsub, gpos, morx, kern, kerx) = (
             table(b"hmtx"),
+            table(b"GDEF"),
             table(b"GSUB"),
             table(b"GPOS"),
             table(b"morx"),
@@ -267,6 +268,7 @@ impl PlatformTextSystem for AppleTextSystem {
                 hhea: hhea.bytes(),
                 maxp: maxp.bytes(),
                 hmtx: hmtx.as_ref().map(CFData::bytes),
+                gdef: gdef.as_ref().map(CFData::bytes),
                 gsub: gsub.as_ref().map(CFData::bytes),
                 gpos: gpos.as_ref().map(CFData::bytes),
                 morx: morx.as_ref().map(CFData::bytes),
