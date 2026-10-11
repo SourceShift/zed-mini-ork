@@ -21,7 +21,7 @@ status bar); `~/.config/zed/settings.json` is shared with Zed and never written.
 |---|---|---|
 | Shell and pages | the `mini_ork_ui` crate — its own repo, [SourceShift/mini-ork-ui](https://github.com/SourceShift/mini-ork-ui), vendored here as the `crates/mini_ork_ui` submodule | no — a new crate |
 | Hooks and fork edits | `Cargo.toml`, `crates/zed/*`, `crates/ui/*`, `crates/inspector_ui/*`, `crates/icons/*`, `crates/git_ui/*`, `crates/worktree/*`, `assets/*`, `.cargo/config.toml` | yes — run `git diff --name-only "$(cat MINI_ORK_BASE)..HEAD"` for the exact list |
-| Tooling | `script/mini-ork-*` (incl. `mini-ork-sync-ui`, `mini-ork-check`), `MINI-ORK.md`, `MINI_ORK_BASE`, `.gitmodules` | no — new files |
+| Tooling | `script/mini-ork-*` (incl. `mini-ork-sync-ui`, `mini-ork-check`, `mini-ork-pull`), `.github/workflows/mini-ork-*.yml`, `MINI-ORK.md`, `MINI_ORK_BASE`, `.gitmodules` | no — new files |
 
 The crate source is **not** in this repo: it lives in `SourceShift/mini-ork-ui`
 and is a submodule at `crates/mini_ork_ui/`. The `mini-ork` repo vendors the same
@@ -123,10 +123,35 @@ and `script/mini-ork-sync-ui` resets it to the pinned commit before every build.
 there. This fork is pushed to **`fork`**
 (`git@github.com:SourceShift/zed-mini-ork`) on the `mini-ork` branch.
 
+## Staying current on Zed
+
+Zed ships a stable release most weeks. `mini-ork` is the branch users build, and
+it only ever fast-forwards, so a new Zed base reaches a user as a merge on that
+branch:
+
+```bash
+script/mini-ork-pull        # git pull --ff-only, submodule, rebuild
+```
+
+Nothing needs to watch for releases: `.github/workflows/mini-ork-track-zed.yml`
+re-bases our commits onto each new stable tag daily, pushes `mini-ork-<tag>` and
+opens a pull request. It never builds — a full Zed build is hours and ~100 GB, so
+the branch is prepared by a machine and merged by a human who has built and
+launched it. `.github/workflows/mini-ork-release.yml` will build the app and
+attach it to a release, but that job wants a bigger runner than the 3 vCPU
+GitHub gives away (see the comment in the workflow).
+
+Our delta is what decides how painful this is: currently ~62 commits, of which
+**13 files and ~140 lines touch Zed's own code**. Everything else — `assets/`,
+`script/`, this file, `.gitmodules` — is ours and cannot conflict. The crate is
+not replayed at all; it is a submodule. Keep that file count small: prefer a new
+crate over an edit to a Zed file.
+
 ## Upgrading to a new Zed release
 
 ```bash
-script/mini-ork-upgrade v1.23.0
+script/mini-ork-upgrade v1.23.2              # rebase, build, stop
+script/mini-ork-upgrade v1.23.2 --publish    # ...then move mini-ork onto it
 ```
 
 It checks out the new tag, re-applies our commits (fork edits + tooling; the
@@ -134,7 +159,12 @@ crate is a submodule, not replayed), untracks any `crates/mini_ork_ui` a replay
 left behind, converges the submodule, records the new base in `MINI_ORK_BASE`
 and builds. A stop during the cherry-pick means a fork file conflicted or a Zed
 API the crate uses changed; fix it, `git cherry-pick --continue`, then
-`script/mini-ork-upgrade v1.23.0 --resume`.
+`script/mini-ork-upgrade v1.23.2 --resume`.
+
+`--publish` is what puts the release in front of users: it merges the branch into
+`mini-ork` and pushes `fork`. It refuses to run without the build, because
+publishing a base nobody launched is how a broken one reaches users. `--no-build`
+is for the tracking workflow, which has nowhere to put a 100 GB target dir.
 
 ## Licence
 

@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
 # Move the mini-ork IDE onto a new Zed release.
 #
-#   script/mini-ork-upgrade v1.23.0
+#   script/mini-ork-upgrade v1.23.0                 # rebase onto the tag, then build
+#   script/mini-ork-upgrade v1.23.0 --publish       # ...then move mini-ork onto it
+#   script/mini-ork-upgrade v1.23.0 --no-build      # rebase only — what CI runs
+#   script/mini-ork-upgrade v1.23.0 --resume        # continue after fixing a conflict
 #
 # Our changes are the commits after the Zed tag recorded in MINI_ORK_BASE: the
 # fork's edits to Zed's own files (its Cargo.toml, crates/zed, crates/ui,
@@ -20,7 +23,7 @@ set -euo pipefail
 # `git cherry-pick` replacing a script mid-run can corrupt bash's parse of it.
 # Re-exec from a private snapshot taken before any cherry-pick happens. The
 # snapshot lives in a temp dir, so the real script dir is passed on in the env.
-script_dir="$(cd "$(dirname "$0")" && pwd)"
+script_dir="${MINI_ORK_UPGRADE_DIR:-$(cd "$(dirname "$0")" && pwd)}"
 if [[ -z "${MINI_ORK_UPGRADE_SELF:-}" ]]; then
   snapshot="$(mktemp -t mini-ork-upgrade.XXXXXX)"
   cp "$0" "$snapshot"
@@ -28,11 +31,33 @@ if [[ -z "${MINI_ORK_UPGRADE_SELF:-}" ]]; then
   MINI_ORK_UPGRADE_SELF="$snapshot" MINI_ORK_UPGRADE_DIR="$script_dir" exec bash "$snapshot" "$@"
 fi
 
-tag="${1:?usage: script/mini-ork-upgrade <zed tag, e.g. v1.23.0> [--resume]}"
+usage="usage: script/mini-ork-upgrade <zed tag, e.g. v1.23.0> [--resume] [--no-build] [--publish]"
+tag=""
+resume=0
+build=1
+publish=0
+for arg in "$@"; do
+  case "$arg" in
+    --resume)   resume=1 ;;
+    --no-build) build=0 ;;
+    --publish)  publish=1 ;;
+    -*)         echo "mini-ork-upgrade: unknown option ${arg}" >&2; echo "$usage" >&2; exit 1 ;;
+    *)          if [[ -z "$tag" ]]; then tag="$arg"; else
+                  echo "mini-ork-upgrade: unexpected argument ${arg}" >&2; exit 1
+                fi ;;
+  esac
+done
+[[ -n "$tag" ]] || { echo "$usage" >&2; exit 1; }
+# Publishing a branch nobody built is how a broken base reaches users.
+if [[ "$publish" == 1 && "$build" == 0 ]]; then
+  echo "mini-ork-upgrade: --publish needs the build (drop --no-build)" >&2
+  exit 1
+fi
+
 cd "$(git rev-parse --show-toplevel)"
 upstream="${MINI_ORK_ZED_UPSTREAM:-https://github.com/zed-industries/zed}"
 
-if [[ "${2:-}" != "--resume" ]]; then
+if [[ "$resume" == 0 ]]; then
   if ! git diff --quiet || ! git diff --cached --quiet; then
     echo "mini-ork-upgrade: commit or stash your changes first" >&2
     exit 1
@@ -77,5 +102,29 @@ fi
 git submodule sync --recursive
 git submodule update --init --recursive
 
-MINI_ORK_BUILD_DEBUG=false "$script_dir/mini-ork-build"  # a full rebuild anyway
-echo "mini-ork IDE on Zed ${tag}: $script_dir/mini-ork-ide"
+branch="mini-ork-${tag}"
+
+if [[ "$build" == 1 ]]; then
+  # No debug info: this relinks everything anyway. The next ordinary build sets
+  # `limited` again and rehashes the target dir — the price of skipping it here.
+  MINI_ORK_BUILD_DEBUG=false "$script_dir/mini-ork-build"
+  echo "mini-ork IDE on Zed ${tag}: $script_dir/mini-ork-ide"
+fi
+
+if [[ "$publish" == 1 ]]; then
+  git rev-parse --verify -q refs/heads/mini-ork >/dev/null || {
+    echo "mini-ork-upgrade: no local 'mini-ork' branch to publish into" >&2
+    exit 1
+  }
+  git remote get-url fork >/dev/null 2>&1 || {
+    echo "mini-ork-upgrade: no 'fork' remote to publish to (see MINI-ORK.md)" >&2
+    exit 1
+  }
+  git switch mini-ork
+  git merge --no-ff -m "mini-ork: base ${tag}" "$branch"
+  git push fork mini-ork
+  echo "mini-ork-upgrade: published ${branch} — users get it with script/mini-ork-pull"
+else
+  echo "mini-ork-upgrade: ${branch} is built and ready; publish it with --publish, or:"
+  echo "  git switch mini-ork && git merge --no-ff -m 'mini-ork: base ${tag}' ${branch} && git push fork mini-ork"
+fi
