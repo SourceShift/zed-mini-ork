@@ -37,7 +37,7 @@ the IDE without clicking through it.
 ## Build and run
 
 ```bash
-script/mini-ork-build                 # utility priority, 4 jobs; refreshes the app
+script/mini-ork-build                 # utility priority, one job per core (cap 8)
 open -a "mini-ork IDE" ~/path/to/project   # or script/mini-ork-ide <folder>
 ```
 
@@ -47,10 +47,38 @@ hard-linked so it costs no space — and links it into `~/Applications`, so it o
 from Spotlight, Launchpad and the Dock like any app.
 
 `script/mini-ork-build` keeps the Mac usable while it builds: background QoS
-(efficiency cores), 4 parallel jobs (`MINI_ORK_BUILD_JOBS`), no debug info. A
-first build is long; after that, a change to `crates/mini_ork_ui` rebuilds in
-about a minute. Avoid toggling features of core crates (e.g. GPUI
-`test-support`): that recompiles most of Zed.
+(efficiency cores) and one parallel job per core, capped at 8
+(`MINI_ORK_BUILD_JOBS` lowers it — the memory lever). A first build is long;
+after that, a change to `crates/mini_ork_ui` rebuilds in about a minute. Avoid
+toggling features of core crates (e.g. GPUI `test-support`): that recompiles
+most of Zed.
+
+### Speeding up rebuilds
+
+The build is cached per profile. Anything that changes the *profile* — the
+debug-info level, a feature toggle on a core crate — rehashes every unit and
+rebuilds the whole 100 GB target dir. That is the upgrade path, not the
+everyday one: set it once and leave it.
+
+After that, one command rebuilds the app: `script/mini-ork-build`. It pins
+debug info to `limited` (line tables only) instead of the profile's `full`,
+because the zed binary carries DWARF from every crate and the linker merges all
+of it — that merge, not the one-crate compile, is what the rebuild time goes
+into. Backtraces still carry file:line. `MINI_ORK_BUILD_DEBUG=full` restores
+locals at the cost of one full rebuild.
+
+- `cargo ui-check` — type-check `crates/mini_ork_ui` alone, no codegen and no
+  relink. Seconds instead of a minute; run it while editing, then
+  `script/mini-ork-build` to look at the result.
+- Page content is data, not code: `mini-ork board page <key>` returns JSON that
+  `page.rs` draws, so page changes need no rebuild at all (see above).
+- `sccache` wraps rustc (`~/.cargo/config.toml`, cache on the external SSD).
+  It does nothing for an ordinary incremental rebuild, but it rescues the
+  expensive ones: a wiped target dir, a profile flip, or a branch switch.
+  `sccache --show-stats` reports hits.
+- `script/mini-ork-build` links with `ld64.lld` (`brew install lld`) when it is
+  present, which links the very large zed binary faster than Apple's `ld`;
+  `MINI_ORK_LLD=0` falls back.
 
 The dev channel makes it a separate instance next to an installed Zed. It
 shares `~/.config/zed` (settings, keymap, agent servers — the `mini-ork` agent
