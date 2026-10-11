@@ -858,7 +858,6 @@ pub(crate) fn render_flow_part_a(
                     .top(px(0.))
                     .w(px(STAGE_HIGHLIGHT_W))
                     .h(px(layout.height))
-                    .rounded(px(12.))
                     .bg(ca(0x74ade833))
                     .into_any_element(),
             );
@@ -877,7 +876,6 @@ pub(crate) fn render_flow_part_a(
             .top(px(TRACK_Y - TICKET_H / 2.))
             .w(px(TICKET_W))
             .h(px(TICKET_H))
-            .rounded(px(3.))
             .bg(c(p::TEXT))
             .into_any_element(),
     );
@@ -894,7 +892,7 @@ pub(crate) fn render_flow_part_a(
                     .text_color(c(p::TEXT))
                     .child("Ticket in"),
             )
-            .child(p::text(map.ticket_id.clone(), 11., p::SUB).truncate())
+            .child(p::text_px(map.ticket_id.clone(), 11., p::SUB).truncate())
             .into_any_element(),
     );
 
@@ -972,7 +970,6 @@ pub(crate) fn render_flow_part_a(
                 .top(px(spot.top))
                 .w(px(PKG_W))
                 .h(px(height))
-                .rounded(px(12.))
                 .bg(ca(0x363c4766))
                 .into_any_element(),
         );
@@ -1054,7 +1051,6 @@ pub(crate) fn render_flow_part_a(
                             .id(("flow-approved", index))
                             .px(px(8.))
                             .py(px(2.))
-                            .rounded(px(10.))
                             .border_1()
                             .border_color(c(p::ORANGE))
                             .text_size(px(10.5))
@@ -1135,11 +1131,10 @@ pub(crate) fn render_flow_part_a(
                         .child(tier.label.clone()),
                 )
                 .child(
-                    div().w(px(80.)).h(px(4.)).rounded(px(2.)).bg(c(p::BORDER2)).child(
+                    div().w(px(80.)).h(px(4.)).bg(c(p::BORDER2)).child(
                         div()
                             .w(px(80. * filled))
                             .h(px(4.))
-                            .rounded(px(2.))
                             .bg(c(colour)),
                     ),
                 )
@@ -1282,7 +1277,6 @@ pub(crate) fn render_flow_part_a(
             .px(px(9.))
             .flex()
             .items_center()
-            .rounded(px(5.))
             .border_1()
             .border_color(c(p::BORDER2))
             .bg(c(p::BG))
@@ -1312,7 +1306,7 @@ pub(crate) fn render_flow_part_a(
                     .gap(px(6.))
                     .items_center()
                     .child(
-                        div().w(px(LEGEND_W)).h(px(LEGEND_H)).rounded(px(2.)).bg(c(state_colour(&item.key))),
+                        div().w(px(LEGEND_W)).h(px(LEGEND_H)).bg(c(state_colour(&item.key))),
                     )
                     .child(
                         div()
@@ -1355,7 +1349,6 @@ pub(crate) fn render_flow_part_a(
                     .py(px(3.))
                     .gap(px(7.))
                     .items_center()
-                    .rounded(px(12.))
                     .border_1()
                     .border_color(c(if focused { p::BLUE } else { p::BORDER2 }))
                     .child(
@@ -1430,7 +1423,6 @@ pub(crate) fn render_flow_part_a(
         .w_full()
         .min_w_0()
         .p(px(14.))
-        .rounded(px(8.))
         .border_1()
         .border_color(c(p::BORDER))
         .bg(c(p::CHROME))
@@ -1644,8 +1636,8 @@ fn marker_ring(colour: u32, hollow: bool) -> Div {
 /// verdict.
 fn pill_glyph(state: &str, colour: u32) -> AnyElement {
     match state {
-        "approved" | "done" => p::text("✓", 16., p::GREEN).into_any_element(),
-        "failed" => p::text("✗", 16., p::RED).into_any_element(),
+        "approved" | "done" => p::text_px("✓", 16., p::GREEN).into_any_element(),
+        "failed" => p::text_px("✗", 16., p::RED).into_any_element(),
         "in_progress" => h_flex()
             .gap(px(3.))
             .children((0..3).map(|_| {
@@ -1705,7 +1697,6 @@ fn merge_elements(merge: &Merge, layout: &Layout) -> Vec<AnyElement> {
             .top(px(layout.return_y - MERGE_H / 2.))
             .w(px(MERGE_W))
             .h(px(MERGE_H))
-            .rounded(px(3.))
             .bg(c(state_colour(&merge.state)))
             .into_any_element(),
     );
@@ -1735,11 +1726,10 @@ fn merge_elements(merge: &Merge, layout: &Layout) -> Vec<AnyElement> {
             .flex()
             .items_center()
             .justify_center()
-            .rounded(px(3.))
             .border_1()
             .border_color(c(if check.ok { p::GREEN } else { p::BORDER2 }));
         if check.ok {
-            tick = tick.child(p::text("✓", 10., p::GREEN));
+            tick = tick.child(p::text_px("✓", 10., p::GREEN));
         }
         pieces.push(tick.into_any_element());
         pieces.push(

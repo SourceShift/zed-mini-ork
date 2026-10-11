@@ -19,6 +19,7 @@ mod board;
 mod components;
 mod flow;
 mod graph;
+mod ide_http;
 mod jump;
 mod loading;
 mod node_tab;
@@ -40,19 +41,12 @@ use gpui::{App, BorrowAppContext as _};
 use settings::{MergeFromTrait as _, SettingsContent, SettingsStore};
 
 /// The IDE's own defaults, layered under the user's settings (which stay
-/// shared with stock Zed and are never written): the design's status bar has
-/// no dock buttons, and the activity bar replaces them.
+/// shared with stock Zed and are never written). Every dock button keeps its
+/// stock Zed default, so the status bar carries the same panel toggles: the
+/// activity bar is mini-ork's own drawer and does not stand in for them. The
+/// agent panel starts in the left dock, beside the mini-ork thread.
 const IDE_DEFAULTS: &str = r#"{
-  "search": { "button": false },
-  "project_panel": { "button": false },
-  "outline_panel": { "button": false },
-  "collaboration_panel": { "button": false },
-  "git_panel": { "button": false },
-  "agent": { "button": false, "dock": "left" },
-  "diagnostics": { "button": false },
-  "terminal": { "button": false },
-  "global_lsp_settings": { "button": false },
-  "debugger": { "button": false }
+  "agent": { "dock": "left" }
 }"#;
 
 pub fn init(cx: &mut App) {

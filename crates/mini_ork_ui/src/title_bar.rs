@@ -5,7 +5,7 @@
 //! does window dragging and the traffic-light space.
 
 use gpui::{
-    AnyElement, App, Context, Entity, Render, Subscription, WeakEntity, Window, px,
+    AnyElement, App, Context, Entity, Render, Subscription, WeakEntity, Window,
 };
 use platform_title_bar::PlatformTitleBar;
 use ui::{ButtonLike, ContextMenu, PopoverMenu, Tooltip, prelude::*, utils::TRAFFIC_LIGHT_PADDING};
@@ -82,16 +82,25 @@ impl MiniOrkTitleBar {
     }
 }
 
-/// Project ⌄ · ⎇ branch — shared with the sidebar strip.
+/// Project ⌄ · ⑂ worktree · ⎇ branch — shared with the sidebar strip. The
+/// worktree and branch come from the workspace's own repository, so they are
+/// right even before the board's first read lands.
 pub fn left_items(
     header: &Header,
     project: &str,
     workspace: Option<Entity<Workspace>>,
     with_project: bool,
+    cx: &App,
 ) -> Vec<AnyElement> {
     let mut items = Vec::new();
     if with_project {
-        items.push(project_switcher(project, workspace).into_any_element());
+        items.push(project_switcher(project, workspace.clone()).into_any_element());
+        if let Some(worktree) = workspace
+            .as_ref()
+            .and_then(|workspace| projects::worktree_label(workspace, cx))
+        {
+            items.push(p::text(format!("⑂ {worktree}"), 12.5, p::SUB).into_any_element());
+        }
         if !header.branch.is_empty() {
             items.push(p::text(format!("⎇ {}", header.branch), 12.5, p::SUB).into_any_element());
         }
@@ -105,8 +114,8 @@ pub fn left_items(
 fn project_switcher(project: &str, workspace: Option<Entity<Workspace>>) -> impl IntoElement {
     let trigger = ButtonLike::new("tb-project").child(
         div()
-            .px(px(2.))
-            .text_size(px(12.5))
+            .px_0p5()
+            .text_size(rems_from_px(12.5_f32))
             .font_weight(gpui::FontWeight::SEMIBOLD)
             .text_color(c(p::TEXT))
             .child(format!("{project} ⌄")),
@@ -137,20 +146,20 @@ fn project_switcher(project: &str, workspace: Option<Entity<Workspace>>) -> impl
                         move |_, _| {
                             h_flex()
                                 .w_full()
-                                .gap(px(8.))
-                                .child(div().w(px(12.)).text_color(c(p::GREEN)).child(if is_current { "✓" } else { "" }))
+                                .gap_2()
+                                .child(div().w_3().text_color(c(p::GREEN)).child(if is_current { "✓" } else { "" }))
                                 .child(
                                     v_flex()
                                         .child(
                                             div()
-                                                .text_size(px(12.5))
+                                                .text_size(rems_from_px(12.5_f32))
                                                 .text_color(c(p::TEXT))
                                                 .when(is_current, |this| this.font_weight(gpui::FontWeight::SEMIBOLD))
                                                 .child(name.clone()),
                                         )
                                         .child(
                                             div()
-                                                .text_size(px(11.))
+                                                .text_size(rems_from_px(11_f32))
                                                 .text_color(c(if missing { p::RED } else { p::SUB }))
                                                 .child(if missing { format!("{path} · no .mini-ork") } else { path.clone() }),
                                         ),
@@ -190,10 +199,9 @@ fn right_items(header: &Header, workspace: Option<Entity<Workspace>>, cx: &App) 
     let plain = |id: &'static str, label: String, colour: u32, tip: &'static str| {
         div()
             .id(id)
-            .px(px(6.))
-            .py(px(3.))
-            .rounded(px(5.))
-            .text_size(px(12.))
+            .px_1p5()
+            .py(rems_from_px(3_f32))
+            .text_size(rems_from_px(12_f32))
             .text_color(c(colour))
             .cursor_pointer()
             .hover(|s| s.bg(c(p::HOVER)))
@@ -208,13 +216,12 @@ fn right_items(header: &Header, workspace: Option<Entity<Workspace>>, cx: &App) 
     vec![
         div()
             .id("tb-needs")
-            .px(px(9.))
-            .py(px(2.))
-            .rounded(px(5.))
+            .px(rems_from_px(9_f32))
+            .py_0p5()
             .border_1()
             .border_color(p::ca(0xdec18466))
             .bg(p::ca(0xdec18414))
-            .text_size(px(12.))
+            .text_size(rems_from_px(12_f32))
             .text_color(c(p::YELLOW))
             .cursor_pointer()
             .tooltip(Tooltip::text("Threads and gates waiting for you"))
@@ -243,8 +250,8 @@ fn right_items(header: &Header, workspace: Option<Entity<Workspace>>, cx: &App) 
             .into_any_element(),
         div()
             .id("tb-sign-in")
-            .ml(px(6.))
-            .text_size(px(12.5))
+            .ml_1p5()
+            .text_size(rems_from_px(12.5_f32))
             .text_color(c(p::MUTED))
             .cursor_pointer()
             .hover(|s| s.text_color(c(p::TEXT)))
@@ -287,15 +294,15 @@ impl Render for MiniOrkTitleBar {
         // branch instead.
         let strip_has_project = sidebar_width > ACTIVITY_WIDTH + 1. && board_open;
         let left = h_flex()
-            .gap(px(10.))
-            .when(traffic_gap > 0., |this| this.pl(px(traffic_gap)))
-            .when(strip_has_project, |this| this.pl(px(4.)))
+            .gap_2p5()
+            .when(traffic_gap > 0., |this| this.pl(rems_from_px(traffic_gap)))
+            .when(strip_has_project, |this| this.pl_1())
             .when(!project.is_empty(), |this| {
-                this.children(left_items(&header, &project, workspace.clone(), !strip_has_project))
+                this.children(left_items(&header, &project, workspace.clone(), !strip_has_project, cx))
             });
         let right = h_flex()
-            .gap(px(10.))
-            .pr(px(10.))
+            .gap_2p5()
+            .pr_2p5()
             .when(board.is_some(), |this| this.children(right_items(&header, workspace.clone(), cx)));
         let row = h_flex()
             .w_full()

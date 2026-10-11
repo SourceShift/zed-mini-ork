@@ -17,6 +17,7 @@ use gpui::{
     WhiteSpace, px, relative,
 };
 use markdown::{Markdown, MarkdownElement, MarkdownStyle};
+use ui::rems_from_px;
 
 use crate::palette as p;
 
@@ -148,7 +149,7 @@ fn element(markdown: Entity<Markdown>, look: Look, cx: &App) -> AnyElement {
         font_family: font.family.clone(),
         font_features: font.features.clone(),
         font_fallbacks: font.fallbacks.clone(),
-        font_size: px(look.size).into(),
+        font_size: rems_from_px(look.size).into(),
         font_weight: look.weight,
         line_height: relative(1.5),
         ..Default::default()
@@ -162,14 +163,18 @@ fn element(markdown: Entity<Markdown>, look: Look, cx: &App) -> AnyElement {
     }
     let mut code_block = gpui::StyleRefinement::default();
     code_block.background = Some(p::c(p::BG).into());
-    code_block.padding.left = Some(px(10.).into());
-    code_block.padding.right = Some(px(10.).into());
-    code_block.padding.top = Some(px(8.).into());
-    code_block.padding.bottom = Some(px(8.).into());
+    code_block.padding.left = Some(rems_from_px(10_f32).into());
+    code_block.padding.right = Some(rems_from_px(10_f32).into());
+    code_block.padding.top = Some(rems_from_px(8_f32).into());
+    code_block.padding.bottom = Some(rems_from_px(8_f32).into());
     let style = MarkdownStyle {
         base_text_style: text,
         selection_background_color: p::ca(0x74ade859),
-        paragraph_spacing: px(if look.nowrap { 0. } else { 6. }),
+        // `MarkdownStyle` wants pixels and this function is handed no window to
+        // resolve rems with, so the reader's UI font size is read from the theme
+        // instead — the same value `setup_ui_font` gives `Window::set_rem_size`.
+        paragraph_spacing: rems_from_px(if look.nowrap { 0_f32 } else { 6_f32 })
+            .to_pixels(theme::theme_settings(cx).ui_font_size(cx)),
         code_block,
         inline_code: gpui::TextStyleRefinement {
             background_color: Some(p::c(p::BG)),

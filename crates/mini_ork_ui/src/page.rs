@@ -548,25 +548,25 @@ impl MiniOrkPage {
         let mono = p::mono_font(cx);
         h_flex()
             .items_start()
-            .gap(px(12.))
+            .gap_3()
             .flex_wrap()
             .child(
                 v_flex()
                     .flex_1()
-                    .min_w(px(240.))
-                    .gap(px(3.))
+                    .min_w(rems_from_px(240_f32))
+                    .gap(rems_from_px(3_f32))
                     .child(
                         h_flex()
-                            .gap(px(10.))
+                            .gap_2p5()
                             .flex_wrap()
                             .items_center()
                             .child(self.texts.text("page-title", &title, Look::new(17., c(p::TEXT)).bold(true), cx))
                             .children(chips.iter().map(|chip| {
                                 div()
-                                    .px(px(7.))
+                                    .px(rems_from_px(7_f32))
                                     .border_1()
                                     .border_color(c(p::BORDER2))
-                                    .text_size(px(11.5))
+                                    .text_size(rems_from_px(11.5_f32))
                                     .font(mono.clone())
                                     .text_color(p::named(&str_of(chip, "c")))
                                     .child(str_of(chip, "t"))
@@ -577,7 +577,7 @@ impl MiniOrkPage {
                     }),
             )
             .child(
-                h_flex().gap(px(6.)).flex_wrap().children(
+                h_flex().gap_1p5().flex_wrap().children(
                     actions
                         .iter()
                         .enumerate()
@@ -595,7 +595,7 @@ impl MiniOrkPage {
         let current = self.tab.clone().unwrap_or_else(|| str_of(page, "tab"));
         Some(
             h_flex()
-                .gap(px(2.))
+                .gap_0p5()
                 .border_b_1()
                 .border_color(c(p::BORDER))
                 .children(tabs.iter().enumerate().map(|(i, t)| {
@@ -603,9 +603,9 @@ impl MiniOrkPage {
                     let on = key == current;
                     div()
                         .id(("page-tab", i))
-                        .px(px(10.))
-                        .py(px(6.))
-                        .text_size(px(12.5))
+                        .px_2p5()
+                        .py_1p5()
+                        .text_size(rems_from_px(12.5_f32))
                         .text_color(c(if on { p::TEXT } else { p::SUB }))
                         .border_b_2()
                         .border_color(if on { c(p::BLUE) } else { p::ca(0x00000000) })
@@ -641,20 +641,20 @@ impl MiniOrkPage {
                 rows.push(
                     h_flex()
                         .items_start()
-                        .gap(px(12.))
-                        .child(v_flex().flex_1().min_w_0().gap(px(12.)).children(
-                            left.iter().map(|(i, s)| this.render_section(*i, s, window, cx)),
+                        .gap_3()
+                        .child(v_flex().flex_1().min_w_0().gap_3().children(
+                            left.iter().map(|(i, s)| this.render_section_card(*i, s, window, cx)),
                         ))
-                        .child(v_flex().flex_1().min_w_0().gap(px(12.)).children(
-                            right.iter().map(|(i, s)| this.render_section(*i, s, window, cx)),
+                        .child(v_flex().flex_1().min_w_0().gap_3().children(
+                            right.iter().map(|(i, s)| this.render_section_card(*i, s, window, cx)),
                         ))
                         .into_any_element(),
                 );
             } else {
                 for pair in group.chunks(2) {
-                    let mut row = h_flex().gap(px(12.));
+                    let mut row = h_flex().gap_3();
                     for (i, s) in pair {
-                        row = row.child(div().flex_1().min_w_0().flex().child(this.render_section(*i, s, window, cx)));
+                        row = row.child(div().flex_1().min_w_0().flex().child(this.render_section_card(*i, s, window, cx)));
                     }
                     if pair.len() == 1 {
                         row = row.child(div().flex_1().min_w_0());
@@ -690,7 +690,21 @@ impl MiniOrkPage {
             }
         }
         flush(&mut group, &mut rows, self, window, cx);
-        v_flex().gap(px(12.)).children(rows).into_any_element()
+        v_flex().gap_3().children(rows).into_any_element()
+    }
+
+    /// A section's card, wrapped in an element whose id names the payload
+    /// section (`s3-dag`). The inspector's element reference reads
+    /// `<source location> · <id path of the nearest ancestor with an id>`, so
+    /// without an id here every section of a page would resolve to the page
+    /// element itself and a copied reference could not say which one was meant.
+    fn render_section_card(&self, index: usize, s: &Value, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
+        div()
+            .id(SharedString::from(format!("s{index}-{}", str_of(s, "type"))))
+            .w_full()
+            .min_w_0()
+            .child(self.render_section(index, s, window, cx))
+            .into_any_element()
     }
 
     fn render_section(&self, index: usize, s: &Value, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
@@ -738,9 +752,9 @@ impl MiniOrkPage {
                     format!("s{index}-md-box"),
                     div()
                         .id(SharedString::from(format!("s{index}-md-box")))
-                        .max_h(px(640.))
+                        .max_h(rems_from_px(640_f32))
                         .overflow_y_scroll()
-                        .pr(px(6.))
+                        .pr_1p5()
                         .child(self.texts.markdown(format!("s{index}-md"), str_of(s, "text"), Look::new(13., c(p::BODY)), cx)),
                 )
                 .into_any_element(),
@@ -754,16 +768,16 @@ impl MiniOrkPage {
         let has_head = !title.is_empty() || !actions.is_empty();
         card()
             .flex_1()
-            .px(px(14.))
-            .py(px(12.))
-            .gap(px(10.))
+            .px_3p5()
+            .py_3()
+            .gap_2p5()
             .when(has_head, |this| {
                 this.child(
                     h_flex()
-                        .gap(px(10.))
+                        .gap_2p5()
                         .flex_wrap()
                         .items_center()
-                        .child(div().flex_1().min_w(px(120.)).child(self.texts.text(
+                        .child(div().flex_1().min_w(rems_from_px(120_f32)).child(self.texts.text(
                             format!("s{index}-title"),
                             &title,
                             Look::new(13., c(p::TEXT)).bold(true),
@@ -775,7 +789,7 @@ impl MiniOrkPage {
                 )
             })
             .when(!note.is_empty(), |this| {
-                this.child(div().mt(px(-4.)).child(self.texts.text(format!("s{index}-note"), &note, Look::new(12., c(p::MUTED)), cx)))
+                this.child(div().mt(rems_from_px(-4_f32)).child(self.texts.text(format!("s{index}-note"), &note, Look::new(12., c(p::MUTED)), cx)))
             })
             .child(body)
             .into_any_element()
@@ -799,15 +813,15 @@ impl MiniOrkPage {
             }
         };
         let header = h_flex()
-            .gap(px(10.))
-            .px(px(6.))
-            .pt(px(2.))
-            .pb(px(6.))
+            .gap_2p5()
+            .px_1p5()
+            .pt_0p5()
+            .pb_1p5()
             .border_b_1()
             .border_color(c(p::BORDER))
             .children(head.iter().enumerate().map(|(i, h)| {
                 sized(div(), i)
-                    .text_size(px(10.5))
+                    .text_size(rems_from_px(10.5_f32))
                     .text_color(c(p::SUB))
                     .whitespace_nowrap()
                     .overflow_hidden()
@@ -824,9 +838,9 @@ impl MiniOrkPage {
             // affordance, so a plain row does not light up under the pointer.
             let line = h_flex()
                 .id(SharedString::from(format!("s{index}-r{r}")))
-                .h(px(30.))
-                .gap(px(10.))
-                .px(px(6.))
+                .h(rems_from_px(30_f32))
+                .gap_2p5()
+                .px_1p5()
                 .when(r + 1 < row_count, |this| this.border_b_1().border_color(c(p::BORDER)))
                 .when(selected, |this| this.bg(c(p::ROW_SELECTED)))
                 .when(clickable, |this| this.hover(|style| style.bg(c(p::HOVER))))
@@ -842,7 +856,7 @@ impl MiniOrkPage {
                     if clickable {
                         // A row that opens something keeps plain text, so a
                         // click is a click; right-click copies it.
-                        let mut el = sized(div(), i).text_size(px(size)).text_color(colour).truncate().child(text);
+                        let mut el = sized(div(), i).text_size(rems_from_px(size)).text_color(colour).truncate().child(text);
                         if mono_cell {
                             el = el.font(mono.clone());
                         }
@@ -873,20 +887,20 @@ impl MiniOrkPage {
     fn render_kv(&self, index: usize, s: &Value, cx: &mut Context<Self>) -> AnyElement {
         let items = arr(s, "items");
         let body = v_flex()
-            .gap(px(6.))
+            .gap_1p5()
             .children(items.iter().enumerate().map(|(i, item)| {
                 let sub = str_of(item, "sub");
                 let mono = bool_of(item, "mono");
                 h_flex()
                     .items_start()
-                    .gap(px(12.))
+                    .gap_3()
                     .child(
                         // Right-aligned keys, so the values form a column.
                         h_flex()
-                            .w(px(120.))
+                            .w(rems_from_px(120_f32))
                             .flex_none()
                             .justify_end()
-                            .text_size(px(11.5))
+                            .text_size(rems_from_px(11.5_f32))
                             .text_color(c(p::SUB))
                             .child(str_of(item, "k")),
                     )
@@ -894,7 +908,7 @@ impl MiniOrkPage {
                         v_flex()
                             .flex_1()
                             .min_w_0()
-                            .gap(px(1.))
+                            .gap(rems_from_px(1_f32))
                             .child(self.texts.text(
                                 format!("s{index}-v{i}"),
                                 str_of(item, "v"),
@@ -918,7 +932,7 @@ impl MiniOrkPage {
     fn render_list(&self, index: usize, s: &Value, cx: &mut Context<Self>) -> AnyElement {
         let items = arr(s, "items");
         let body = v_flex()
-            .gap(px(8.))
+            .gap_2()
             .children(items.iter().enumerate().map(|(i, item)| {
                 let sub = str_of(item, "sub");
                 let acts = arr(item, "acts");
@@ -930,13 +944,13 @@ impl MiniOrkPage {
                 );
                 h_flex()
                     .items_start()
-                    .gap(px(9.))
+                    .gap(rems_from_px(9_f32))
                     .child(
                         div()
                             .flex_none()
-                            .w(px(14.))
+                            .w_3p5()
                             .mt(px(1.))
-                            .text_size(px(12.))
+                            .text_size(rems_from_px(12_f32))
                             .text_color(p::named(&str_of(item, "mc")))
                             .child(str_of(item, "m")),
                     )
@@ -944,7 +958,7 @@ impl MiniOrkPage {
                         v_flex()
                             .flex_1()
                             .min_w_0()
-                            .gap(px(1.))
+                            .gap(rems_from_px(1_f32))
                             .child(title)
                             .when(!sub.is_empty(), |this| {
                                 this.child(self.texts.text(format!("s{index}-is{i}"), &sub, Look::new(11., c(p::SUB)), cx))
@@ -953,7 +967,7 @@ impl MiniOrkPage {
                     .when(!acts.is_empty(), |this| {
                         // The row's actions are all ghost buttons: the Orca
                         // list keeps its weight in the title, not the chrome.
-                        this.child(h_flex().flex_none().gap(px(5.)).children(acts.iter().enumerate().map(
+                        this.child(h_flex().flex_none().gap(rems_from_px(5_f32)).children(acts.iter().enumerate().map(
                             |(a, b)| {
                                 let handler = self.action_handler(b.get("do"), cx);
                                 p::button(
@@ -989,13 +1003,13 @@ impl MiniOrkPage {
         components::card()
             .flex_1()
             .min_w_0()
-            .gap(px(10.))
+            .gap_2p5()
             .child(
                 h_flex()
-                    .gap(px(10.))
+                    .gap_2p5()
                     .flex_wrap()
                     .items_center()
-                    .child(div().flex_1().min_w(px(120.)).child(components::section_head(&title, count)))
+                    .child(div().flex_1().min_w(rems_from_px(120_f32)).child(components::section_head(&title, count)))
                     .children(actions.iter().enumerate().map(|(i, b)| {
                         self.button(SharedString::from(format!("s{index}-a{i}")), b, 24., 12., cx)
                     })),
@@ -1015,17 +1029,17 @@ impl MiniOrkPage {
     fn render_bars(&self, s: &Value, cx: &mut Context<Self>) -> AnyElement {
         let mono = p::mono_font(cx);
         v_flex()
-            .gap(px(6.))
+            .gap_1p5()
             .children(arr(s, "items").iter().map(|item| {
                 let pct = item.get("pct").and_then(Value::as_f64).unwrap_or(1.0).clamp(1.0, 100.0);
                 h_flex()
-                    .gap(px(10.))
+                    .gap_2p5()
                     .items_center()
-                    .child(p::text(str_of(item, "label"), 12., p::MUTED).w(px(160.)).flex_none().truncate())
+                    .child(p::text(str_of(item, "label"), 12., p::MUTED).w_40().flex_none().truncate())
                     .child(
                         div()
                             .flex_1()
-                            .h(px(8.))
+                            .h_2()
                             .bg(c(p::BG))
                             .overflow_hidden()
                             .child(
@@ -1037,7 +1051,7 @@ impl MiniOrkPage {
                     )
                     .child(
                         p::text(str_of(item, "val"), 11.5, p::TEXT)
-                            .w(px(72.))
+                            .w(rems_from_px(72_f32))
                             .flex_none()
                             .text_right()
                             .font(mono.clone()),
@@ -1047,7 +1061,7 @@ impl MiniOrkPage {
     }
 
     fn render_flow(&self, index: usize, s: &Value, cx: &mut Context<Self>) -> AnyElement {
-        let mut row = h_flex().flex_wrap().items_center().gap(px(6.));
+        let mut row = h_flex().flex_wrap().items_center().gap_1p5();
         for (i, item) in arr(s, "items").iter().enumerate() {
             if i > 0 {
                 row = row.child(p::text("→", 13., p::DIM));
@@ -1055,8 +1069,8 @@ impl MiniOrkPage {
             let sub = str_of(item, "sub");
             row = row.child(
                 v_flex()
-                    .px(px(9.))
-                    .py(px(5.))
+                    .px(rems_from_px(9_f32))
+                    .py(rems_from_px(5_f32))
                     .border_1()
                     .border_color(c(p::BORDER2))
                     .bg(c(p::BG))
@@ -1082,14 +1096,14 @@ impl MiniOrkPage {
         let mono = p::mono_font(cx);
         h_flex()
             .flex_wrap()
-            .gap(px(6.))
+            .gap_1p5()
             .children(arr(s, "items").iter().map(|item| {
                 div()
-                    .px(px(7.))
-                    .py(px(1.))
+                    .px(rems_from_px(7_f32))
+                    .py(rems_from_px(1_f32))
                     .border_1()
                     .border_color(c(p::BORDER2))
-                    .text_size(px(11.5))
+                    .text_size(rems_from_px(11.5_f32))
                     .font(mono.clone())
                     .text_color(p::named(&str_of(item, "c")))
                     .child(str_of(item, "t"))
@@ -1100,19 +1114,19 @@ impl MiniOrkPage {
     fn render_chips(&self, index: usize, s: &Value, cx: &mut Context<Self>) -> AnyElement {
         h_flex()
             .flex_wrap()
-            .gap(px(6.))
+            .gap_1p5()
             .children(arr(s, "items").iter().enumerate().map(|(i, item)| {
                 let on = bool_of(item, "on");
                 let handler = self.action_handler(item.get("do"), cx);
                 let chip = h_flex()
                     .id(SharedString::from(format!("s{index}-chip{i}")))
-                    .h(px(24.))
-                    .px(px(10.))
+                    .h_6()
+                    .px_2p5()
                     .items_center()
                     .border_1()
                     .border_color(c(if on { p::DIM } else { p::BORDER2 }))
                     .when(on, |this| this.bg(c(p::SELECTED)))
-                    .text_size(px(12.))
+                    .text_size(rems_from_px(12_f32))
                     .text_color(c(if on { p::TEXT } else { p::MUTED }))
                     .child(str_of(item, "t"));
                 match handler {
@@ -1140,13 +1154,13 @@ impl MiniOrkPage {
         // when there is no model to draw, so the canvas path pays nothing.
         let fallback: Option<AnyElement> = model.is_none().then(|| {
             // Columns keep their width so a wide DAG overflows and scrolls.
-            let mut row = h_flex().flex_none().items_center().gap(px(10.));
+            let mut row = h_flex().flex_none().items_center().gap_2p5();
             for (ci, column) in arr(s, "cols").iter().enumerate() {
                 if ci > 0 {
                     row = row.child(p::text("→", 14., p::DIM).flex_none());
                 }
                 let nodes = column.as_array().cloned().unwrap_or_default();
-                row = row.child(v_flex().flex_none().gap(px(8.)).children(nodes.iter().enumerate().map(|(ni, node)| {
+                row = row.child(v_flex().flex_none().gap_2().children(nodes.iter().enumerate().map(|(ni, node)| {
                     let state = str_of(node, "state");
                     let selected = bool_of(node, "sel");
                     let (mark, colour) = match state.as_str() {
@@ -1175,23 +1189,23 @@ impl MiniOrkPage {
                     let node_id = str_of(node, "id");
                     let el = v_flex()
                         .id(SharedString::from(format!("s{index}-n{ci}-{ni}")))
-                        .w(px(128.))
-                        .px(px(9.))
-                        .py(px(7.))
-                        .gap(px(2.))
+                        .w_32()
+                        .px(rems_from_px(9_f32))
+                        .py(rems_from_px(7_f32))
+                        .gap_0p5()
                         .border_1()
                         .border_color(border)
                         .bg(c(if state == "pending" { p::BG } else { p::NODE_BG }))
                         .child(
                             h_flex()
-                                .gap(px(6.))
+                                .gap_1p5()
                                 .min_w_0()
                                 .child(p::lane_mark(&lane, 18.))
                                 .child(
                                     div()
                                         .min_w_0()
                                         .truncate()
-                                        .text_size(px(12.5))
+                                        .text_size(rems_from_px(12.5_f32))
                                         .font_weight(gpui::FontWeight::SEMIBOLD)
                                         .text_color(c(p::TEXT))
                                         .child(str_of(node, "label")),
@@ -1199,7 +1213,7 @@ impl MiniOrkPage {
                         )
                         .child(
                             h_flex()
-                                .gap(px(5.))
+                                .gap(rems_from_px(5_f32))
                                 .min_w_0()
                                 .child(p::text(p::lane_label(&lane), 11., p::TEXT).truncate())
                                 .when(!role.is_empty(), |this| {
@@ -1208,7 +1222,7 @@ impl MiniOrkPage {
                         )
                         .child(
                             h_flex()
-                                .gap(px(6.))
+                                .gap_1p5()
                                 .child(p::text(mark, 10., colour))
                                 .child(p::text(status, 11., colour).font(mono.clone())),
                         );
@@ -1276,8 +1290,8 @@ impl MiniOrkPage {
                 .w_full()
                 .min_w_0()
                 .max_h(px(dag_height))
-                .pt(px(36.))
-                .pb(px(12.))
+                .pt_9()
+                .pb_3()
                 .child(fallback.unwrap_or_else(|| div().into_any_element()))
                 .custom_scrollbars(
                     Scrollbars::always_visible(ScrollAxes::Both).tracked_scroll_handle(&self.dag_scroll),
@@ -1309,13 +1323,13 @@ impl MiniOrkPage {
         let full_screen = div()
             .id(("dag-full", index))
             .absolute()
-            .top(px(8.))
-            .left(px(8.))
-            .size(px(26.))
+            .top(rems_from_px(8_f32))
+            .left(rems_from_px(8_f32))
+            .size(rems_from_px(26_f32))
             .flex()
             .items_center()
             .justify_center()
-            .rounded(px(6.))
+            .rounded(rems_from_px(6_f32))
             .border_1()
             .border_color(c(p::BORDER2))
             .bg(c(p::BG))
@@ -1330,7 +1344,7 @@ impl MiniOrkPage {
             .on_click(cx.listener(|this, _, window, cx| this.open_graph(None, window, cx)));
         card()
             .relative()
-            .p(px(16.))
+            .p_4()
             .child(
                 div()
                     .relative()
@@ -1350,10 +1364,10 @@ impl MiniOrkPage {
         let mono = p::mono_font(cx);
         let steps_on = !self.show_flow_map;
         h_flex()
-            .gap(px(8.))
+            .gap_2()
             .items_center()
             .font(mono)
-            .text_size(px(11.))
+            .text_size(rems_from_px(11_f32))
             .child(
                 div()
                     .id("graph-toggle-steps")
@@ -1396,16 +1410,16 @@ impl MiniOrkPage {
         let left = card()
             .flex_1()
             .min_w_0()
-            .px(px(14.))
-            .py(px(12.))
-            .gap(px(10.))
+            .px_3p5()
+            .py_3()
+            .gap_2p5()
             .child(
                 h_flex()
-                    .gap(px(8.))
+                    .gap_2()
                     .child(p::text(mark, 13., colour))
                     .child(
                         div()
-                            .text_size(px(13.))
+                            .text_size(rems_from_px(13_f32))
                             .font_weight(gpui::FontWeight::SEMIBOLD)
                             .text_color(c(p::TEXT))
                             .child(str_of(s, "label")),
@@ -1415,11 +1429,11 @@ impl MiniOrkPage {
             .child(
                 div()
                     .id(("inspector-out", index))
-                    .min_h(px(90.))
-                    .max_h(px(220.))
+                    .min_h(rems_from_px(90_f32))
+                    .max_h(rems_from_px(220_f32))
                     .overflow_y_scroll()
-                    .px(px(10.))
-                    .py(px(8.))
+                    .px_2p5()
+                    .py_2()
                     .bg(c(p::BG))
                     .border_1()
                     .border_color(c(p::BORDER))
@@ -1436,10 +1450,10 @@ impl MiniOrkPage {
             .when(!note.is_empty(), |this| {
                 this.child(
                     h_flex()
-                        .gap(px(8.))
+                        .gap_2()
                         .child(
                             div()
-                                .text_size(px(12.))
+                                .text_size(rems_from_px(12_f32))
                                 .font_weight(gpui::FontWeight::SEMIBOLD)
                                 .text_color(c(p::TEXT))
                                 .child("Steer this worker"),
@@ -1448,11 +1462,11 @@ impl MiniOrkPage {
                 )
             });
         let right = card()
-            .w(px(260.))
+            .w(rems_from_px(260_f32))
             .flex_none()
-            .px(px(14.))
-            .py(px(12.))
-            .gap(px(8.))
+            .px_3p5()
+            .py_3()
+            .gap_2()
             .children(arr(s, "items").iter().enumerate().map(|(i, item)| {
                 v_flex()
                     .child(p::text(str_of(item, "k"), 11., p::SUB))
@@ -1463,7 +1477,7 @@ impl MiniOrkPage {
                         cx,
                     ))
             }));
-        h_flex().items_start().gap(px(12.)).child(left).child(right).into_any_element()
+        h_flex().items_start().gap_3().child(left).child(right).into_any_element()
     }
 }
 
@@ -1601,9 +1615,14 @@ impl MiniOrkPage {
             graph.update(cx, |graph, cx| graph.set_model(model, cx));
             return;
         }
+        // Open on the node the run reached last, with its detail loaded, the
+        // same view a click on it gives. Only at construction: `set_model`
+        // keeps whatever is selected, so a live run does not yank the reader
+        // off the node they are looking at every time the board moves.
+        let focus = model.last_ran().map(|node| node.id.clone());
         let (workspace, page_handle) = (self.workspace.clone(), cx.entity().downgrade());
         let graph = cx.new(|cx| {
-            let mut graph = crate::graph::MiniOrkGraph::new(model, None, workspace, page_handle, window, cx);
+            let mut graph = crate::graph::MiniOrkGraph::new(model, focus, workspace, page_handle, window, cx);
             graph.tab_mode = true;
             graph
         });
@@ -1655,11 +1674,11 @@ pub(crate) fn code_box<T: 'static>(texts: &Texts, key: &str, lines: Vec<Value>, 
     let all = lines.iter().map(|l| str_of(l, "t")).collect::<Vec<_>>().join("\n");
     let block = v_flex()
         .id(SharedString::from(format!("{key}-box")))
-        .max_h(px(480.))
+        .max_h(rems_from_px(480_f32))
         .overflow_y_scroll()
         .relative()
-        .px(px(10.))
-        .py(px(8.))
+        .px_2p5()
+        .py_2()
         .bg(c(p::BG))
         .border_1()
         .border_color(c(p::BORDER))
@@ -1678,8 +1697,8 @@ pub(crate) fn code_box<T: 'static>(texts: &Texts, key: &str, lines: Vec<Value>, 
             this.child(
                 div()
                     .absolute()
-                    .top(px(4.))
-                    .right(px(6.))
+                    .top(rems_from_px(4_f32))
+                    .right(rems_from_px(6_f32))
                     .child(ui::CopyButton::new(
                         SharedString::from(format!("{key}-copy")),
                         all.clone(),
@@ -1723,10 +1742,10 @@ impl Item for MiniOrkPage {
     fn tab_content(&self, params: TabContentParams, _window: &Window, cx: &App) -> AnyElement {
         let mono = p::mono_font(cx);
         h_flex()
-            .gap(px(7.))
+            .gap(rems_from_px(7_f32))
             .child(
                 div()
-                    .text_size(px(11.5))
+                    .text_size(rems_from_px(11.5_f32))
                     .font(mono)
                     .text_color(c(if params.selected { p::BLUE } else { p::SUB }))
                     .child(glyph(&self.key)),
@@ -1776,11 +1795,11 @@ impl Render for MiniOrkPage {
         let bar = self.loading.then(|| loading::sweep_bar(("page-sweep", self.generation as usize)));
         let content = match self.data.clone() {
             None => v_flex()
-                .gap(px(14.))
+                .gap_3p5()
                 .when(!self.dock, |this| {
                     this.child(
                         div()
-                            .text_size(px(17.))
+                            .text_size(rems_from_px(17_f32))
                             .font_weight(gpui::FontWeight::SEMIBOLD)
                             .text_color(c(p::TEXT))
                             .child(self.label()),
@@ -1791,14 +1810,14 @@ impl Render for MiniOrkPage {
                 .child(loading::skeleton(&self.skeleton_shapes()))
                 .into_any_element(),
             Some(Ok(page)) if self.switching => v_flex()
-                .gap(px(14.))
+                .gap_3p5()
                 .when(!self.dock, |this| this.child(self.render_header(&page, cx)))
-                .child(v_flex().children(self.render_tabs(&page, cx)).children(bar.map(|b| div().mt(px(-2.)).child(b))))
+                .child(v_flex().children(self.render_tabs(&page, cx)).children(bar.map(|b| div().mt(rems_from_px(-2_f32)).child(b))))
                 .child(loading::loading_line(source, cx))
                 .child(loading::skeleton(&self.skeleton_shapes()))
                 .into_any_element(),
             Some(Err(error)) => v_flex()
-                .gap(px(6.))
+                .gap_1p5()
                 .child(p::text("This page could not be read", 15., p::TEXT))
                 .child(self.texts.text("page-error", &error, Look::new(12.5, c(p::RED)).mono(true), cx))
                 .into_any_element(),
@@ -1820,9 +1839,9 @@ impl Render for MiniOrkPage {
                 let hide_dag = show_flow;
                 let toggle = on_graph.then(|| self.render_graph_toggle(cx));
                 v_flex()
-                    .gap(px(14.))
+                    .gap_3p5()
                     .when(!self.dock, |this| this.child(self.render_header(&page, cx)))
-                    .child(v_flex().children(self.render_tabs(&page, cx)).children(bar.map(|b| div().mt(px(-2.)).child(b))))
+                    .child(v_flex().children(self.render_tabs(&page, cx)).children(bar.map(|b| div().mt(rems_from_px(-2_f32)).child(b))))
                     .children(toggle)
                     .children(flow_map)
                     .child(
@@ -1836,15 +1855,6 @@ impl Render for MiniOrkPage {
             }
         };
         self.texts.end();
-        // The DAG tab is a canvas, not prose. A node tab's strip runs edge to
-        // edge, so this tab drops the centred reading column — otherwise the
-        // canvas would be fitted into a 1080px box and draw the same run
-        // smaller than the node tab does.
-        let dag_tab = self
-            .data
-            .as_ref()
-            .and_then(|data| data.as_ref().ok())
-            .is_some_and(|page| matches!(str_of(page, "tab").as_str(), "dag" | "graph"));
         div()
             .id("mini-ork-page")
             .track_focus(&self.focus_handle)
@@ -1854,18 +1864,19 @@ impl Render for MiniOrkPage {
             .overflow_y_scroll()
             .child(if self.dock {
                 // The Run panel draws its own chrome: a small inset instead of
-                // the page's wide padding and centred, max-width column.
-                div().px(px(10.)).py(px(8.)).child(content)
+                // the page's wide padding.
+                div().px_2p5().py_2().child(content)
             } else {
-                div()
-                    .px(px(20.))
-                    .pt(px(16.))
-                    .pb(px(48.))
-                    .child(
-                        div()
-                            .when(!dag_tab, |this| this.max_w(px(1080.)).mx_auto())
-                            .child(content),
-                    )
+                // One column for every tab: full width, left aligned. The old
+                // centred 1080px column made the content jump sideways the
+                // moment you left the DAG tab — a canvas that had already
+                // opted out of it — so the same page read at two widths.
+                //
+                // Spacing helpers rather than raw pixels, as Zed's own panels
+                // do: these are `rems`, so the gutter tracks the reader's UI
+                // font size instead of pinning a 20px that only reads right at
+                // the default size.
+                div().px_5().pt_4().pb_12().child(content)
             })
             .when_some(self.graph.clone(), |this, graph| {
                 this.child(

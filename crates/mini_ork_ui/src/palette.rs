@@ -12,7 +12,7 @@ use std::{collections::HashMap, sync::RwLock};
 
 use gpui::{AnyElement, App, ClickEvent, Div, Font, Hsla, Window, px, rgb};
 use theme::ActiveTheme as _;
-use ui::prelude::*;
+use ui::{TintColor, prelude::*};
 
 pub const BG: u32 = 0x282c33;
 pub const CHROME: u32 = 0x2f343e;
@@ -57,9 +57,10 @@ pub const GIT_ADD: u32 = 0x81b88b;
 pub const GIT_MOD: u32 = 0xe2c08d;
 pub const GIT_DEL: u32 = 0xc74e39;
 
-/// Type scale and corner radii the Orca design uses throughout.
+/// Type scale and corner radii the Orca design uses throughout. Text now goes
+/// through `ui::Label` and its `LabelSize` scale, so only the sizes with no
+/// Zed equivalent stay here.
 pub const TITLE: f32 = 13.;
-pub const META: f32 = 11.;
 pub const BADGE: f32 = 10.;
 pub const PILL: f32 = 9.;
 pub const RADIUS_CARD: f32 = 10.;
@@ -305,26 +306,26 @@ pub fn lane_mark(lane: &str, size: f32) -> AnyElement {
     if matches!(lane.to_ascii_lowercase().as_str(), "shell" | "command" | "cmd" | "") {
         return gpui::svg()
             .path(IconName::Terminal.path())
-            .size(px(size))
+            .size(rems_from_px(size))
             .flex_none()
             .text_color(c(SUB))
             .into_any_element();
     }
     if let Some(path) = model_image(lane) {
-        return gpui::img(path).size(px(size)).flex_none().rounded(px(2.)).into_any_element();
+        return gpui::img(path).size(rems_from_px(size)).flex_none().into_any_element();
     }
     if let Some(icon) = model_icon(lane) {
         return gpui::svg()
             .path(icon.path())
-            .size(px(size))
+            .size(rems_from_px(size))
             .flex_none()
             .text_color(c(family(lane)))
             .into_any_element();
     }
     let dot = (size * 0.5).max(5.);
     div()
-        .size(px(dot))
-        .mx(px((size - dot) / 2.))
+        .size(rems_from_px(dot))
+        .mx(rems_from_px((size - dot) / 2.))
         .flex_none()
         .rounded_full()
         .bg(c(family(lane)))
@@ -388,53 +389,64 @@ pub fn mono_font(cx: &App) -> Font {
     theme::theme_settings(cx).buffer_font(cx).clone()
 }
 
-/// Text at a design size (px) and colour.
+/// Text at a design size and colour.
+///
+/// `size` is still a design pixel value — every call site reads as it did —
+/// but it is converted to rems, so the type scales with the reader's
+/// `ui_font_size` instead of pinning to the pixel grid. `1rem` is 16px at the
+/// default size, so nothing moves for a reader who never changed the setting.
 pub fn text(content: impl Into<SharedString>, size: f32, colour: u32) -> Div {
+    div()
+        .text_size(rems_from_px(size))
+        .text_color(c(colour))
+        .child(content.into())
+}
+
+/// Text at a fixed pixel size, for the canvases only.
+///
+/// [`text`] scales with the reader's UI font size, which is what every view
+/// built out of rems wants. The run DAG and the flow map are not built out of
+/// rems: they place every box, edge and label at a pixel the layout computed,
+/// and scale as a whole through the zoom gesture. Type inside them has to stay
+/// on that pixel grid — a label that grew with the font size would sit outside
+/// the box that was measured to hold it.
+pub fn text_px(content: impl Into<SharedString>, size: f32, colour: u32) -> Div {
     div().text_size(px(size)).text_color(c(colour)).child(content.into())
 }
 
-/// The design's button kinds: background, text, border.
-pub fn button_colours(kind: &str) -> (Hsla, Hsla, Hsla) {
-    match kind {
-        "primary" => (ca(0x74ade829), c(BLUE), ca(0x74ade873)),
-        "danger" => (ca(0x00000000), c(RED), ca(0xd0727773)),
-        "warn" => (ca(0x00000000), c(YELLOW), ca(0xdec18473)),
-        "ghost" => (ca(0x00000000), c(MUTED), ca(0x00000000)),
-        _ => (c(HOVER), c(TEXT), c(BORDER2)),
-    }
-}
-
-/// A design button. `on_click: None` draws it dimmed and inert.
+/// A design button, drawn by Zed's own [`Button`]: hover, active, disabled and
+/// focus states, padding and radius all come from the theme instead of being
+/// re-drawn here. The Orca `kind` only picks the style.
+///
+/// `_font_size` is kept because callers still pass the design's type size; the
+/// button's `ButtonSize` owns the label size now. `height` only chooses the
+/// closest size, so the buttons snap to Zed's five heights.
 pub fn button(
     id: impl Into<ElementId>,
     label: impl Into<SharedString>,
     kind: &str,
     height: f32,
-    font_size: f32,
+    _font_size: f32,
     on_click: Option<Box<dyn Fn(&ClickEvent, &mut Window, &mut App) + 'static>>,
 ) -> AnyElement {
-    let (bg, fg, border) = button_colours(kind);
-    let enabled = on_click.is_some();
-    let base = h_flex()
-        .id(id.into())
-        .flex_none()
-        .h(px(height))
-        .px(px(if height <= 22. { 8. } else if height <= 24. { 9. } else { 10. }))
-        .items_center()
-        .rounded(px(5.))
-        .border_1()
-        .border_color(border)
-        .bg(bg)
-        .text_size(px(font_size))
-        .text_color(fg)
-        .whitespace_nowrap()
-        .child(label.into());
-    match on_click {
-        Some(handler) if enabled => base
-            .cursor_pointer()
-            .hover(|style| style.opacity(0.85))
-            .on_click(handler)
-            .into_any_element(),
-        _ => base.opacity(0.55).into_any_element(),
+    let style = match kind {
+        "primary" => ButtonStyle::Tinted(TintColor::Accent),
+        "danger" => ButtonStyle::Tinted(TintColor::Error),
+        "warn" => ButtonStyle::Tinted(TintColor::Warning),
+        "ghost" => ButtonStyle::Transparent,
+        _ => ButtonStyle::Outlined,
+    };
+    let size = if height <= 20. {
+        ButtonSize::Compact
+    } else if height <= 24. {
+        ButtonSize::Default
+    } else {
+        ButtonSize::Medium
+    };
+    let disabled = on_click.is_none();
+    let mut button = Button::new(id, label).style(style).size(size).disabled(disabled);
+    if let Some(handler) = on_click {
+        button = button.on_click(move |event, window, cx| handler(event, window, cx));
     }
+    button.into_any_element()
 }

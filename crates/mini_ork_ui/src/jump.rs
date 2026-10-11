@@ -10,9 +10,9 @@ use std::{cmp::Reverse, collections::BTreeMap};
 
 use gpui::{
     AnyWindowHandle, App, Context, DismissEvent, Entity, EventEmitter, FocusHandle, Focusable,
-    Keystroke, KeystrokeEvent, Render, Subscription, WeakEntity, Window, px,
+    Keystroke, KeystrokeEvent, Render, Subscription, WeakEntity, Window,
 };
-use ui::prelude::*;
+use ui::{Divider, prelude::*};
 use workspace::{ModalView, MultiWorkspace, Workspace};
 
 use crate::{
@@ -282,27 +282,26 @@ impl Render for JumpPalette {
             self.selected = matches.len().saturating_sub(1);
         }
         let mono = p::mono_font(cx);
-        let mut list = v_flex().p(px(4.)).gap(px(1.));
+        let mut list = v_flex().p_1().gap(rems_from_px(1_f32));
         for (index, item) in matches.iter().take(MAX_SHOWN).enumerate() {
             let selected = index == self.selected;
             list = list.child(
                 h_flex()
                     .id(("mini-ork-jump-item", index))
-                    .h(px(26.))
-                    .px(px(8.))
-                    .gap(px(8.))
+                    .h(rems_from_px(26_f32))
+                    .px_2()
+                    .gap_2()
                     .items_center()
-                    .rounded(px(4.))
                     .cursor_pointer()
                     .when(selected, |this| this.bg(c(p::ROW_SELECTED)))
                     .hover(|this| this.bg(c(p::HOVER)))
-                    .child(div().w(px(12.)).flex_none().text_color(c(item.colour)).child(item.mark.clone()))
+                    .child(div().w_3().flex_none().text_color(c(item.colour)).child(item.mark.clone()))
                     .child(
                         div()
                             .flex_1()
                             .min_w_0()
                             .truncate()
-                            .text_size(px(12.5))
+                            .text_size(rems_from_px(12.5_f32))
                             .text_color(c(p::TEXT))
                             .child(item.label.clone()),
                     )
@@ -310,7 +309,7 @@ impl Render for JumpPalette {
                         div()
                             .flex_none()
                             .font(mono.clone())
-                            .text_size(px(10.5))
+                            .text_size(rems_from_px(10.5_f32))
                             .text_color(c(p::SUB))
                             .child(item.detail.clone()),
                     )
@@ -322,25 +321,25 @@ impl Render for JumpPalette {
         }
         let query = if self.query.is_empty() {
             div()
-                .text_size(px(13.))
+                .text_size(rems_from_px(13_f32))
                 .text_color(c(p::SUB))
                 .child("Jump to a run or page…")
                 .into_any_element()
         } else {
             div()
-                .text_size(px(13.))
+                .text_size(rems_from_px(13_f32))
                 .text_color(c(p::TEXT))
                 .child(self.query.clone())
                 .into_any_element()
         };
         let footer = h_flex()
-            .px(px(10.))
-            .py(px(6.))
-            .gap(px(10.))
+            .px_2p5()
+            .py_1p5()
+            .gap_2p5()
             .border_t_1()
             .border_color(c(p::BORDER))
             .font(mono)
-            .text_size(px(11.))
+            .text_size(rems_from_px(11_f32))
             .text_color(c(p::SUB))
             .child("↵ open")
             .child("esc close")
@@ -349,8 +348,7 @@ impl Render for JumpPalette {
             .id("mini-ork-jump")
             .track_focus(&self.focus_handle)
             .key_context("MiniOrkJump")
-            .w(px(560.))
-            .rounded(px(8.))
+            .w(rems_from_px(560_f32))
             .border_1()
             .border_color(c(p::BORDER2))
             .bg(c(p::CHROME))
@@ -358,15 +356,15 @@ impl Render for JumpPalette {
             .overflow_hidden()
             .child(
                 h_flex()
-                    .px(px(10.))
-                    .py(px(8.))
-                    .gap(px(8.))
+                    .px_2p5()
+                    .py_2()
+                    .gap_2()
                     .items_center()
-                    .child(div().flex_none().text_size(px(12.5)).text_color(c(p::BLUE)).child("⌘J"))
+                    .child(div().flex_none().text_size(rems_from_px(12.5_f32)).text_color(c(p::BLUE)).child("⌘J"))
                     .child(div().flex_1().min_w_0().truncate().child(query)),
             )
-            .child(div().h(px(1.)).flex_none().bg(c(p::BORDER)))
-            .child(list.id("mini-ork-jump-list").max_h(px(340.)).overflow_y_scroll())
+            .child(Divider::horizontal().flex_none())
+            .child(list.id("mini-ork-jump-list").max_h(rems_from_px(340_f32)).overflow_y_scroll())
             .child(footer)
     }
 }

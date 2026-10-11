@@ -230,7 +230,7 @@ fn empty_state() -> AnyElement {
         .size_full()
         .items_center()
         .justify_center()
-        .p(px(16.))
+        .p_4()
         .child(p::text(
             "Open a run to see its changes and checks",
             12.5,

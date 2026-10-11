@@ -3,8 +3,9 @@
 
 use std::{
     collections::{BTreeMap, HashMap},
-    path::PathBuf,
-    time::Duration,
+    path::{Path, PathBuf},
+    sync::Mutex,
+    time::{Duration, Instant},
 };
 
 use gpui::{
@@ -35,6 +36,9 @@ pub struct BoardStore {
     last_states: HashMap<String, String>,
     /// Bumped on every fresh read; pages re-read themselves when it moves.
     pub generation: u64,
+    /// When the inbox page was last warmed ahead of a click (see
+    /// `prefetch_inbox`).
+    last_prefetch: Option<Instant>,
     _watcher: Option<std::sync::Arc<dyn fs::Watcher>>,
     _poll: Task<()>,
 }
@@ -44,7 +48,51 @@ struct Stores(HashMap<EntityId, Entity<BoardStore>>);
 
 impl Global for Stores {}
 
+/// The last answer of every IDE page this process has read, keyed by home, page
+/// key, tab and args. Opening a tab paints the previous answer at once and
+/// refreshes behind it, so a click never waits on a process launch to show
+/// content the IDE has already had; opening it again after that is instant.
+#[derive(Default)]
+struct PageCache(Mutex<HashMap<String, Value>>);
+
+impl Global for PageCache {}
+
+/// How many pages to keep before dropping the lot: a payload is kilobytes and
+/// the IDE opens tens of tabs, so this bounds the cache well above any real
+/// session without needing an eviction policy.
+const PAGE_CACHE_LIMIT: usize = 64;
+
+fn page_cache_key(home: &Path, key: &str, tab: Option<&str>, args: &BTreeMap<String, String>) -> String {
+    let args = args.iter().map(|(k, v)| format!("{k}={v}")).collect::<Vec<_>>().join("&");
+    format!("{}|{key}|{}|{args}", home.display(), tab.unwrap_or(""))
+}
+
+/// The last payload of this page, if this process already read it.
+pub fn cached_page(home: &Path, key: &str, tab: Option<&str>, args: &BTreeMap<String, String>, cx: &App) -> Option<Value> {
+    let cache = cx.try_global::<PageCache>()?;
+    let cache = cache.0.lock().ok()?;
+    cache.get(&page_cache_key(home, key, tab, args)).cloned()
+}
+
+/// Remember a payload for the next open of this page.
+pub fn remember_page(home: &Path, key: &str, tab: Option<&str>, args: &BTreeMap<String, String>, value: Value, cx: &App) {
+    let Some(cache) = cx.try_global::<PageCache>() else {
+        return;
+    };
+    let Ok(mut cache) = cache.0.lock() else {
+        return;
+    };
+    if cache.len() >= PAGE_CACHE_LIMIT {
+        cache.clear();
+    }
+    cache.insert(page_cache_key(home, key, tab, args), value);
+}
+
 pub fn init(cx: &mut App) {
+    cx.default_global::<PageCache>();
+    // The IDE's reads go over loopback when a `mini-ork serve` answers
+    // (see `ide_http`); it needs the app's client to make them.
+    crate::ide_http::init(cx.http_client());
     cx.observe_new(|_workspace: &mut Workspace, window, cx| {
         let id = cx.entity().entity_id();
         let weak = cx.entity().downgrade();
@@ -186,6 +234,7 @@ impl BoardStore {
                         Ok((home, board)) => {
                             this.home = Some(home);
                             this.announce_finished(&board, cx);
+                            this.prefetch_inbox(&board, cx);
                             this.board = Some(board);
                             this.error = None;
                             this.generation += 1;
@@ -245,6 +294,7 @@ impl BoardStore {
             error: None,
             last_states: HashMap::new(),
             generation: 0,
+            last_prefetch: None,
             _watcher: None,
             _poll: poll,
         }
@@ -266,6 +316,33 @@ impl BoardStore {
                 }
             })
             .ok();
+        })
+        .detach();
+    }
+
+    /// Warm the page the status bar's "needs you" chip opens. It runs only
+    /// while something is waiting on the user, and at most once per
+    /// `PREFETCH_TTL`, so it costs one extra read every few seconds at worst —
+    /// in exchange, the click that follows the chip paints from the cache
+    /// instead of waiting on a read of its own.
+    fn prefetch_inbox(&mut self, board: &Board, cx: &mut Context<Self>) {
+        const PREFETCH_TTL: Duration = Duration::from_secs(5);
+        if board.header.needs_you == 0 || self.last_prefetch.is_some_and(|at| at.elapsed() < PREFETCH_TTL) {
+            return;
+        }
+        let Some(home) = self.home.clone() else {
+            return;
+        };
+        self.last_prefetch = Some(Instant::now());
+        let bin = self.bin.clone();
+        let args = BTreeMap::new();
+        cx.spawn(async move |_, cx| {
+            let result = cx
+                .background_spawn(board::fetch_page(bin, home.clone(), "inbox".to_string(), None, args.clone()))
+                .await;
+            if let Ok(value) = result {
+                cx.update(|cx| remember_page(&home, "inbox", None, &args, value, cx));
+            }
         })
         .detach();
     }

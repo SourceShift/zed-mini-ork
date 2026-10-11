@@ -11,7 +11,7 @@ use std::collections::BTreeMap;
 
 use gpui::{
     AnyElement, App, AppContext as _, Context, Entity, EventEmitter, FocusHandle, Focusable, Render,
-    SharedString, Task, WeakEntity, Window, px,
+    SharedString, Task, WeakEntity, Window,
 };
 use ui::prelude::*;
 use workspace::{
@@ -143,10 +143,10 @@ impl Item for MiniOrkNodeTab {
 
     fn tab_content(&self, params: TabContentParams, _window: &Window, cx: &App) -> AnyElement {
         h_flex()
-            .gap(px(7.))
+            .gap(rems_from_px(7_f32))
             .child(
                 div()
-                    .text_size(px(11.5))
+                    .text_size(rems_from_px(11.5_f32))
                     .text_color(c(if params.selected { p::BLUE } else { p::SUB }))
                     .child("⬡"),
             )
@@ -174,9 +174,9 @@ impl Render for MiniOrkNodeTab {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let body: AnyElement = match (&self.graph, &self.error) {
             (Some(graph), _) => graph.clone().into_any_element(),
-            (None, Some(error)) => p::text(error.clone(), 12.5, p::RED).p(px(16.)).into_any_element(),
+            (None, Some(error)) => p::text(error.clone(), 12.5, p::RED).p_4().into_any_element(),
             (None, None) => div()
-                .p(px(16.))
+                .p_4()
                 .child(crate::loading::loading_line(format!("board page run --arg run={}", self.run_id), cx))
                 .into_any_element(),
         };

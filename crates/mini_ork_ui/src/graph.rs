@@ -156,6 +156,19 @@ impl Model {
         self.cols.iter().flatten().collect()
     }
 
+    /// The node the run reached last: the furthest one in DAG order whose
+    /// state says it ran. Columns are stages, so the last stage holding a
+    /// non-pending node holds the most recent work — and on a live run that
+    /// is the node currently working. A page opened on a run puts this node
+    /// in front of the reader, the same detail a click on it would show.
+    pub(crate) fn last_ran(&self) -> Option<&Node> {
+        self.cols
+            .iter()
+            .flatten()
+            .filter(|n| matches!(n.state.as_str(), "done" | "running" | "failed"))
+            .last()
+    }
+
     fn max_rows(&self) -> usize {
         self.cols.iter().map(Vec::len).max().unwrap_or(1).max(1)
     }
@@ -596,7 +609,7 @@ impl MiniOrkGraph {
         let small = |id: &'static str, label: &'static str| {
             div()
                 .id(id)
-                .size(px(26.))
+                .size(rems_from_px(26_f32))
                 .flex()
                 .items_center()
                 .justify_center()
@@ -609,29 +622,29 @@ impl MiniOrkGraph {
         };
         h_flex()
             .flex_none()
-            .h(px(46.))
-            .gap(px(10.))
-            .pl(px(16.))
-            .pr(px(12.))
+            .h(rems_from_px(46_f32))
+            .gap_2p5()
+            .pl_4()
+            .pr_3()
             .bg(c(p::CHROME))
             .border_b_1()
             .border_color(c(p::BORDER))
             .whitespace_nowrap()
             .child(p::text(m, 13., mc))
-            .child(div().text_size(px(13.)).font(mono.clone()).text_color(c(p::TEXT)).child(self.model.run_id.clone()))
+            .child(div().text_size(rems_from_px(13_f32)).font(mono.clone()).text_color(c(p::TEXT)).child(self.model.run_id.clone()))
             .when(!self.model.recipe.is_empty(), |this| {
                 this.child(
                     div()
-                        .px(px(6.))
+                        .px_1p5()
                         .border_1()
                         .border_color(c(p::BORDER2))
-                        .text_size(px(11.))
+                        .text_size(rems_from_px(11_f32))
                         .font(mono.clone())
                         .text_color(c(p::MUTED))
                         .child(self.model.recipe.clone()),
                 )
             })
-            .child(p::text(self.model.title.clone(), 12.5, p::MUTED).max_w(px(260.)).truncate())
+            .child(p::text(self.model.title.clone(), 12.5, p::MUTED).max_w(rems_from_px(260_f32)).truncate())
             .children(
                 counts
                     .into_iter()
@@ -648,12 +661,12 @@ impl MiniOrkGraph {
                         let on = self.list_view == list;
                         div()
                             .id(SharedString::from(format!("graph-view-{label}")))
-                            .h(px(26.))
-                            .px(px(10.))
+                            .h(rems_from_px(26_f32))
+                            .px_2p5()
                             .flex()
                             .items_center()
                             .when(on, |this| this.bg(c(p::SELECTED)))
-                            .text_size(px(12.))
+                            .text_size(rems_from_px(12_f32))
                             .text_color(c(if on { p::TEXT } else { p::MUTED }))
                             .cursor_pointer()
                             .child(label)
@@ -665,30 +678,30 @@ impl MiniOrkGraph {
             )
             .child(
                 div()
-                    .w(px(190.))
-                    .h(px(28.))
-                    .px(px(9.))
+                    .w(rems_from_px(190_f32))
+                    .h_7()
+                    .px(rems_from_px(9_f32))
                     .flex()
                     .items_center()
                     .border_1()
                     .border_color(c(p::BORDER2))
                     .bg(c(p::BG))
-                    .text_size(px(12.5))
+                    .text_size(rems_from_px(12.5_f32))
                     .child(self.filter.render(window, cx)),
             )
             .when(!self.list_view, |this| {
                 this.child(
                     h_flex()
-                        .gap(px(2.))
+                        .gap_0p5()
                         .child(small("graph-zoom-out", "−").on_click(cx.listener(|this, _, _, cx| {
                             this.zoom = (this.zoom - 0.1).max(0.4);
                             cx.notify();
                         })))
                         .child(
                             div()
-                                .w(px(46.))
+                                .w(rems_from_px(46_f32))
                                 .text_center()
-                                .text_size(px(11.5))
+                                .text_size(rems_from_px(11.5_f32))
                                 .font(mono.clone())
                                 .text_color(c(p::MUTED))
                                 .child(format!("{}%", (self.zoom * 100.).round() as i32)),
@@ -700,14 +713,14 @@ impl MiniOrkGraph {
                         .child(
                             div()
                                 .id("graph-fit")
-                                .ml(px(4.))
-                                .h(px(26.))
-                                .px(px(9.))
+                                .ml_1()
+                                .h(rems_from_px(26_f32))
+                                .px(rems_from_px(9_f32))
                                 .flex()
                                 .items_center()
                                 .border_1()
                                 .border_color(c(p::BORDER2))
-                                .text_size(px(12.))
+                                .text_size(rems_from_px(12_f32))
                                 .text_color(c(p::TEXT))
                                 .cursor_pointer()
                                 .hover(|s| s.bg(c(p::HOVER)))
@@ -727,14 +740,14 @@ impl MiniOrkGraph {
             .child(
                 div()
                     .id("graph-close")
-                    .h(px(28.))
-                    .px(px(10.))
+                    .h_7()
+                    .px_2p5()
                     .flex()
                     .items_center()
                     .border_1()
                     .border_color(c(p::BORDER2))
                     .bg(c(p::HOVER))
-                    .text_size(px(12.5))
+                    .text_size(rems_from_px(12.5_f32))
                     .text_color(c(p::TEXT))
                     .cursor_pointer()
                     .child("✕ Close")
@@ -915,9 +928,9 @@ pub(crate) fn render_canvas(
                 h_flex()
                     .gap(px(5. * z))
                     .min_w_0()
-                    .child(p::text(p::lane_label(&n.lane), 11. * z, p::TEXT).truncate())
+                    .child(p::text_px(p::lane_label(&n.lane), 11. * z, p::TEXT).truncate())
                     .when(!n.role.is_empty(), |this| {
-                        this.child(p::text(format!("· {}", n.role), 11. * z, p::SUB).truncate())
+                        this.child(p::text_px(format!("· {}", n.role), 11. * z, p::SUB).truncate())
                     }),
             )
             .child(
@@ -1022,7 +1035,7 @@ impl MiniOrkGraph {
         let stages = self.model.cols.iter().enumerate().map(|(ci, col)| {
             let head = self.model.heads.get(ci).cloned().unwrap_or_default();
             v_flex()
-                .gap(px(4.))
+                .gap_1()
                 .child(p::text(format!("{} · {}", ci + 1, head).to_uppercase(), 10.5, p::DIM))
                 .children(col.iter().map(|n| {
                     let on = self.selected.as_deref() == Some(n.id.as_str());
@@ -1031,17 +1044,17 @@ impl MiniOrkGraph {
                     let id = n.id.clone();
                     h_flex()
                         .id(SharedString::from(format!("graph-row-{}", n.id)))
-                        .gap(px(10.))
-                        .px(px(12.))
-                        .py(px(8.))
+                        .gap_2p5()
+                        .px_3()
+                        .py_2()
                         .border_1()
                         .border_color(if on { c(p::BLUE) } else { c(p::BORDER2) })
                         .bg(c(if pending { 0x2a2e36 } else { 0x323843 }))
                         .when(!self.matches(n), |this| this.opacity(0.28))
                         .cursor_pointer()
                         .hover(|s| s.border_color(c(p::BLUE)))
-                        .text_size(px(12.5))
-                        .child(p::text(m, 11., mc).w(px(16.)).flex_none())
+                        .text_size(rems_from_px(12.5_f32))
+                        .child(p::text(m, 11., mc).w_4().flex_none())
                         .child(
                             div()
                                 .flex_1()
@@ -1053,18 +1066,18 @@ impl MiniOrkGraph {
                         )
                         .child(
                             h_flex()
-                                .w(px(120.))
+                                .w(rems_from_px(120_f32))
                                 .flex_none()
-                                .gap(px(5.))
+                                .gap(rems_from_px(5_f32))
                                 .child(p::lane_mark(&n.lane, 11.))
                                 .child(p::text(p::lane_label(&n.lane), 11.5, p::TEXT).truncate())
                                 .when(!n.role.is_empty(), |this| {
                                     this.child(p::text(format!("· {}", n.role), 11.5, p::SUB).truncate())
                                 }),
                         )
-                        .child(p::text(state_text(&n.state).to_string(), 11.5, mc).w(px(80.)).flex_none())
-                        .child(p::text(n.cost.clone(), 11.5, p::SUB).font(mono.clone()).w(px(60.)).flex_none())
-                        .child(p::text(n.dur.clone(), 11.5, p::SUB).font(mono.clone()).w(px(60.)).flex_none())
+                        .child(p::text(state_text(&n.state).to_string(), 11.5, mc).w_20().flex_none())
+                        .child(p::text(n.cost.clone(), 11.5, p::SUB).font(mono.clone()).w(rems_from_px(60_f32)).flex_none())
+                        .child(p::text(n.dur.clone(), 11.5, p::SUB).font(mono.clone()).w(rems_from_px(60_f32)).flex_none())
                         .on_click(cx.listener(move |this, _, _, cx| this.select(id.clone(), cx)))
                 }))
         });
@@ -1076,13 +1089,17 @@ impl MiniOrkGraph {
             .overflow_y_scroll()
             .bg(c(0x262a31))
             .child(
+                // Full width, left aligned, like every other mini-ork view:
+                // Zed's own panels lay content out `w_full()` and reserve a
+                // max width for individual controls, never for the column the
+                // page is read in.
                 v_flex()
-                    .max_w(px(880.))
-                    .mx_auto()
-                    .px(px(24.))
-                    .pt(px(20.))
-                    .pb(px(60.))
-                    .gap(px(14.))
+                    .w_full()
+                    .min_w_0()
+                    .px_6()
+                    .pt_5()
+                    .pb_12()
+                    .gap_3p5()
                     .children(stages),
             )
             .into_any_element()
@@ -1103,7 +1120,7 @@ impl MiniOrkGraph {
         let icon_button = |id: &'static str, glyph: &'static str| {
             div()
                 .id(id)
-                .size(px(24.))
+                .size_6()
                 .flex()
                 .items_center()
                 .justify_center()
@@ -1113,7 +1130,7 @@ impl MiniOrkGraph {
                 .child(glyph)
         };
         let agent = !matches!(node.lane.as_str(), "" | "shell" | "verifier" | "rollback" | "publisher");
-        let tabs = h_flex().id("node-tabs").overflow_x_scroll().gap(px(1.)).border_b_1().border_color(c(p::BORDER)).children(TABS.iter().map(|(key, label)| {
+        let tabs = h_flex().id("node-tabs").overflow_x_scroll().gap(rems_from_px(1_f32)).border_b_1().border_color(c(p::BORDER)).children(TABS.iter().map(|(key, label)| {
             let on = self.tab == *key;
             let label = match *key {
                 "stream" if node.state == "running" && live => if agent { "Live ●" } else { "Command ●" }.to_string(),
@@ -1125,9 +1142,9 @@ impl MiniOrkGraph {
             div()
                 .id(SharedString::from(format!("node-tab-{key}")))
                 .flex_none()
-                .px(px(8.))
-                .py(px(6.))
-                .text_size(px(12.5))
+                .px_2()
+                .py_1p5()
+                .text_size(rems_from_px(12.5_f32))
                 .text_color(c(if on { p::TEXT } else { p::SUB }))
                 .border_b_2()
                 .border_color(if on { c(p::BLUE) } else { p::ca(0x00000000) })
@@ -1137,18 +1154,18 @@ impl MiniOrkGraph {
         }));
         let header = v_flex()
             .flex_none()
-            .px(px(14.))
-            .pt(px(12.))
-            .gap(px(8.))
+            .px_3p5()
+            .pt_3()
+            .gap_2()
             .child(
                 h_flex()
-                    .gap(px(8.))
+                    .gap_2()
                     .child(p::text(m, 13., mc))
                     .child(
                         div()
                             .min_w_0()
                             .truncate()
-                            .text_size(px(14.))
+                            .text_size(rems_from_px(14_f32))
                             .font_weight(gpui::FontWeight::SEMIBOLD)
                             .text_color(c(p::TEXT))
                             .child(node.label.clone()),
@@ -1166,7 +1183,7 @@ impl MiniOrkGraph {
             )
             .child(
                 h_flex()
-                    .gap(px(6.))
+                    .gap_1p5()
                     .child(p::lane_mark(&node.lane, 13.))
                     .child(p::text(
                         format!("{} · stage {} of {} · {}", if node.role.is_empty() { "node" } else { &node.role }, node.col + 1, stage_count, head),
@@ -1178,7 +1195,7 @@ impl MiniOrkGraph {
 
         let body = match (&detail, &self.detail_error) {
             (_, Some(error)) if error.contains("invalid choice") => div()
-                .p(px(14.))
+                .p_3p5()
                 .child(p::text(
                     format!("This mini-ork can't show “{}” for a node yet — it arrives with the next mini-ork update.", self.tab),
                     12.5,
@@ -1186,11 +1203,11 @@ impl MiniOrkGraph {
                 ))
                 .into_any_element(),
             (_, Some(error)) => div()
-                .p(px(14.))
+                .p_3p5()
                 .child(self.texts.text("node-error", error, Look::new(12.5, c(p::RED)).mono(true), cx))
                 .into_any_element(),
             (None, None) => div()
-                .p(px(14.))
+                .p_3p5()
                 .child(crate::loading::loading_line(format!("board node {} {} --view {}", self.model.run_id, node.id, self.tab), cx))
                 .into_any_element(),
             (Some(detail), None) if is_stream => self.render_stream(node, detail, live, window, cx),
@@ -1220,7 +1237,7 @@ impl MiniOrkGraph {
             // In a node tab the inspector takes the space under the DAG strip;
             // in the full-screen graph it is a fixed-width side panel.
             .when(self.tab_mode, |this| this.w_full().flex_1().min_h_0())
-            .when(!self.tab_mode, |this| this.flex_none().w(px(600.)).h_full().border_l_1())
+            .when(!self.tab_mode, |this| this.flex_none().w(rems_from_px(600_f32)).h_full().border_l_1())
             .border_color(c(p::BORDER))
             .bg(c(p::CHROME))
             .child(header)
@@ -1229,9 +1246,9 @@ impl MiniOrkGraph {
                 h_flex()
                     .flex_none()
                     .flex_wrap()
-                    .gap(px(6.))
-                    .px(px(14.))
-                    .py(px(10.))
+                    .gap_1p5()
+                    .px_3p5()
+                    .py_2p5()
                     .border_t_1()
                     .border_color(c(p::BORDER))
                     .children(acts),
@@ -1266,16 +1283,16 @@ impl MiniOrkGraph {
             let open = self.art_open.contains(&open_key);
             let mut row = h_flex()
                 .id(SharedString::from(format!("{key}-file-{i}")))
-                .gap(px(10.))
-                .px(px(6.))
-                .py(px(3.))
+                .gap_2p5()
+                .px_1p5()
+                .py(rems_from_px(3_f32))
                 .hover(|s| s.bg(c(p::HOVER)))
                 .child(
                     p::text(if slice.is_none() { " " } else if open { "▾" } else { "▸" }, 11., p::SUB)
-                        .w(px(10.))
+                        .w_2p5()
                         .flex_none(),
                 )
-                .child(div().flex_1().min_w_0().text_size(px(12.)).font(mono.clone()).text_color(c(p::TEXT)).truncate().child(path.clone()))
+                .child(div().flex_1().min_w_0().text_size(rems_from_px(12_f32)).font(mono.clone()).text_color(c(p::TEXT)).truncate().child(path.clone()))
                 .child(
                     DiffStat::new(
                         SharedString::from(format!("{key}-file-diff-{i}")),
@@ -1313,7 +1330,7 @@ impl MiniOrkGraph {
                 if total > 400 {
                     lines.push(serde_json::json!({ "t": format!("… +{} more lines", total - 400), "c": "muted" }));
                 }
-                rows.push(div().pl(px(16.)).child(crate::page::code_box(&self.texts, &format!("{key}-diff-{i}"), lines, cx)).into_any_element());
+                rows.push(div().pl_4().child(crate::page::code_box(&self.texts, &format!("{key}-diff-{i}"), lines, cx)).into_any_element());
             }
         }
         rows
@@ -1344,8 +1361,8 @@ impl MiniOrkGraph {
             div()
                 .grid()
                 .grid_cols(2)
-                .gap_x(px(14.))
-                .gap_y(px(6.))
+                .gap_x_3p5()
+                .gap_y_1p5()
                 .children(facts.iter().enumerate().map(|(i, f)| {
                     v_flex()
                         .min_w_0()
@@ -1361,7 +1378,7 @@ impl MiniOrkGraph {
         let result_el = (!items.is_empty()).then(|| {
             let title = str_of(&result, "title");
             v_flex()
-                .gap(px(2.))
+                .gap_0p5()
                 .child(heading(if title.is_empty() { "Result" } else { &title }))
                 .children(items.iter().enumerate().map(|(i, it)| {
                     let sub = str_of(it, "sub");
@@ -1369,11 +1386,11 @@ impl MiniOrkGraph {
                     let row = h_flex()
                         .id(SharedString::from(format!("ov-res-{i}")))
                         .items_start()
-                        .gap(px(8.))
-                        .py(px(4.))
+                        .gap_2()
+                        .py_1()
                         .border_b_1()
                         .border_color(c(0x353a44))
-                        .child(p::text(str_of(it, "m"), 12.5, p::SUB).text_color(p::named(&str_of(it, "mc"))).w(px(12.)).flex_none())
+                        .child(p::text(str_of(it, "m"), 12.5, p::SUB).text_color(p::named(&str_of(it, "mc"))).w_3().flex_none())
                         .child(
                             v_flex()
                                 .min_w_0()
@@ -1387,17 +1404,17 @@ impl MiniOrkGraph {
         });
         let overview_diff = str_of(detail, "diff");
         let file_rows = self.file_rows("ov", &files, &overview_diff, cx);
-        let files_el = (!files.is_empty()).then(|| v_flex().gap(px(2.)).child(heading("Files")).children(file_rows));
+        let files_el = (!files.is_empty()).then(|| v_flex().gap_0p5().child(heading("Files")).children(file_rows));
         let final_el = (!final_text.is_empty()).then(|| {
-            v_flex().gap(px(4.)).child(heading("Final message")).child(
+            v_flex().gap_1().child(heading("Final message")).child(
                 self.texts.nested_scroll(
                     "ov-final",
                     div()
                         .id("ov-final")
-                        .max_h(px(360.))
+                        .max_h(rems_from_px(360_f32))
                         .overflow_y_scroll()
-                        .px(px(10.))
-                        .py(px(8.))
+                        .px_2p5()
+                        .py_2()
                         .bg(c(p::BG))
                         .border_1()
                         .border_color(c(p::BORDER))
@@ -1406,7 +1423,7 @@ impl MiniOrkGraph {
             )
         });
         let links_el = (!links.is_empty()).then(|| {
-            h_flex().flex_wrap().gap(px(6.)).children(links.iter().enumerate().map(|(i, l)| {
+            h_flex().flex_wrap().gap_1p5().children(links.iter().enumerate().map(|(i, l)| {
                 p::button(
                     SharedString::from(format!("ov-link-{i}")),
                     str_of(l, "label"),
@@ -1423,11 +1440,11 @@ impl MiniOrkGraph {
             .flex_1()
             .min_h_0()
             .overflow_y_scroll()
-            .px(px(14.))
-            .py(px(12.))
+            .px_3p5()
+            .py_3()
             .child(
                 v_flex()
-                    .gap(px(14.))
+                    .gap_3p5()
                     .children(headline_el)
                     .children(facts_el)
                     .children(result_el)
@@ -1446,7 +1463,7 @@ impl MiniOrkGraph {
     fn render_artifacts(&self, detail: &Value, cx: &mut Context<Self>) -> AnyElement {
         let mono = p::mono_font(cx);
         let section = |title: &str, list: Vec<Value>, empty: &str, key: &str, cx: &mut Context<Self>| {
-            let mut col = v_flex().gap(px(2.)).child(p::text(title.to_uppercase(), 11., p::SUB));
+            let mut col = v_flex().gap_0p5().child(p::text(title.to_uppercase(), 11., p::SUB));
             if list.is_empty() {
                 col = col.child(p::text(empty.to_string(), 12., p::SUB));
             }
@@ -1459,13 +1476,13 @@ impl MiniOrkGraph {
                 col = col.child(
                     h_flex()
                         .id(SharedString::from(format!("art-{key}-{i}")))
-                        .gap(px(8.))
-                        .px(px(6.))
-                        .py(px(4.))
+                        .gap_2()
+                        .px_1p5()
+                        .py_1()
                         .cursor_pointer()
                         .hover(|s| s.bg(c(p::HOVER)))
-                        .child(p::text(if open { "▾" } else { "▸" }, 11., p::SUB).w(px(10.)).flex_none())
-                        .child(div().flex_1().min_w_0().text_size(px(12.)).font(mono.clone()).text_color(c(p::TEXT)).truncate().child(str_of(a, "name")))
+                        .child(p::text(if open { "▾" } else { "▸" }, 11., p::SUB).w_2p5().flex_none())
+                        .child(div().flex_1().min_w_0().text_size(rems_from_px(12_f32)).font(mono.clone()).text_color(c(p::TEXT)).truncate().child(str_of(a, "name")))
                         .when(!from.is_empty(), |this| this.child(p::text(from.clone(), 11., p::SUB).flex_none()))
                         .child(p::text(human_size(size), 11., p::DIM).font(mono.clone()).flex_none())
                         .child(p::button(SharedString::from(format!("art-open-{key}-{i}")), "Open", "ghost", 20., 11., Some(Box::new(self.opener(path.clone())))))
@@ -1484,7 +1501,7 @@ impl MiniOrkGraph {
                     } else {
                         preview.lines().map(|l| serde_json::json!({ "t": l, "c": "body" })).collect()
                     };
-                    col = col.child(div().pl(px(16.)).child(crate::page::code_box(&self.texts, &format!("art-pv-{key}-{i}"), lines, cx)));
+                    col = col.child(div().pl_4().child(crate::page::code_box(&self.texts, &format!("art-pv-{key}-{i}"), lines, cx)));
                 }
             }
             col
@@ -1496,9 +1513,9 @@ impl MiniOrkGraph {
             .flex_1()
             .min_h_0()
             .overflow_y_scroll()
-            .px(px(14.))
-            .py(px(12.))
-            .child(v_flex().gap(px(16.)).child(inputs).child(outputs))
+            .px_3p5()
+            .py_3()
+            .child(v_flex().gap_4().child(inputs).child(outputs))
             .into_any_element()
     }
 
@@ -1531,7 +1548,7 @@ impl MiniOrkGraph {
         let agent_edits = arr(detail, "agent_edits");
         let agent_note = str_of(detail, "agent_edits_note");
         let edits_section = (!agent_edits.is_empty() || !agent_note.is_empty()).then(|| {
-            let mut col = v_flex().gap(px(6.)).child(heading(format!("Edited by {}", node.label)));
+            let mut col = v_flex().gap_1p5().child(heading(format!("Edited by {}", node.label)));
             if agent_edits.is_empty() {
                 col = col.child(p::text(agent_note.clone(), 12., p::SUB));
             }
@@ -1541,10 +1558,10 @@ impl MiniOrkGraph {
                     .child(
                         h_flex()
                             .id(SharedString::from(format!("edit-{i}")))
-                            .gap(px(8.))
+                            .gap_2()
                             .cursor_pointer()
                             .on_click(open_path(path.clone()))
-                            .child(div().flex_1().min_w_0().text_size(px(12.)).font(mono.clone()).text_color(c(p::TEXT)).truncate().child(path.clone()))
+                            .child(div().flex_1().min_w_0().text_size(rems_from_px(12_f32)).font(mono.clone()).text_color(c(p::TEXT)).truncate().child(path.clone()))
                             .child(p::text(str_of(e, "tool"), 11., p::SUB))
                             .child(
                                 DiffStat::new(
@@ -1561,7 +1578,7 @@ impl MiniOrkGraph {
         });
         let result_section = (!result_items.is_empty()).then(|| {
             v_flex()
-                .gap(px(4.))
+                .gap_1()
                 .child(heading(if str_of(&result, "title").is_empty() { "Result".into() } else { str_of(&result, "title") }))
                 .children(result_items.iter().enumerate().map(|(i, it)| {
                     let sub = str_of(it, "sub");
@@ -1569,11 +1586,11 @@ impl MiniOrkGraph {
                     let row = h_flex()
                         .id(SharedString::from(format!("result-{i}")))
                         .items_start()
-                        .gap(px(8.))
-                        .py(px(4.))
+                        .gap_2()
+                        .py_1()
                         .border_b_1()
                         .border_color(c(0x353a44))
-                        .child(p::text(str_of(it, "m"), 12.5, p::SUB).text_color(p::named(&str_of(it, "mc"))).w(px(12.)).flex_none())
+                        .child(p::text(str_of(it, "m"), 12.5, p::SUB).text_color(p::named(&str_of(it, "mc"))).w_3().flex_none())
                         .child(
                             v_flex()
                                 .min_w_0()
@@ -1592,7 +1609,7 @@ impl MiniOrkGraph {
 
         let changed_rows = self.file_rows("changed", &files, &diff, cx);
         let files_section = v_flex()
-            .gap(px(2.))
+            .gap_0p5()
             .child(heading(format!("Files changed after {}", node.label)))
             .when(files.is_empty(), |this| {
                 this.child(p::text(if diff_note.is_empty() { "No code changed by this point.".to_string() } else { diff_note.clone() }, 12., p::SUB))
@@ -1605,7 +1622,7 @@ impl MiniOrkGraph {
             let name = format!("mini-ork-{}-{}.patch", self.model.run_id, node.id);
             let workspace = self.workspace.clone();
             v_flex()
-                .gap(px(4.))
+                .gap_1()
                 .child(
                     h_flex()
                         .child(heading("Diff".into()))
@@ -1633,7 +1650,7 @@ impl MiniOrkGraph {
         });
 
         let commits_section = v_flex()
-            .gap(px(2.))
+            .gap_0p5()
             .child(heading("Commits".into()))
             .when(commits.is_empty(), |this| {
                 this.child(p::text(if commits_note.is_empty() { "No commits from this run.".to_string() } else { commits_note.clone() }, 12., p::SUB))
@@ -1642,9 +1659,9 @@ impl MiniOrkGraph {
                 let sha = str_of(cm, "sha");
                 let short: String = sha.chars().take(8).collect();
                 h_flex()
-                    .gap(px(10.))
-                    .px(px(6.))
-                    .py(px(4.))
+                    .gap_2p5()
+                    .px_1p5()
+                    .py_1()
                     .child(p::text(short, 12., p::YELLOW).font(mono.clone()).flex_none())
                     .child(div().flex_1().min_w_0().child(self.texts.text(format!("commit-{i}"), str_of(cm, "subject"), Look::new(12.5, c(p::TEXT)), cx)))
                     .child(p::text(str_of(cm, "when"), 11.5, p::SUB).flex_none())
@@ -1655,11 +1672,11 @@ impl MiniOrkGraph {
             .flex_1()
             .min_h_0()
             .overflow_y_scroll()
-            .px(px(14.))
-            .py(px(12.))
+            .px_3p5()
+            .py_3()
             .child(
                 v_flex()
-                    .gap(px(14.))
+                    .gap_3p5()
                     .children(edits_section)
                     .children(result_section)
                     .child(files_section)
@@ -1678,16 +1695,16 @@ impl MiniOrkGraph {
             .flex_1()
             .min_h_0()
             .overflow_y_scroll()
-            .px(px(14.))
-            .py(px(12.))
+            .px_3p5()
+            .py_3()
             .child(
                 v_flex()
-                    .gap(px(12.))
-                    .child(h_flex().flex_wrap().gap(px(8.)).children(kv.iter().map(|k| {
+                    .gap_3()
+                    .child(h_flex().flex_wrap().gap_2().children(kv.iter().map(|k| {
                         v_flex()
-                            .w(px(186.))
-                            .px(px(9.))
-                            .py(px(6.))
+                            .w(rems_from_px(186_f32))
+                            .px(rems_from_px(9_f32))
+                            .py_1p5()
                             .bg(c(p::BG))
                             .border_1()
                             .border_color(c(p::BORDER))
@@ -1704,7 +1721,7 @@ impl MiniOrkGraph {
                         let workspace = self.workspace.clone();
                         this.child(
                             v_flex()
-                                .gap(px(4.))
+                                .gap_1()
                                 .child(
                                     h_flex()
                                         .child(p::text(str_of(&doc, "title").to_uppercase(), 11., p::SUB))
@@ -1732,10 +1749,10 @@ impl MiniOrkGraph {
                                         "fact-md",
                                         div()
                                             .id("fact-md")
-                                            .max_h(px(480.))
+                                            .max_h(rems_from_px(480_f32))
                                             .overflow_y_scroll()
-                                            .px(px(10.))
-                                            .py(px(8.))
+                                            .px_2p5()
+                                            .py_2()
                                             .bg(c(p::BG))
                                             .border_1()
                                             .border_color(c(p::BORDER))
@@ -1747,7 +1764,7 @@ impl MiniOrkGraph {
                     .when(!block.is_empty(), |this| {
                         this.child(
                             v_flex()
-                                .gap(px(4.))
+                                .gap_1()
                                 .child(p::text(str_of(detail, "block_title").to_uppercase(), 11., p::SUB))
                                 .child(crate::page::code_box(&self.texts, "fact-block", block.clone(), cx)),
                         )
@@ -1755,17 +1772,17 @@ impl MiniOrkGraph {
                     .when(!list.is_empty(), |this| {
                         this.child(
                             v_flex()
-                                .gap(px(4.))
+                                .gap_1()
                                 .child(p::text(str_of(detail, "list_title").to_uppercase(), 11., p::SUB))
                                 .children(list.iter().enumerate().map(|(i, it)| {
                                     let sub = str_of(it, "sub");
                                     h_flex()
                                         .items_start()
-                                        .gap(px(8.))
-                                        .py(px(4.))
+                                        .gap_2()
+                                        .py_1()
                                         .border_b_1()
                                         .border_color(c(0x353a44))
-                                        .child(p::text(str_of(it, "m"), 12.5, p::SUB).w(px(12.)).flex_none())
+                                        .child(p::text(str_of(it, "m"), 12.5, p::SUB).w_3().flex_none())
                                         .child(
                                             v_flex()
                                                 .min_w_0()
@@ -1815,14 +1832,14 @@ impl MiniOrkGraph {
                 let on = self.stream_filter == key;
                 div()
                     .id(SharedString::from(format!("stream-filter-{key}")))
-                    .h(px(20.))
-                    .px(px(7.))
+                    .h_5()
+                    .px(rems_from_px(7_f32))
                     .flex()
                     .items_center()
                     .border_1()
                     .border_color(c(if on { p::DIM } else { p::BORDER2 }))
                     .when(on, |this| this.bg(c(p::SELECTED)))
-                    .text_size(px(11.))
+                    .text_size(rems_from_px(11_f32))
                     .text_color(c(if on { p::TEXT } else { p::MUTED }))
                     .cursor_pointer()
                     .child(format!("{label} {}", count(key)))
@@ -1831,7 +1848,7 @@ impl MiniOrkGraph {
         let nav = |id: &'static str, glyph: &'static str, tip: &'static str, to: NavTo| {
             div()
                 .id(id)
-                .size(px(22.))
+                .size(rems_from_px(22_f32))
                 .flex()
                 .items_center()
                 .justify_center()
@@ -1848,10 +1865,10 @@ impl MiniOrkGraph {
             .border_color(c(p::ROW_RULE))
             .child(
                 h_flex()
-                    .gap(px(8.))
-                    .px(px(14.))
-                    .pt(px(7.))
-                    .text_size(px(11.5))
+                    .gap_2()
+                    .px_3p5()
+                    .pt(rems_from_px(7_f32))
+                    .text_size(rems_from_px(11.5_f32))
                     .font(mono.clone())
                     .child(p::text("●", 11.5, status_colour))
                     .child(p::text(status, 11.5, status_colour))
@@ -1866,18 +1883,18 @@ impl MiniOrkGraph {
             )
             .child(
                 h_flex()
-                    .gap(px(5.))
-                    .px(px(14.))
-                    .py(px(6.))
+                    .gap(rems_from_px(5_f32))
+                    .px_3p5()
+                    .py_1p5()
                     .children(filters)
                     .child(div().flex_1())
                     .child(nav("stream-first", "⤒", "First entry", NavTo::First))
                     .child(nav("stream-prev", "↑", "Previous entry", NavTo::Prev))
                     .child(
                         div()
-                            .min_w(px(52.))
+                            .min_w(rems_from_px(52_f32))
                             .text_center()
-                            .text_size(px(11.))
+                            .text_size(rems_from_px(11_f32))
                             .font(mono.clone())
                             .text_color(c(p::SUB))
                             .child(match position {
@@ -1898,8 +1915,8 @@ impl MiniOrkGraph {
                 let on = self.stream_cursor == Some(i);
                 div()
                     .id(SharedString::from(format!("stream-entry-{i}")))
-                    .pl(px(8.))
-                    .py(px(2.))
+                    .pl_2()
+                    .py_0p5()
                     .border_l_2()
                     .border_color(if on { c(p::BLUE) } else { p::ca(0x00000000) })
                     .when(on, |this| this.bg(p::ca(0x74ade80f)))
@@ -1919,13 +1936,13 @@ impl MiniOrkGraph {
             .track_scroll(&self.stream_scroll)
             .flex()
             .flex_col()
-            .gap(px(9.))
-            .px(px(12.))
-            .pt(px(12.))
-            .pb(px(18.))
+            .gap(rems_from_px(9_f32))
+            .px_3()
+            .pt_3()
+            .pb(rems_from_px(18_f32))
             .font(mono.clone())
-            .text_size(px(12.5))
-            .line_height(px(20.))
+            .text_size(rems_from_px(12.5_f32))
+            .line_height(rems_from_px(20_f32))
             .text_color(c(p::TEXT))
             .when(render_from > 0, |this| {
                 let hidden = render_from;
@@ -1933,9 +1950,9 @@ impl MiniOrkGraph {
                     div()
                         .id("stream-earlier")
                         .flex_none()
-                        .py(px(6.))
+                        .py_1p5()
                         .text_center()
-                        .text_size(px(11.5))
+                        .text_size(rems_from_px(11.5_f32))
                         .text_color(c(p::BLUE))
                         .cursor_pointer()
                         .hover(|s| s.underline())
@@ -1949,7 +1966,7 @@ impl MiniOrkGraph {
             .children(entries)
             .when(visible.is_empty(), |this| {
                 this.child(
-                    div().py(px(30.)).w_full().text_center().child(p::text(
+                    div().py(rems_from_px(30_f32)).w_full().text_center().child(p::text(
                         if node.state == "pending" {
                             "Not dispatched yet."
                         } else if self.stream.is_empty() {
@@ -1965,8 +1982,8 @@ impl MiniOrkGraph {
             .when(running, |this| {
                 this.child(
                     h_flex()
-                        .gap(px(9.))
-                        .pl(px(10.))
+                        .gap(rems_from_px(9_f32))
+                        .pl_2p5()
                         .text_color(c(p::ORANGE))
                         .child(
                             Icon::new(IconName::LoadCircle)
@@ -1989,14 +2006,14 @@ impl MiniOrkGraph {
                 };
                 div()
                     .id(SharedString::from(format!("sev-{sev}")))
-                    .h(px(22.))
-                    .px(px(7.))
+                    .h(rems_from_px(22_f32))
+                    .px(rems_from_px(7_f32))
                     .flex()
                     .items_center()
                     .border_1()
                     .border_color(c(if on { p::DIM } else { p::BORDER2 }))
                     .when(on, |this| this.bg(c(p::SELECTED)))
-                    .text_size(px(11.))
+                    .text_size(rems_from_px(11_f32))
                     .text_color(c(colour))
                     .cursor_pointer()
                     .child(sev)
@@ -2007,15 +2024,15 @@ impl MiniOrkGraph {
             });
             v_flex()
                 .flex_none()
-                .px(px(14.))
-                .pt(px(10.))
-                .pb(px(12.))
-                .gap(px(6.))
+                .px_3p5()
+                .pt_2p5()
+                .pb_3()
+                .gap_1p5()
                 .child(
                     h_flex()
-                        .gap(px(8.))
-                        .px(px(10.))
-                        .py(px(6.))
+                        .gap_2()
+                        .px_2p5()
+                        .py_1p5()
                         .border_1()
                         .border_color(c(p::DIM))
                         .bg(c(0x262a31))
@@ -2026,13 +2043,13 @@ impl MiniOrkGraph {
                             }
                         }))
                         .child(p::text(">", 12.5, p::MUTED).font(mono.clone()))
-                        .child(div().flex_1().min_w_0().text_size(px(12.5)).child(self.steer.render(window, cx)))
+                        .child(div().flex_1().min_w_0().text_size(rems_from_px(12.5_f32)).child(self.steer.render(window, cx)))
                         .children(sevs),
                 )
                 .child(
                     h_flex()
-                        .gap(px(12.))
-                        .text_size(px(11.))
+                        .gap_3()
+                        .text_size(rems_from_px(11_f32))
                         .font(mono.clone())
                         .text_color(c(p::DIM))
                         .child("⏵⏵ attached")
@@ -2044,8 +2061,8 @@ impl MiniOrkGraph {
             let note = str_of(detail, "done_note");
             div()
                 .flex_none()
-                .px(px(14.))
-                .py(px(9.))
+                .px_3p5()
+                .py(rems_from_px(9_f32))
                 .border_t_1()
                 .border_color(c(p::ROW_RULE))
                 .when(!note.is_empty(), |this| this.child(p::text(note, 12., p::SUB)))
@@ -2088,15 +2105,15 @@ impl MiniOrkGraph {
             "user" | "steer" => {
                 let steer = kind == "steer";
                 div()
-                    .px(px(10.))
-                    .py(px(7.))
+                    .px_2p5()
+                    .py(rems_from_px(7_f32))
                     .border_1()
                     .border_color(if steer { p::ca(0xdec18480) } else { c(p::BORDER2) })
                     .bg(if steer { p::ca(0xdec18410) } else { c(0x262a31) })
                     .child(
                         h_flex()
                             .items_start()
-                            .gap(px(6.))
+                            .gap_1p5()
                             .child(p::text(">", 12.5, if steer { p::YELLOW } else { p::SUB }))
                             .child(
                                 self.texts.nested_scroll(
@@ -2105,7 +2122,7 @@ impl MiniOrkGraph {
                                         .id(SharedString::from(key("box-scroll")))
                                         .flex_1()
                                         .min_w_0()
-                                        .max_h(px(360.))
+                                        .max_h(rems_from_px(360_f32))
                                         .overflow_y_scroll()
                                         .child(if steer {
                                             self.texts.text(key("box"), format!("{head}{arg}"), Look::new(12.5, c(p::YELLOW)).mono(true), cx)
@@ -2119,7 +2136,7 @@ impl MiniOrkGraph {
                     .into_any_element()
             }
             "note" => div()
-                .pl(px(20.))
+                .pl_5()
                 .child(self.texts.text(key("note"), format!("⎿  {arg}"), Look::new(11.5, c(p::DIM)).mono(true), cx))
                 .into_any_element(),
             _ => {
@@ -2147,7 +2164,7 @@ impl MiniOrkGraph {
                         };
                         let colour = str_of(l, "c");
                         div()
-                            .px(px(6.))
+                            .px_1p5()
                             .when_some(bg, |this, bg| this.bg(bg))
                             .child(self.texts.text(
                                 key(&format!("l{i}")),
@@ -2163,8 +2180,8 @@ impl MiniOrkGraph {
                     line_els.push(
                         div()
                             .id(SharedString::from(format!("e{index}-more")))
-                            .px(px(6.))
-                            .text_size(px(11.5))
+                            .px_1p5()
+                            .text_size(rems_from_px(11.5_f32))
                             .text_color(c(p::BLUE))
                             .cursor_pointer()
                             .hover(|s| s.underline())
@@ -2189,7 +2206,7 @@ impl MiniOrkGraph {
                                 div()
                                     .id(SharedString::from(key("text-scroll")))
                                     .w_full()
-                                    .max_h(px(360.))
+                                    .max_h(rems_from_px(360_f32))
                                     .overflow_y_scroll()
                                     .child(self.texts.markdown(key("arg"), &arg_text, Look::new(12.5, c(p::TEXT)), cx)),
                             )
@@ -2207,8 +2224,8 @@ impl MiniOrkGraph {
                         this.child(
                             h_flex()
                                 .items_start()
-                                .gap(px(9.))
-                                .child(div().flex_none().w(px(12.)).text_size(px(11.)).text_color(c(dot_colour)).child(dot))
+                                .gap(rems_from_px(9_f32))
+                                .child(div().flex_none().w_3().text_size(rems_from_px(11_f32)).text_color(c(dot_colour)).child(dot))
                                 .child(v_flex().flex_1().min_w_0().children(head_el).children(arg_el)),
                         )
                     })
@@ -2216,10 +2233,10 @@ impl MiniOrkGraph {
                         this.child(
                             h_flex()
                                 .items_start()
-                                .gap(px(8.))
+                                .gap_2()
                                 .mt(px(2.))
                                 .pl(px(if kind == "out" { 22. } else { 0. }))
-                                .child(div().flex_none().w(px(12.)).text_color(c(p::DIM)).child("⎿"))
+                                .child(div().flex_none().w_3().text_color(c(p::DIM)).child("⎿"))
                                 .child(v_flex().flex_1().min_w_0().children(line_els)),
                         )
                     })

@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 use gpui::{AnyElement, App, ClickEvent, Context, KeyDownEvent, SharedString, Window, px};
 use serde_json::Value;
-use ui::prelude::*;
+use ui::{DiffStat, Divider, DividerColor, Indicator, prelude::*};
 
 use crate::{
     components::{card, diff_lines, diff_sections, section_for, status_mark},
@@ -32,20 +32,20 @@ impl MiniOrkPage {
         let accent = div()
             .absolute()
             .left_0()
-            .top(px(p::RADIUS_CARD))
-            .bottom(px(p::RADIUS_CARD))
-            .w(px(3.))
+            .top(rems_from_px(p::RADIUS_CARD))
+            .bottom(rems_from_px(p::RADIUS_CARD))
+            .w(rems_from_px(3_f32))
             .rounded_full()
             .bg(tone_colour);
 
         let row1 = h_flex()
-            .gap(px(10.))
+            .gap_2p5()
             .items_center()
             .flex_wrap()
             .child(
                 div()
                     .flex_none()
-                    .text_size(px(14.))
+                    .text_size(rems_from_px(14_f32))
                     .text_color(tone_colour)
                     .child(SharedString::from(icon)),
             )
@@ -62,7 +62,7 @@ impl MiniOrkPage {
                     .flex_1()
                     .min_w(px(0.))
                     .justify_end()
-                    .gap(px(6.))
+                    .gap_1p5()
                     .flex_wrap()
                     .children(counts.iter().enumerate().map(|(i, item)| {
                         let colour = named(&str_of(item, "c"));
@@ -70,19 +70,19 @@ impl MiniOrkPage {
                         h_flex()
                             .flex_none()
                             .id(SharedString::from(format!("s{index}-count{i}")))
-                            .h(px(18.))
-                            .px(px(8.))
+                            .h(rems_from_px(18_f32))
+                            .px_2()
                             .items_center()
                             .rounded_full()
                             .bg(tint)
-                            .text_size(px(p::BADGE))
+                            .text_size(rems_from_px(p::BADGE))
                             .text_color(colour)
                             .child(str_of(item, "t"))
                             .into_any_element()
                     })),
             );
 
-        let mut body = v_flex().relative().gap(px(8.)).child(row1);
+        let mut body = v_flex().relative().gap_2().child(row1);
 
         if !detail.is_empty() {
             body = body.child(self.texts.text(
@@ -94,7 +94,7 @@ impl MiniOrkPage {
         }
 
         if !actions.is_empty() || !menu.is_empty() {
-            let mut btn_row = h_flex().gap(px(6.)).flex_wrap().items_center();
+            let mut btn_row = h_flex().gap_1p5().flex_wrap().items_center();
             for (i, b) in actions.iter().enumerate() {
                 btn_row = btn_row.child(
                     self.button(SharedString::from(format!("s{index}-triage-a{i}")), b, 24., 12., cx),
@@ -102,7 +102,7 @@ impl MiniOrkPage {
             }
             if !menu.is_empty() {
                 if !actions.is_empty() {
-                    btn_row = btn_row.child(div().w(px(1.)).h(px(16.)).bg(c(p::BORDER2)));
+                    btn_row = btn_row.child(Divider::vertical().h_4().color(DividerColor::Border));
                 }
                 for (i, b) in menu.iter().enumerate() {
                     let mut ghost = b.clone();
@@ -121,7 +121,7 @@ impl MiniOrkPage {
             .relative()
             .flex_1()
             .min_w_0()
-            .p(px(14.))
+            .p_3p5()
             .child(accent)
             .child(body)
             .into_any_element()
@@ -135,12 +135,12 @@ impl MiniOrkPage {
         let tone_colour = named(&tone);
 
         let head = h_flex()
-            .gap(px(8.))
+            .gap_2()
             .items_center()
             .child(
                 div()
                     .flex_none()
-                    .text_size(px(13.))
+                    .text_size(rems_from_px(13_f32))
                     .font_weight(gpui::FontWeight::SEMIBOLD)
                     .text_color(tone_colour)
                     .child(SharedString::from("?")),
@@ -154,7 +154,7 @@ impl MiniOrkPage {
                 ))
             });
 
-        let mut body = v_flex().gap(px(10.)).child(head);
+        let mut body = v_flex().gap_2p5().child(head);
 
         if !body_md.is_empty() {
             body = body.child(self.texts.markdown(
@@ -169,7 +169,7 @@ impl MiniOrkPage {
             body = body.child(
                 h_flex()
                     .justify_end()
-                    .gap(px(6.))
+                    .gap_1p5()
                     .flex_wrap()
                     .children(actions.iter().enumerate().map(|(i, b)| {
                         self.button(SharedString::from(format!("s{index}-callout-a{i}")), b, 24., 12., cx)
@@ -178,7 +178,7 @@ impl MiniOrkPage {
         }
 
         card()
-            .p(px(12.))
+            .p_3()
             .flex_1()
             .min_w_0()
             .border_color(tone_colour.opacity(0.45))
@@ -194,16 +194,16 @@ impl MiniOrkPage {
         let meta = arr(s, "meta");
         let criteria = arr(s, "criteria");
 
-        let mut content = v_flex().gap(px(10.));
+        let mut content = v_flex().gap_2p5();
 
         if !title.is_empty() || pill.is_some() {
-            let mut title_row = h_flex().gap(px(10.)).items_center().flex_wrap();
+            let mut title_row = h_flex().gap_2p5().items_center().flex_wrap();
             if !title.is_empty() {
                 title_row = title_row.child(
                     div()
                         .flex_1()
                         .min_w(px(0.))
-                        .text_size(px(11.))
+                        .text_size(rems_from_px(11_f32))
                         .font_weight(gpui::FontWeight::SEMIBOLD)
                         .text_color(c(p::MUTED))
                         .child(SharedString::from(title.to_uppercase())),
@@ -219,12 +219,12 @@ impl MiniOrkPage {
                     title_row = title_row.child(
                         h_flex()
                             .flex_none()
-                            .h(px(18.))
-                            .px(px(8.))
+                            .h(rems_from_px(18_f32))
+                            .px_2()
                             .items_center()
                             .rounded_full()
                             .bg(colour.opacity(0.15))
-                            .text_size(px(p::PILL))
+                            .text_size(rems_from_px(p::PILL))
                             .text_color(colour)
                             .child(SharedString::from(t.to_uppercase())),
                     );
@@ -245,17 +245,17 @@ impl MiniOrkPage {
         if !criteria.is_empty() {
             content = content.child(
                 v_flex()
-                    .gap(px(4.))
+                    .gap_1()
                     .mt(px(2.))
                     .children(criteria.iter().enumerate().map(|(i, crit)| {
                         let text = crit.as_str().unwrap_or_default().to_string();
                         h_flex()
-                            .gap(px(8.))
+                            .gap_2()
                             .items_center()
                             .child(
                                 div()
                                     .flex_none()
-                                    .text_size(px(12.5))
+                                    .text_size(rems_from_px(12.5_f32))
                                     .text_color(c(p::MUTED))
                                     .child(SharedString::from("○")),
                             )
@@ -270,7 +270,7 @@ impl MiniOrkPage {
         }
 
         if !meta.is_empty() {
-            let mut row = h_flex().gap(px(6.)).items_center().flex_wrap();
+            let mut row = h_flex().gap_1p5().items_center().flex_wrap();
             for (i, item) in meta.iter().enumerate() {
                 let colour = named(&str_of(item, "c"));
                 let mono_flag = item.get("mono").and_then(Value::as_bool).unwrap_or(false);
@@ -283,7 +283,7 @@ impl MiniOrkPage {
                 if i + 1 < meta.len() {
                     row = row.child(
                         div()
-                            .text_size(px(11.))
+                            .text_size(rems_from_px(11_f32))
                             .text_color(c(p::DIM))
                             .child(SharedString::from("·")),
                     );
@@ -292,7 +292,7 @@ impl MiniOrkPage {
             content = content.child(row);
         }
 
-        card().p(px(14.)).flex_1().min_w_0().child(content).into_any_element()
+        card().p_3p5().flex_1().min_w_0().child(content).into_any_element()
     }
 
     /// `columns` `{cols:[…]}`: the kanban board. A horizontal band of fixed
@@ -303,7 +303,7 @@ impl MiniOrkPage {
         let cols = arr(s, "cols");
         let mono_font = p::mono_font(cx);
         let band = h_flex()
-            .gap(px(12.))
+            .gap_3()
             .items_start()
             .children(cols.iter().enumerate().map(|(ci, column)| {
                 let title = str_of(column, "title");
@@ -313,15 +313,15 @@ impl MiniOrkPage {
 
                 let header = h_flex()
                     .flex_none()
-                    .gap(px(6.))
+                    .gap_1p5()
                     .items_center()
-                    .child(div().flex_none().size(px(8.)).rounded_full().bg(colour))
+                    .child(Indicator::dot().color(Color::Custom(colour)))
                     .child(
                         div()
                             .flex_1()
                             .min_w(px(0.))
                             .truncate()
-                            .text_size(px(13.))
+                            .text_size(rems_from_px(13_f32))
                             .font_weight(gpui::FontWeight::SEMIBOLD)
                             .text_color(c(p::TEXT))
                             .child(SharedString::from(title)),
@@ -329,20 +329,20 @@ impl MiniOrkPage {
                     .child(
                         div()
                             .flex_none()
-                            .text_size(px(11.))
+                            .text_size(rems_from_px(11_f32))
                             .text_color(c(p::SUB))
                             .child(SharedString::from(count.to_string())),
                     );
 
                 let body = v_flex()
                     .id(SharedString::from(format!("s{index}-col{ci}-body")))
-                    .max_h(px(520.))
-                    .gap(px(8.))
+                    .max_h(rems_from_px(520_f32))
+                    .gap_2()
                     .overflow_y_scroll()
                     .when(cards.is_empty(), |this| {
                         this.child(
                             div()
-                                .text_size(px(11.5))
+                                .text_size(rems_from_px(11.5_f32))
                                 .text_color(c(p::DIM))
                                 .child(SharedString::from("Nothing here.")),
                         )
@@ -357,12 +357,12 @@ impl MiniOrkPage {
                         let glyph = if mark.is_empty() { state_glyph.to_string() } else { mark.clone() };
 
                         let top = h_flex()
-                            .gap(px(8.))
+                            .gap_2()
                             .items_start()
                             .child(
                                 div()
                                     .flex_none()
-                                    .text_size(px(13.))
+                                    .text_size(rems_from_px(13_f32))
                                     .text_color(c(mark_colour))
                                     .child(SharedString::from(glyph)),
                             )
@@ -371,7 +371,7 @@ impl MiniOrkPage {
                                     .flex_1()
                                     .min_w(px(0.))
                                     .line_clamp(2)
-                                    .text_size(px(12.5))
+                                    .text_size(rems_from_px(12.5_f32))
                                     .text_color(c(p::TEXT))
                                     .child(SharedString::from(card_title)),
                             );
@@ -379,23 +379,23 @@ impl MiniOrkPage {
                         let mut card_el = card()
                             .id(SharedString::from(format!("s{index}-col{ci}-card{ki}")))
                             .flex_none()
-                            .gap(px(6.))
+                            .gap_1p5()
                             .child(top)
                             .when(!sub.is_empty(), |this| {
                                 this.child(
                                     div()
                                         .truncate()
-                                        .text_size(px(11.))
+                                        .text_size(rems_from_px(11_f32))
                                         .text_color(c(p::SUB))
                                         .child(SharedString::from(sub)),
                                 )
                             })
                             .when(!meta.is_empty(), |this| {
-                                this.child(h_flex().flex_wrap().gap(px(8.)).items_center().children(
+                                this.child(h_flex().flex_wrap().gap_2().items_center().children(
                                     meta.iter().map(|item| {
                                         let mut el = div()
                                             .flex_none()
-                                            .text_size(px(10.5))
+                                            .text_size(rems_from_px(10.5_f32))
                                             .text_color(named(&str_of(item, "c")))
                                             .child(SharedString::from(str_of(item, "t")));
                                         if item.get("mono").and_then(Value::as_bool).unwrap_or(false) {
@@ -414,7 +414,7 @@ impl MiniOrkPage {
                         card_el
                     }));
 
-                v_flex().flex_none().w(px(260.)).gap(px(8.)).child(header).child(body)
+                v_flex().flex_none().w(rems_from_px(260_f32)).gap_2().child(header).child(body)
             }));
 
         card()
@@ -469,7 +469,7 @@ impl MiniOrkPage {
             })
         };
 
-        let mut content = v_flex().gap(px(8.));
+        let mut content = v_flex().gap_2();
         if !title.is_empty() {
             content = content.child(self.texts.text(
                 format!("s{index}-composer-title"),
@@ -483,9 +483,8 @@ impl MiniOrkPage {
         let field = h_flex()
             .flex_1()
             .min_w(px(0.))
-            .px(px(10.))
-            .py(px(6.))
-            .rounded(px(6.))
+            .px_2p5()
+            .py_1p5()
             .border_1()
             .border_color(c(p::BORDER2))
             .bg(c(p::BG))
@@ -495,7 +494,7 @@ impl MiniOrkPage {
                     cx.stop_propagation();
                 }
             }))
-            .child(div().flex_1().min_w(px(0.)).text_size(px(12.5)).child(editor.render(window, cx)));
+            .child(div().flex_1().min_w(px(0.)).text_size(rems_from_px(12.5_f32)).child(editor.render(window, cx)));
 
         let on_send: Option<Box<dyn Fn(&ClickEvent, &mut Window, &mut App) + 'static>> = if empty {
             None
@@ -512,7 +511,7 @@ impl MiniOrkPage {
             on_send,
         );
 
-        content = content.child(h_flex().gap(px(8.)).items_center().child(field).child(send_button));
+        content = content.child(h_flex().gap_2().items_center().child(field).child(send_button));
 
         card().flex_1().min_w_0().child(content).into_any_element()
     }
@@ -523,7 +522,7 @@ impl MiniOrkPage {
     /// for the step's `do`, the rest of the header toggles expansion.
     pub(crate) fn render_story(&self, index: usize, s: &Value, cx: &mut Context<Self>) -> AnyElement {
         let steps = arr(s, "steps");
-        let mut content = v_flex().gap(px(6.));
+        let mut content = v_flex().gap_1p5();
         for (i, step) in steps.iter().enumerate() {
             let step_id = str_of(step, "id");
             let step_key = format!("story-{step_id}");
@@ -549,7 +548,7 @@ impl MiniOrkPage {
                     .min_w(px(0.))
                     .flex_1()
                     .truncate()
-                    .text_size(px(13.))
+                    .text_size(rems_from_px(13_f32))
                     .font_weight(gpui::FontWeight::SEMIBOLD)
                     .text_color(c(p::TEXT))
                     .child(SharedString::from(title.clone()));
@@ -566,11 +565,10 @@ impl MiniOrkPage {
 
             let mut header = h_flex()
                 .id(SharedString::from(format!("{step_key}-header")))
-                .h(px(32.))
-                .gap(px(8.))
+                .h_8()
+                .gap_2()
                 .items_center()
-                .px(px(10.))
-                .rounded(px(p::RADIUS_CARD))
+                .px_2p5()
                 .border_1()
                 .border_color(c(p::BORDER))
                 .bg(c(p::CARD))
@@ -586,9 +584,9 @@ impl MiniOrkPage {
                     this.child(
                         div()
                             .min_w(px(0.))
-                            .max_w(px(220.))
+                            .max_w(rems_from_px(220_f32))
                             .truncate()
-                            .text_size(px(12.))
+                            .text_size(rems_from_px(12_f32))
                             .text_color(p::named(&headline_c))
                             .child(SharedString::from(headline_t)),
                     )
@@ -596,11 +594,11 @@ impl MiniOrkPage {
                 .child(div().flex_1())
                 .when(!dur.is_empty() || !cost.is_empty(), |this| {
                     let mono = p::mono_font(cx);
-                    let mut meta = h_flex().flex_none().gap(px(8.)).items_baseline();
+                    let mut meta = h_flex().flex_none().gap_2().items_baseline();
                     if !dur.is_empty() {
                         meta = meta.child(
                             div()
-                                .text_size(px(11.))
+                                .text_size(rems_from_px(11_f32))
                                 .text_color(c(p::SUB))
                                 .font(mono.clone())
                                 .child(SharedString::from(dur.clone())),
@@ -609,7 +607,7 @@ impl MiniOrkPage {
                     if !cost.is_empty() {
                         meta = meta.child(
                             div()
-                                .text_size(px(11.))
+                                .text_size(rems_from_px(11_f32))
                                 .text_color(c(p::SUB))
                                 .font(mono.clone())
                                 .child(SharedString::from(cost.clone())),
@@ -620,7 +618,7 @@ impl MiniOrkPage {
                 .child(
                     div()
                         .flex_none()
-                        .text_size(px(13.))
+                        .text_size(rems_from_px(13_f32))
                         .text_color(c(p::MUTED))
                         .child(SharedString::from(if is_open { "⌄" } else { "›" })),
                 );
@@ -630,14 +628,14 @@ impl MiniOrkPage {
                 this.toggle_step_expanded("story", &step_id_for_toggle, cx);
             }));
 
-            let mut row_el = v_flex().gap(px(6.)).child(header);
+            let mut row_el = v_flex().gap_1p5().child(header);
 
             if is_open {
                 let body = self.render_step_body(index, i, step, cx);
                 row_el = row_el.child(
                     div()
-                        .pl(px(20.))
-                        .pt(px(2.))
+                        .pl_5()
+                        .pt_0p5()
                         .child(body),
                 );
             }
@@ -651,7 +649,7 @@ impl MiniOrkPage {
     fn render_step_body(&self, section_index: usize, step_index: usize, step: &Value, cx: &mut Context<Self>) -> AnyElement {
         let key_prefix = format!("s{section_index}-step{step_index}");
         let blocks = arr(step, "body");
-        let mut col = v_flex().gap(px(8.));
+        let mut col = v_flex().gap_2();
         for (bi, block) in blocks.iter().enumerate() {
             let key = format!("{key_prefix}-b{bi}");
             col = col.child(self.render_block_body(&key, block, cx));
@@ -698,7 +696,7 @@ impl MiniOrkPage {
         let sections = diff_sections(&diff);
         let mono = p::mono_font(cx);
 
-        let mut col = v_flex().gap(px(4.));
+        let mut col = v_flex().gap_1();
         if files.is_empty() && commits.is_empty() && diff.is_empty() {
             let note = str_of(block, "diff_note");
             let text = if note.is_empty() { "No files changed.".to_string() } else { note };
@@ -722,10 +720,9 @@ impl MiniOrkPage {
             let row = h_flex()
                 .id(SharedString::from(format!("{key}-file-{i}")))
                 .items_center()
-                .gap(px(8.))
-                .px(px(8.))
-                .py(px(5.))
-                .rounded(px(5.))
+                .gap_2()
+                .px_2()
+                .py(rems_from_px(5_f32))
                 .border_1()
                 .border_color(c(p::BORDER2))
                 .bg(c(p::CHROME))
@@ -743,8 +740,8 @@ impl MiniOrkPage {
                 .child(
                     div()
                         .flex_none()
-                        .w(px(14.))
-                        .text_size(px(11.5))
+                        .w_3p5()
+                        .text_size(rems_from_px(11.5_f32))
                         .font_weight(gpui::FontWeight::SEMIBOLD)
                         .text_color(verb_colour)
                         .child(SharedString::from(verb)),
@@ -754,29 +751,19 @@ impl MiniOrkPage {
                         .flex_1()
                         .min_w(px(0.))
                         .truncate()
-                        .text_size(px(12.))
+                        .text_size(rems_from_px(12_f32))
                         .font(mono.clone())
                         .text_color(c(p::TEXT))
                         .child(SharedString::from(path.clone())),
                 )
-                .when(added > 0, |this| {
+                .when(added > 0 || removed > 0, |this| {
                     this.child(
-                        div()
-                            .flex_none()
-                            .text_size(px(11.5))
-                            .font(mono.clone())
-                            .text_color(c(p::GIT_ADD))
-                            .child(SharedString::from(format!("+{added}"))),
-                    )
-                })
-                .when(removed > 0, |this| {
-                    this.child(
-                        div()
-                            .flex_none()
-                            .text_size(px(11.5))
-                            .font(mono.clone())
-                            .text_color(c(p::GIT_DEL))
-                            .child(SharedString::from(format!("−{removed}"))),
+                        DiffStat::new(
+                            SharedString::from(format!("{key}-file-diff-{i}")),
+                            added as usize,
+                            removed as usize,
+                        )
+                        .label_size(LabelSize::XSmall),
                     )
                 })
                 .when(!abs.is_empty(), |this| {
@@ -804,7 +791,7 @@ impl MiniOrkPage {
                 .child(
                     div()
                         .flex_none()
-                        .text_size(px(13.))
+                        .text_size(rems_from_px(13_f32))
                         .text_color(c(p::MUTED))
                         .child(SharedString::from(if is_open { "⌄" } else { "›" })),
                 );
@@ -822,7 +809,7 @@ impl MiniOrkPage {
                 let lines_key = format!("{key}-diff-{i}");
                 col = col.child(
                     div()
-                        .pl(px(16.))
+                        .pl_4()
                         .child(code_box(&self.texts, &lines_key, lines, cx)),
                 );
             }
@@ -831,20 +818,20 @@ impl MiniOrkPage {
         if !commits.is_empty() {
             col = col.child(
                 v_flex()
-                    .gap(px(2.))
+                    .gap_0p5()
                     .mt(px(4.))
                     .children(commits.iter().enumerate().map(|(ci, cm)| {
                         let sha = str_of(cm, "sha");
                         let short: String = sha.chars().take(8).collect();
                         h_flex()
                             .id(SharedString::from(format!("{key}-commit-{ci}")))
-                            .gap(px(8.))
-                            .px(px(6.))
-                            .py(px(3.))
+                            .gap_2()
+                            .px_1p5()
+                            .py(rems_from_px(3_f32))
                             .child(
                                 div()
                                     .flex_none()
-                                    .text_size(px(12.))
+                                    .text_size(rems_from_px(12_f32))
                                     .font(mono.clone())
                                     .text_color(c(p::YELLOW))
                                     .child(SharedString::from(short)),
@@ -854,7 +841,7 @@ impl MiniOrkPage {
                                     .flex_1()
                                     .min_w(px(0.))
                                     .truncate()
-                                    .text_size(px(12.5))
+                                    .text_size(rems_from_px(12.5_f32))
                                     .text_color(c(p::TEXT))
                                     .child(SharedString::from(str_of(cm, "subject"))),
                             )
@@ -874,7 +861,7 @@ impl MiniOrkPage {
         let reasons = arr(block, "reasons");
         let mono = p::mono_font(cx);
 
-        let mut col = v_flex().gap(px(8.));
+        let mut col = v_flex().gap_2();
 
         if !str_of(&verdict_obj, "t").is_empty() {
             let t = str_of(&verdict_obj, "t");
@@ -883,12 +870,12 @@ impl MiniOrkPage {
             col = col.child(
                 h_flex()
                     .flex_none()
-                    .h(px(20.))
-                    .px(px(9.))
+                    .h_5()
+                    .px(rems_from_px(9_f32))
                     .items_center()
                     .rounded_full()
                     .bg(tint)
-                    .text_size(px(p::PILL))
+                    .text_size(rems_from_px(p::PILL))
                     .text_color(color)
                     .child(SharedString::from(t.to_uppercase())),
             );
@@ -929,7 +916,7 @@ impl MiniOrkPage {
                     };
                 let mut el = div()
                     .id(SharedString::from(format!("{key}-f{i}-loc")))
-                    .text_size(px(11.5))
+                    .text_size(rems_from_px(11.5_f32))
                     .font(mono.clone())
                     .text_color(c(p::BLUE))
                     .truncate()
@@ -945,27 +932,25 @@ impl MiniOrkPage {
             col = col.child(
                 v_flex()
                     .id(SharedString::from(format!("{key}-find-{i}")))
-                    .gap(px(2.))
-                    .px(px(8.))
-                    .py(px(5.))
-                    .rounded(px(5.))
+                    .gap_0p5()
+                    .px_2()
+                    .py(rems_from_px(5_f32))
                     .border_1()
                     .border_color(c(p::BORDER2))
                     .bg(c(p::CHROME))
                     .child(
                         h_flex()
-                            .gap(px(8.))
+                            .gap_2()
                             .items_center()
                             .when(!severity.is_empty(), |this| {
                                 this.child(
                                     h_flex()
                                         .flex_none()
-                                        .h(px(16.))
-                                        .px(px(6.))
+                                        .h_4()
+                                        .px_1p5()
                                         .items_center()
-                                        .rounded(px(4.))
                                         .bg(sev_color.opacity(0.18))
-                                        .text_size(px(p::BADGE))
+                                        .text_size(rems_from_px(p::BADGE))
                                         .text_color(sev_color)
                                         .child(SharedString::from(severity.to_uppercase())),
                                 )
@@ -982,7 +967,7 @@ impl MiniOrkPage {
                     .when(!snippet.is_empty(), |this| {
                         this.child(
                             div()
-                                .text_size(px(11.))
+                                .text_size(rems_from_px(11_f32))
                                 .font(mono.clone())
                                 .text_color(c(p::DIM))
                                 .truncate()
@@ -995,17 +980,17 @@ impl MiniOrkPage {
         if !reasons.is_empty() {
             col = col.child(
                 v_flex()
-                    .gap(px(2.))
+                    .gap_0p5()
                     .children(reasons.iter().enumerate().map(|(ri, r)| {
                         let text = r.as_str().unwrap_or_default().to_string();
                         h_flex()
                             .id(SharedString::from(format!("{key}-reason-{ri}")))
-                            .gap(px(6.))
+                            .gap_1p5()
                             .items_start()
                             .child(
                                 div()
                                     .flex_none()
-                                    .text_size(px(12.5))
+                                    .text_size(rems_from_px(12.5_f32))
                                     .text_color(c(p::MUTED))
                                     .child(SharedString::from("•")),
                             )
@@ -1013,7 +998,7 @@ impl MiniOrkPage {
                                 div()
                                     .flex_1()
                                     .min_w(px(0.))
-                                    .text_size(px(12.))
+                                    .text_size(rems_from_px(12_f32))
                                     .text_color(c(p::BODY))
                                     .child(SharedString::from(text)),
                             )
@@ -1036,34 +1021,34 @@ impl MiniOrkPage {
         let summary_obj = block.get("summary").cloned().unwrap_or(Value::Null);
         let rows = arr(block, "rows");
 
-        let mut col = v_flex().gap(px(6.));
+        let mut col = v_flex().gap_1p5();
 
         let passing = summary_obj.get("passing").and_then(Value::as_u64).unwrap_or(0);
         let failing = summary_obj.get("failing").and_then(Value::as_u64).unwrap_or(0);
         let pending = summary_obj.get("pending").and_then(Value::as_u64).unwrap_or(0);
         col = col.child(
             h_flex()
-                .gap(px(14.))
+                .gap_3p5()
                 .items_center()
-                .px(px(8.))
+                .px_2()
                 .child(
                     div()
                         .flex_none()
-                        .text_size(px(12.))
+                        .text_size(rems_from_px(12_f32))
                         .text_color(c(p::GREEN))
                         .child(SharedString::from(format!("✓ {passing} passing"))),
                 )
                 .child(
                     div()
                         .flex_none()
-                        .text_size(px(12.))
+                        .text_size(rems_from_px(12_f32))
                         .text_color(c(p::RED))
                         .child(SharedString::from(format!("✗ {failing} failing"))),
                 )
                 .child(
                     div()
                         .flex_none()
-                        .text_size(px(12.))
+                        .text_size(rems_from_px(12_f32))
                         .text_color(c(p::YELLOW))
                         .child(SharedString::from(format!("● {pending} pending"))),
                 ),
@@ -1089,10 +1074,9 @@ impl MiniOrkPage {
             let r = h_flex()
                 .id(SharedString::from(format!("{key}-check-{i}")))
                 .items_center()
-                .gap(px(8.))
-                .px(px(8.))
-                .py(px(5.))
-                .rounded(px(5.))
+                .gap_2()
+                .px_2()
+                .py(rems_from_px(5_f32))
                 .border_1()
                 .border_color(c(p::BORDER2))
                 .bg(c(p::CHROME))
@@ -1111,7 +1095,7 @@ impl MiniOrkPage {
                 .child(
                     div()
                         .flex_none()
-                        .text_size(px(12.5))
+                        .text_size(rems_from_px(12.5_f32))
                         .text_color(glyph_color)
                         .child(SharedString::from(glyph)),
                 )
@@ -1120,14 +1104,14 @@ impl MiniOrkPage {
                         .flex_1()
                         .min_w(px(0.))
                         .truncate()
-                        .text_size(px(12.))
+                        .text_size(rems_from_px(12_f32))
                         .text_color(c(p::TEXT))
                         .child(SharedString::from(name.clone())),
                 )
                 .child(
                     div()
                         .flex_none()
-                        .text_size(px(11.5))
+                        .text_size(rems_from_px(11.5_f32))
                         .text_color(c(p::SUB))
                         .truncate()
                         .child(SharedString::from(detail)),
@@ -1138,7 +1122,7 @@ impl MiniOrkPage {
                 let lines_key = format!("{key}-check-{i}-log");
                 col = col.child(
                     div()
-                        .pl(px(20.))
+                        .pl_5()
                         .child(code_box(&self.texts, &lines_key, log, cx)),
                 );
             }
@@ -1175,7 +1159,7 @@ impl MiniOrkPage {
     pub(crate) fn render_agents(&self, index: usize, s: &Value, cx: &mut Context<Self>) -> AnyElement {
         let rows = arr(s, "rows");
         let mono = p::mono_font(cx);
-        let mut col = v_flex().gap(px(0.));
+        let mut col = v_flex().gap(rems_from_px(0_f32));
         for (i, row) in rows.iter().enumerate() {
             let id = str_of(row, "id");
             let state = str_of(row, "state");
@@ -1190,9 +1174,9 @@ impl MiniOrkPage {
             let card_el = h_flex()
                 .id(SharedString::from(format!("s{index}-agent-{i}")))
                 .items_center()
-                .gap(px(8.))
-                .px(px(8.))
-                .py(px(7.))
+                .gap_2()
+                .px_2()
+                .py(rems_from_px(7_f32))
                 .border_b_1()
                 .border_color(c(p::ROW_RULE))
                 .child(status_mark(&state, 13., &format!("s{index}-agent-{i}-mark")))
@@ -1202,7 +1186,7 @@ impl MiniOrkPage {
                         .flex_1()
                         .min_w(px(0.))
                         .truncate()
-                        .text_size(px(12.5))
+                        .text_size(rems_from_px(12.5_f32))
                         .font_weight(gpui::FontWeight::SEMIBOLD)
                         .text_color(c(p::TEXT))
                         .child(SharedString::from(id.clone())),
@@ -1211,7 +1195,7 @@ impl MiniOrkPage {
                     this.child(
                         div()
                             .flex_none()
-                            .text_size(px(10.5))
+                            .text_size(rems_from_px(10.5_f32))
                             .font(mono.clone())
                             .text_color(c(p::SUB))
                             .child(SharedString::from(model.clone())),
@@ -1219,11 +1203,11 @@ impl MiniOrkPage {
                 })
                 .child(div().flex_1())
                 .when(!dur.is_empty() || !cost.is_empty(), |this| {
-                    let mut meta = h_flex().flex_none().gap(px(8.)).items_baseline();
+                    let mut meta = h_flex().flex_none().gap_2().items_baseline();
                     if !dur.is_empty() {
                         meta = meta.child(
                             div()
-                                .text_size(px(11.))
+                                .text_size(rems_from_px(11_f32))
                                 .text_color(c(p::SUB))
                                 .font(mono.clone())
                                 .child(SharedString::from(dur.clone())),
@@ -1232,7 +1216,7 @@ impl MiniOrkPage {
                     if !cost.is_empty() {
                         meta = meta.child(
                             div()
-                                .text_size(px(11.))
+                                .text_size(rems_from_px(11_f32))
                                 .text_color(c(p::SUB))
                                 .font(mono.clone())
                                 .child(SharedString::from(cost.clone())),
@@ -1243,9 +1227,9 @@ impl MiniOrkPage {
 
             let mut stack = v_flex()
                 .id(SharedString::from(format!("s{index}-agent-{i}-stack")))
-                .gap(px(2.))
-                .py(px(7.))
-                .px(px(8.))
+                .gap_0p5()
+                .py(rems_from_px(7_f32))
+                .px_2()
                 .when(i < rows.len().saturating_sub(1), |this| {
                     this.border_b_1().border_color(c(p::ROW_RULE))
                 })
@@ -1253,8 +1237,8 @@ impl MiniOrkPage {
                 .when(!step.is_empty(), |this| {
                     this.child(
                         div()
-                            .pl(px(22.))
-                            .text_size(px(11.5))
+                            .pl(rems_from_px(22_f32))
+                            .text_size(rems_from_px(11.5_f32))
                             .text_color(c(p::BODY))
                             .truncate()
                             .child(SharedString::from(step.clone())),
@@ -1263,8 +1247,8 @@ impl MiniOrkPage {
                 .when(!last.is_empty(), |this| {
                     this.child(
                         div()
-                            .pl(px(22.))
-                            .text_size(px(11.))
+                            .pl(rems_from_px(22_f32))
+                            .text_size(rems_from_px(11_f32))
                             .font(mono.clone())
                             .text_color(c(p::DIM))
                             .truncate()

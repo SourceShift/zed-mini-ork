@@ -1,8 +1,8 @@
 //! Status bar items: the board toggle and the live mini-ork counters on the
 //! left, the mini-ork version on the right.
 
-use gpui::{App, Context, Entity, Render, SharedString, Subscription, WeakEntity, Window, px, relative};
-use ui::{Tooltip, prelude::*};
+use gpui::{App, Context, Entity, Render, SharedString, Subscription, WeakEntity, Window};
+use ui::{Divider, DividerColor, Tooltip, prelude::*};
 use workspace::{HideStatusItem, ItemHandle, StatusItemView, Workspace};
 
 use crate::{
@@ -88,15 +88,14 @@ impl Render for MiniOrkStatus {
             .as_ref()
             .map(|b| b.header.clone())
             .unwrap_or_default();
-        let item = |id: &'static str, label: String, colour: u32, tip: &'static str, key: &'static str, tab: Option<&'static str>, workspace: WeakEntity<Workspace>| {
+        let item = |id: &'static str, label: String, colour: u32, tip: SharedString, key: &'static str, tab: Option<&'static str>, workspace: WeakEntity<Workspace>| {
             div()
                 .id(id)
-                .h(px(20.))
-                .px(px(7.))
+                .h_5()
+                .px(rems_from_px(7_f32))
                 .flex()
                 .items_center()
-                .rounded(px(4.))
-                .text_size(px(12.))
+                .text_size(rems_from_px(12_f32))
                 .text_color(c(colour))
                 .cursor_pointer()
                 .hover(|s| s.bg(c(p::HOVER)))
@@ -116,23 +115,26 @@ impl Render for MiniOrkStatus {
                 })
         };
         let w = self.workspace.clone();
-        let nodes = if header.nodes.configured > 0 {
-            format!("⬡ {} nodes", header.nodes.configured)
+        // Spend is muted until it nears the cap: the colour is the only thing
+        // here that should make you look.
+        let spent = header.today_usd.unwrap_or(0.);
+        let budget_colour = if header.cap_usd > 0. && spent >= header.cap_usd {
+            p::RED
+        } else if header.cap_usd > 0. && spent >= header.cap_usd * 0.8 {
+            p::YELLOW
         } else {
-            "⬡ local".to_string()
+            p::MUTED
         };
-        let lanes: Vec<AnyElement> = header.lanes.iter().take(5).map(|lane| lane_item(lane, cx)).collect();
         h_flex()
-            .gap(px(2.))
+            .gap_0p5()
             .child(
                 div()
                     .id("status-board")
-                    .h(px(20.))
-                    .px(px(6.))
+                    .h_5()
+                    .px_1p5()
                     .flex()
                     .items_center()
-                    .rounded(px(4.))
-                    .text_size(px(12.))
+                    .text_size(rems_from_px(12_f32))
                     .text_color(c(p::MUTED))
                     .cursor_pointer()
                     .hover(|s| s.bg(c(p::HOVER)))
@@ -143,32 +145,30 @@ impl Render for MiniOrkStatus {
                         move |_, _, cx| toggle_board(&w, cx)
                     }),
             )
-            .child(div().w(px(1.)).h(px(14.)).mx(px(4.)).bg(c(p::BORDER2)))
+            .child(Divider::vertical().h_3p5().mx_1().color(DividerColor::Border))
+            .child(item(
+                "status-needs",
+                format!("✋ {} need you", header.needs_you),
+                if header.needs_you > 0 { p::ORANGE } else { p::SUB },
+                "Threads and gates waiting on you — opens the Inbox".into(),
+                "inbox",
+                None,
+                w.clone(),
+            ))
             .child(item(
                 "status-working",
                 format!("● {} working", header.working),
                 if header.working > 0 { p::BLUE } else { p::SUB },
-                "Working runs — on the Threads board",
+                "Runs in flight — on the Threads board".into(),
                 "threads",
                 None,
                 w.clone(),
             ))
-            .when(header.needs_you > 0, |this| {
-                this.child(item(
-                    "status-needs",
-                    format!("✋ {} need you", header.needs_you),
-                    p::ORANGE,
-                    "Opens the Inbox",
-                    "inbox",
-                    None,
-                    w.clone(),
-                ))
-            })
             .child(item(
                 "status-failed",
-                format!("✗ {}", header.failed),
+                format!("✗ {} failed", header.failed),
                 if header.failed > 0 { p::RED } else { p::SUB },
-                "Failed runs — on the Threads board",
+                "Failed runs — on the Threads board".into(),
                 "threads",
                 None,
                 w.clone(),
@@ -176,78 +176,52 @@ impl Render for MiniOrkStatus {
             .child(item(
                 "status-budget",
                 format!("{} / ${:.0}", money(header.today_usd), header.cap_usd),
-                p::MUTED,
-                "Daily budget",
+                budget_colour,
+                "Spend today against the daily cap".into(),
                 "lanes",
                 Some("cost"),
                 w.clone(),
             ))
             .child(item(
                 "status-scheduler",
-                format!("◷ scheduler {}", if header.scheduler_on { "on" } else { "off" }),
+                format!("◷ {}", if header.scheduler_on { "on" } else { "off" }),
                 if header.scheduler_on { p::MUTED } else { p::YELLOW },
-                "Scheduler",
+                "Project scheduler".into(),
                 "autos",
                 Some("schedulers"),
                 w.clone(),
             ))
-            .child(item(
-                "status-cn",
-                "◫ ContextNest".to_string(),
-                if header.contextnest { p::MUTED } else { p::DIM },
-                "Context",
-                "context",
-                None,
-                w.clone(),
-            ))
-            .child(item("status-nodes", nodes, p::MUTED, "Nodes", "nodes", None, w))
-            .when(!lanes.is_empty(), |this| {
-                this.child(div().w(px(1.)).h(px(14.)).mx(px(4.)).bg(c(p::BORDER2)))
-                    .children(lanes)
+            // Lanes are per-model detail: they earn a place in the bar only
+            // when one is failing, and then as one alert rather than five bars.
+            .when_some(lane_alert(&header.lanes), |this, (label, tip)| {
+                this.child(Divider::vertical().h_3p5().mx_1().color(DividerColor::Border))
+                    .child(item("status-lane-alert", label, p::RED, tip, "lanes", Some("cost"), w.clone()))
             })
     }
 }
 
-/// One lane's last-24h health: its name, then a 28×4 bar split green for the
-/// success share and red for the failure share. A lane failing half its calls
-/// (over at least three) gets a red name.
-fn lane_item(lane: &Lane, cx: &App) -> AnyElement {
-    let calls = lane.calls;
-    let failed = lane.failed.min(calls);
-    let failure = if calls > 0 { failed as f32 / calls as f32 } else { 0. };
-    let success = if calls > 0 { (calls - failed) as f32 / calls as f32 } else { 0. };
-    let name_colour = if calls >= 3 && failure >= 0.5 { p::RED } else { p::SUB };
-    let mut tip = format!("{} calls · {} failed · ${:.2}", calls, failed, lane.usd);
-    if !lane.last_error.is_empty() {
-        tip.push_str(&format!(" · {}", lane.last_error));
+/// The lanes failing half their calls (over at least three), as one alert for
+/// the status bar: the count to read, the names and last error in the tooltip.
+/// `None` when every lane is healthy, so a working project shows no lane noise.
+fn lane_alert(lanes: &[Lane]) -> Option<(String, SharedString)> {
+    let failing: Vec<&Lane> = lanes
+        .iter()
+        .filter(|lane| lane.calls >= 3 && lane.failed * 2 >= lane.calls)
+        .collect();
+    let first = failing.first()?;
+    let label = match failing.len() {
+        1 => "⚠ 1 lane failing".to_string(),
+        n => format!("⚠ {n} lanes failing"),
+    };
+    let mut tip = failing
+        .iter()
+        .map(|lane| format!("{}: {}/{} failed · ${:.2}", lane.lane, lane.failed, lane.calls, lane.usd))
+        .collect::<Vec<_>>()
+        .join(" · ");
+    if !first.last_error.is_empty() {
+        tip.push_str(&format!(" · {}", first.last_error));
     }
-    h_flex()
-        .id(SharedString::from(format!("status-lane-{}", lane.lane)))
-        .h(px(20.))
-        .px(px(5.))
-        .gap(px(4.))
-        .items_center()
-        .rounded(px(4.))
-        .tooltip(Tooltip::text(tip))
-        .child(
-            div()
-                .font(p::mono_font(cx))
-                .text_size(px(10.5))
-                .text_color(c(name_colour))
-                .child(lane.lane.clone()),
-        )
-        .child(
-            h_flex()
-                .w(px(28.))
-                .h(px(4.))
-                .flex_none()
-                .rounded(px(2.))
-                .overflow_hidden()
-                .bg(c(p::BORDER2))
-                .child(div().h_full().w(relative(success)).flex_none().bg(c(p::GREEN)))
-                .child(div().h_full().w(relative(failure)).flex_none().bg(c(p::RED))),
-        )
-        .into_any_element()
+    Some((label, tip.into()))
 }
 
 impl StatusItemView for MiniOrkStatus {
@@ -284,7 +258,7 @@ impl Render for MiniOrkVersion {
         } else {
             format!("mini-ork {version}").into()
         };
-        div().px(px(7.)).text_size(px(12.)).text_color(c(p::MUTED)).child(label)
+        div().px(rems_from_px(7_f32)).text_size(rems_from_px(12_f32)).text_color(c(p::MUTED)).child(label)
     }
 }
 
