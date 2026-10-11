@@ -3,14 +3,17 @@
 #
 #   script/mini-ork-upgrade v1.23.0
 #
-# Our changes are the commits after the Zed tag recorded in MINI_ORK_BASE:
-# the mini_ork_ui crate, a small hooks commit (the only edits to Zed's own
-# files) and this tooling. The upgrade checks out the new tag on a new branch,
-# re-applies those commits, records the new base and builds. If a cherry-pick
-# stops, the conflict is in the hooks commit (a few lines in Cargo.toml,
-# crates/zed/Cargo.toml, crates/zed/src/main.rs, crates/zed/src/zed.rs) or a
-# Zed API our crate uses changed — fix it, `git cherry-pick --continue`, and
-# run this script again with --resume.
+# Our changes are the commits after the Zed tag recorded in MINI_ORK_BASE: the
+# fork's edits to Zed's own files (its Cargo.toml, crates/zed, crates/ui,
+# crates/inspector_ui, crates/icons, crates/git_ui, crates/worktree, assets/,
+# .cargo/config.toml) plus this repo's tooling and docs. For the exact list run
+# `git diff --name-only "$(cat MINI_ORK_BASE)..HEAD"`. The crate source is NOT
+# among them any more: it lives in the mini-ork repo and is synced into
+# crates/mini_ork_ui at build time. The upgrade checks out the new tag on a new
+# branch, re-applies those commits, records the new base and builds. If a
+# cherry-pick stops, the conflict is in one of those fork files or a Zed API our
+# crate uses changed — fix it, `git cherry-pick --continue`, and run this script
+# again with --resume.
 set -euo pipefail
 
 tag="${1:?usage: script/mini-ork-upgrade <zed tag, e.g. v1.23.0> [--resume]}"
@@ -36,5 +39,26 @@ fi
 echo "${tag}" > MINI_ORK_BASE
 git add MINI_ORK_BASE
 git commit -q -m "mini-ork: base ${tag}" || true
+
+# crates/mini_ork_ui is generated from repo A now (see MINI-ORK.md), so a replay
+# from an older base can leave it tracked. Untrack it here, not in the replayed
+# diff: .gitignore does not apply to tracked paths, so a `--ours` resolution of
+# the .gitignore hunk would silently leave the crate both tracked AND ignored —
+# cargo would compile the stale copy and nothing would report it.
+if [[ -n "$(git ls-files crates/mini_ork_ui)" ]]; then
+  git rm -r --cached -q crates/mini_ork_ui
+  git commit -q -m "mini-ork: untrack crates/mini_ork_ui (generated from mini-ork/ui)"
+fi
+rm -rf crates/mini_ork_ui
+grep -q '^/crates/mini_ork_ui$' .gitignore || {
+  echo "mini-ork-upgrade: .gitignore lost the /crates/mini_ork_ui rule" >&2
+  exit 1
+}
+[[ -x "$(dirname "$0")/mini-ork-sync-ui" ]] || {
+  echo "mini-ork-upgrade: script/mini-ork-sync-ui is missing" >&2
+  exit 1
+}
+"$(dirname "$0")/mini-ork-sync-ui"
+
 MINI_ORK_BUILD_DEBUG=false "$(dirname "$0")/mini-ork-build"  # a full rebuild anyway
 echo "mini-ork IDE on Zed ${tag}: script/mini-ork-ide"

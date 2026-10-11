@@ -18,8 +18,8 @@
 # - MINI_ORK_LLD=0 falls back to Apple's linker. By default, when Homebrew's
 #   llvm is installed, ld64.lld links the (very large) zed binary markedly
 #   faster; if it is absent the system linker is used silently.
-# After the first build, an edit to crates/mini_ork_ui rebuilds that crate and
-# relinks Zed.
+# After the first build, an edit to mini-ork/ui (the canonical source, synced
+# into crates/mini_ork_ui below) rebuilds that crate and relinks Zed.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 ncpu="$(sysctl -n hw.ncpu 2>/dev/null || echo 4)"
@@ -36,6 +36,10 @@ lld="/opt/homebrew/opt/lld/bin/ld64.lld"
 if [[ "${MINI_ORK_LLD:-1}" != "0" && -x "$lld" ]]; then
   export CARGO_TARGET_AARCH64_APPLE_DARWIN_RUSTFLAGS="-C link-arg=-fuse-ld=$lld"
 fi
+
+# The crate is generated from repo A; cargo will not even load the workspace
+# without it, so this must run before every build.
+"$(dirname "$0")/mini-ork-sync-ui"
 
 taskpolicy -c utility env \
   ZED_RELEASE_CHANNEL=dev \
