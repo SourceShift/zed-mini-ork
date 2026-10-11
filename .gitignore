@@ -64,7 +64,3 @@ crates/docs_preprocessor/actions.json
 sources
 # mini-ork per-project home (state.db, runs, worktrees — runtime, not source)
 .mini-ork/
-
-# mini-ork IDE crate: canonical source is mini-ork/ui/, copied in by
-# script/mini-ork-sync-ui before cargo runs. Generated — never commit it.
-/crates/mini_ork_ui

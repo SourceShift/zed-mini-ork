@@ -1,0 +1,4 @@
+[submodule "crates/mini_ork_ui"]
+	path = crates/mini_ork_ui
+	url = https://github.com/SourceShift/mini-ork-ui.git
+	branch = main
