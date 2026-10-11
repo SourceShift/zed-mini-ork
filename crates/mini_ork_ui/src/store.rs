@@ -248,9 +248,6 @@ impl BoardStore {
                 }
                 // Watch the home once it is known (and again if the project moves).
                 if let Some(home) = home.filter(|home| watched.as_ref() != Some(home)) {
-                    // A project opened in the IDE joins the project switcher's list.
-                    let remembered = home.clone();
-                    cx.background_spawn(async move { crate::projects::remember_home(&remembered) }).detach();
                     let fs = cx.update(|cx| <dyn fs::Fs>::global(cx));
                     let (mut events, watcher) = fs.watch(&home, WATCH_LATENCY).await;
                     this.update(cx, |this, _| this._watcher = Some(watcher)).ok();

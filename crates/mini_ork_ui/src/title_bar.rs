@@ -124,56 +124,27 @@ fn project_switcher(project: &str, workspace: Option<Entity<Workspace>>) -> impl
         .trigger_with_tooltip(trigger, Tooltip::text("Switch project"))
         .menu(move |window, cx| {
             let workspace = workspace.clone()?;
-            let current = projects::current_root(&workspace, cx);
-            let known = projects::known();
+            // Read the list here: the inner builder is `move`, so it may only
+            // capture owned values, never this `cx`.
+            let entries = projects::entries(&workspace, cx);
             Some(ContextMenu::build(window, cx, move |mut menu, _, _| {
                 menu = menu.header("mini-ork projects");
-                let mut roots = known.clone();
-                if let Some(current) = current.clone().filter(|root| !roots.contains(root)) {
-                    roots.insert(0, current);
+                for entry in entries {
+                    // The submenu trigger is the project; its body is everything
+                    // that can be done to it (see `projects::project_actions`).
+                    let mark = if entry.is_current { "✓" } else { " " };
+                    let note = if entry.missing { "  · folder gone" } else { "" };
+                    let label = format!("{mark} {}  {}{note}", entry.name, entry.path);
+                    let (workspace, entry) = (workspace.clone(), entry);
+                    menu = menu.submenu(label, move |menu, _, _| {
+                        projects::project_actions(menu, &workspace, entry.clone())
+                    });
                 }
-                for root in roots {
-                    let is_current = current.as_deref() == Some(root.as_path());
-                    let name = root
-                        .file_name()
-                        .map(|n| n.to_string_lossy().to_string())
-                        .unwrap_or_else(|| root.to_string_lossy().to_string());
-                    let path = root.to_string_lossy().replace(&std::env::var("HOME").unwrap_or_default(), "~");
-                    let missing = !root.join(".mini-ork").is_dir();
-                    let workspace = workspace.clone();
-                    let target = root.clone();
-                    menu = menu.custom_entry(
-                        move |_, _| {
-                            h_flex()
-                                .w_full()
-                                .gap_2()
-                                .child(div().w_3().text_color(c(p::GREEN)).child(if is_current { "✓" } else { "" }))
-                                .child(
-                                    v_flex()
-                                        .child(
-                                            div()
-                                                .text_size(rems_from_px(12.5_f32))
-                                                .text_color(c(p::TEXT))
-                                                .when(is_current, |this| this.font_weight(gpui::FontWeight::SEMIBOLD))
-                                                .child(name.clone()),
-                                        )
-                                        .child(
-                                            div()
-                                                .text_size(rems_from_px(11_f32))
-                                                .text_color(c(if missing { p::RED } else { p::SUB }))
-                                                .child(if missing { format!("{path} · no .mini-ork") } else { path.clone() }),
-                                        ),
-                                )
-                                .into_any_element()
-                        },
-                        move |window, cx| projects::switch_to(&workspace, target.clone(), window, cx),
-                    );
-                }
-                let pick_workspace = workspace.clone();
+                let add_workspace = workspace.clone();
                 let manage_workspace = workspace.clone();
                 menu.separator()
-                    .entry("Open project folder…", None, move |window, cx| {
-                        projects::pick(&pick_workspace, window, cx)
+                    .entry("Add project…", None, move |window, cx| {
+                        projects::add(&add_workspace, window, cx)
                     })
                     .entry("Manage projects…", None, move |window, cx| {
                         let workspace = manage_workspace.clone();

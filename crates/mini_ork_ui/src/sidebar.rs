@@ -557,10 +557,10 @@ impl MiniOrkSidebar {
         bar.into_any_element()
     }
 
-    /// One row per known project that still has a `.mini-ork` home, then
-    /// "Open project folder…". A click opens the project in this window.
-    fn render_project_picker(workspace: &Entity<Workspace>) -> AnyElement {
-        let home = std::env::var("HOME").unwrap_or_default();
+    /// One row per known project — projects whose folder has moved stay listed,
+    /// so they can still be found and removed — then "Add project…". Every row
+    /// offers the same actions as the title bar's project menu.
+    fn render_project_picker(workspace: &Entity<Workspace>, cx: &App) -> AnyElement {
         let row = |id: SharedString, title: String, subtitle: Option<String>| {
             v_flex()
                 .id(id)
@@ -573,28 +573,64 @@ impl MiniOrkSidebar {
                 .when_some(subtitle, |this, sub| this.child(p::text(sub, 11., p::SUB)))
         };
         let mut picker = v_flex().gap_0p5().pt_1();
-        for (i, root) in projects::known()
-            .into_iter()
-            .filter(|root| root.join(".mini-ork").is_dir())
-            .enumerate()
-        {
-            let name = root
-                .file_name()
-                .map(|n| n.to_string_lossy().to_string())
-                .unwrap_or_else(|| root.to_string_lossy().to_string());
-            let path = root.to_string_lossy().replace(&home, "~");
-            let workspace = workspace.clone();
+        for (i, entry) in projects::entries(workspace, cx).into_iter().enumerate() {
+            let missing = entry.missing;
+            let subtitle = if missing {
+                format!("{} · folder gone", entry.path)
+            } else {
+                entry.path.clone()
+            };
+            let open_workspace = workspace.clone();
+            let root = entry.root.clone();
+            let (actions_workspace, actions_entry) = (workspace.clone(), entry.clone());
             picker = picker.child(
-                row(format!("board-open-project-{i}").into(), name, Some(path)).on_click(
-                    move |_, window, cx| projects::switch_to(&workspace, root.clone(), window, cx),
-                ),
+                h_flex()
+                    .id(SharedString::from(format!("board-open-project-{i}")))
+                    .w_full()
+                    .gap_1()
+                    .items_center()
+                    .mx_0p5()
+                    .px_2()
+                    .py(rems_from_px(5_f32))
+                    .hover(|s| s.bg(c(p::HOVER)))
+                    .child(
+                        v_flex()
+                            .id(SharedString::from(format!("board-project-open-{i}")))
+                            .flex_1()
+                            .when(!missing, |this| {
+                                this.cursor_pointer().on_click(move |_, window, cx| {
+                                    projects::switch_to(&open_workspace, root.clone(), window, cx);
+                                })
+                            })
+                            .child(
+                                div()
+                                    .text_size(rems_from_px(12.5_f32))
+                                    .text_color(c(if missing { p::SUB } else { p::TEXT }))
+                                    .child(entry.name.clone()),
+                            )
+                            .child(p::text(subtitle, 11., if missing { p::RED } else { p::SUB })),
+                    )
+                    .child(
+                        PopoverMenu::new(SharedString::from(format!("board-project-menu-{i}")))
+                            .trigger_with_tooltip(
+                                IconButton::new(SharedString::from(format!("board-project-actions-{i}")), IconName::Ellipsis)
+                                    .icon_size(IconSize::Small),
+                                Tooltip::text("Project actions"),
+                            )
+                            .menu(move |window, cx| {
+                                let (workspace, entry) = (actions_workspace.clone(), actions_entry.clone());
+                                Some(ContextMenu::build(window, cx, move |menu, _, _| {
+                                    projects::project_actions(menu, &workspace, entry.clone())
+                                }))
+                            }),
+                    ),
             );
         }
         let workspace = workspace.clone();
         picker
             .child(
-                row("board-open-project-pick".into(), "Open project folder…".into(), None)
-                    .on_click(move |_, window, cx| projects::pick(&workspace, window, cx)),
+                row("board-open-project-pick".into(), "Add project…".into(), None)
+                    .on_click(move |_, window, cx| projects::add(&workspace, window, cx)),
             )
             .into_any_element()
     }
@@ -826,7 +862,7 @@ impl MiniOrkSidebar {
             // A window restored without a folder has nothing to read runs from:
             // offer the known projects right here instead of a dead end.
             if let Some(workspace) = workspace.as_ref().filter(|w| projects::current_root(w, cx).is_none()) {
-                list = list.child(Self::render_project_picker(workspace));
+                list = list.child(Self::render_project_picker(workspace, cx));
             }
         } else if board.is_none() {
             list = list.child(p::text("Loading…", 12., p::SUB).p_2());
