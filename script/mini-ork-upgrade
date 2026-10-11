@@ -8,13 +8,25 @@
 # crates/inspector_ui, crates/icons, crates/git_ui, crates/worktree, assets/,
 # .cargo/config.toml) plus this repo's tooling and docs. For the exact list run
 # `git diff --name-only "$(cat MINI_ORK_BASE)..HEAD"`. The crate source is NOT
-# among them any more: it lives in the mini-ork repo and is synced into
-# crates/mini_ork_ui at build time. The upgrade checks out the new tag on a new
-# branch, re-applies those commits, records the new base and builds. If a
-# cherry-pick stops, the conflict is in one of those fork files or a Zed API our
-# crate uses changed — fix it, `git cherry-pick --continue`, and run this script
-# again with --resume.
+# among them: it is the mini_ork-ui submodule at crates/mini_ork_ui/, pinned in
+# .gitmodules and materialised by `git submodule update`. The upgrade checks out
+# the new tag on a new branch, re-applies those commits, records the new base and
+# builds. If a cherry-pick stops, the conflict is in one of those fork files or a
+# Zed API our crate uses changed — fix it, `git cherry-pick --continue`, and run
+# this script again with --resume.
 set -euo pipefail
+
+# The replayed range includes the commit that rewrites this very file, and
+# `git cherry-pick` replacing a script mid-run can corrupt bash's parse of it.
+# Re-exec from a private snapshot taken before any cherry-pick happens. The
+# snapshot lives in a temp dir, so the real script dir is passed on in the env.
+script_dir="$(cd "$(dirname "$0")" && pwd)"
+if [[ -z "${MINI_ORK_UPGRADE_SELF:-}" ]]; then
+  snapshot="$(mktemp -t mini-ork-upgrade.XXXXXX)"
+  cp "$0" "$snapshot"
+  chmod +x "$snapshot"
+  MINI_ORK_UPGRADE_SELF="$snapshot" MINI_ORK_UPGRADE_DIR="$script_dir" exec bash "$snapshot" "$@"
+fi
 
 tag="${1:?usage: script/mini-ork-upgrade <zed tag, e.g. v1.23.0> [--resume]}"
 cd "$(git rev-parse --show-toplevel)"
@@ -34,31 +46,36 @@ if [[ "${2:-}" != "--resume" ]]; then
   git switch -c "mini-ork-${tag}" "${tag}"
   # shellcheck disable=SC2086
   git cherry-pick $commits
+  # A replay that predates the submodule brings crates/mini_ork_ui in as plain
+  # files; converge it before anything below inspects .gitmodules.
+  git submodule update --init --recursive
 fi
 
 echo "${tag}" > MINI_ORK_BASE
 git add MINI_ORK_BASE
 git commit -q -m "mini-ork: base ${tag}" || true
 
-# crates/mini_ork_ui is generated from repo A now (see MINI-ORK.md), so a replay
-# from an older base can leave it tracked. Untrack it here, not in the replayed
-# diff: .gitignore does not apply to tracked paths, so a `--ours` resolution of
-# the .gitignore hunk would silently leave the crate both tracked AND ignored —
-# cargo would compile the stale copy and nothing would report it.
+# crates/mini_ork_ui is the mini_ork-ui submodule now (see MINI-ORK.md), so a
+# replay from an older base can leave it tracked as plain files. Untrack those
+# here, not in the replayed diff: .gitignore does not apply to tracked paths, so
+# a `--ours` resolution of the .gitignore hunk would silently leave the crate
+# both tracked AND ignored — cargo would compile the stale copy and nothing would
+# report it.
 if [[ -n "$(git ls-files crates/mini_ork_ui)" ]]; then
   git rm -r --cached -q crates/mini_ork_ui
-  git commit -q -m "mini-ork: untrack crates/mini_ork_ui (generated from mini-ork/ui)"
+  git commit -q -m "mini-ork: untrack crates/mini_ork_ui (it is the mini-ork-ui submodule)"
 fi
 rm -rf crates/mini_ork_ui
-grep -q '^/crates/mini_ork_ui$' .gitignore || {
-  echo "mini-ork-upgrade: .gitignore lost the /crates/mini_ork_ui rule" >&2
+if git check-ignore -q --no-index crates/mini_ork_ui; then
+  echo "mini-ork-upgrade: a .gitignore rule still ignores crates/mini_ork_ui" >&2
   exit 1
-}
-[[ -x "$(dirname "$0")/mini-ork-sync-ui" ]] || {
-  echo "mini-ork-upgrade: script/mini-ork-sync-ui is missing" >&2
+fi
+if ! grep -qE '^[[:space:]]*path = crates/mini_ork_ui$' .gitmodules 2>/dev/null; then
+  echo "mini-ork-upgrade: .gitmodules has no crates/mini_ork_ui entry" >&2
   exit 1
-}
-"$(dirname "$0")/mini-ork-sync-ui"
+fi
+git submodule sync --recursive
+git submodule update --init --recursive
 
-MINI_ORK_BUILD_DEBUG=false "$(dirname "$0")/mini-ork-build"  # a full rebuild anyway
-echo "mini-ork IDE on Zed ${tag}: script/mini-ork-ide"
+MINI_ORK_BUILD_DEBUG=false "$script_dir/mini-ork-build"  # a full rebuild anyway
+echo "mini-ork IDE on Zed ${tag}: $script_dir/mini-ork-ide"
