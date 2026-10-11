@@ -162,11 +162,11 @@ script/mini-ork-upgrade v1.23.2 --publish    # ...then move mini-ork onto it
 ```
 
 It checks out the new tag, re-applies our commits (fork edits + tooling; the
-crate is a submodule, not replayed), untracks any `crates/mini_ork_ui` a replay
-left behind, converges the submodule, records the new base in `MINI_ORK_BASE`
-and builds. A stop during the cherry-pick means a fork file conflicted or a Zed
-API the crate uses changed; fix it, `git cherry-pick --continue`, then
-`script/mini-ork-upgrade v1.23.2 --resume`.
+crate is a submodule, not replayed), checks that the branch still records
+`crates/mini_ork_ui` as a submodule gitlink, records the new base in
+`MINI_ORK_BASE` and builds. A stop during the cherry-pick means a fork file
+conflicted or a Zed API the crate uses changed; fix it,
+`git cherry-pick --continue`, then `script/mini-ork-upgrade v1.23.2 --resume`.
 
 `--publish` is what puts the release in front of users: it merges the branch into
 `mini-ork` and pushes `fork`. It refuses to run without the build, because
