@@ -42,3 +42,8 @@ ignored = ["log"]
 
 [features]
 default = []
+# Generates the runtime reflection the GPUI inspector needs to read and edit
+# styles. Must be enabled together with `gpui/inspector`; this only carries it
+# across the crate boundary, since `StyledExt` lives here and the inspector
+# reads it through `ui::styled_ext_reflection`.
+inspector = ["gpui/inspector", "gpui_macros/inspector"]
