@@ -13,6 +13,7 @@ use gpui::{
     WeakEntity, Window,
 };
 use serde_json::Value;
+use util::ResultExt as _;
 use workspace::{OpenOptions, Toast, Workspace, notifications::NotificationId};
 
 use crate::board::{self, Board};
@@ -479,7 +480,13 @@ pub fn perform(
     } else if let Some(root) = action.get("project").and_then(Value::as_str) {
         crate::projects::switch_to(workspace, PathBuf::from(root), window, cx);
     } else if action.get("project_pick").and_then(Value::as_bool) == Some(true) {
-        crate::projects::pick(workspace, window, cx);
+        crate::projects::add(workspace, window, cx);
+    } else if let Some(root) = action.get("project_forget").and_then(Value::as_str) {
+        // Forget edits the registry and nothing else, so the window does not
+        // move: the page listing the projects redraws itself instead.
+        crate::projects::forget(Path::new(root));
+        let Origin::Page(page) = origin;
+        page.update(cx, |page, cx| page.reload(cx)).log_err();
     }
 }
 

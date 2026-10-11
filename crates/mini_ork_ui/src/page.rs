@@ -703,7 +703,28 @@ impl MiniOrkPage {
             .id(SharedString::from(format!("s{index}-{}", str_of(s, "type"))))
             .w_full()
             .min_w_0()
+            .relative()
             .child(self.render_section(index, s, window, cx))
+            .child(self.section_json_copy(index, s))
+            .into_any_element()
+    }
+
+    /// `{ }` — this section's payload: the JSON the engine sent and the card
+    /// beside it is drawn from. Floated into the card's top-right corner, where
+    /// a code block already puts its own copy button. The heads that
+    /// right-align their own controls pad clear of it.
+    fn section_json_copy(&self, index: usize, s: &Value) -> AnyElement {
+        div()
+            .absolute()
+            .top(rems_from_px(6_f32))
+            .right(rems_from_px(8_f32))
+            .child(
+                ui::CopyButton::new(
+                    SharedString::from(format!("s{index}-json-copy")),
+                    SharedString::from(format!("{s:#}")),
+                )
+                .tooltip_label("Copy this section as JSON"),
+            )
             .into_any_element()
     }
 
@@ -777,6 +798,8 @@ impl MiniOrkPage {
                         .gap_2p5()
                         .flex_wrap()
                         .items_center()
+                        // Clear of the copy button floated into the card's corner.
+                        .pr(rems_from_px(24_f32))
                         .child(div().flex_1().min_w(rems_from_px(120_f32)).child(self.texts.text(
                             format!("s{index}-title"),
                             &title,
@@ -831,23 +854,16 @@ impl MiniOrkPage {
         let body: Vec<AnyElement> = rows.iter().enumerate().map(|(r, row)| {
             let handler = self.action_handler(row.get("do"), cx);
             let selected = row.get("sel").and_then(Value::as_bool).unwrap_or(false);
+            let acts = arr(row, "acts");
             let cells = arr(row, "cells");
             let clickable = handler.is_some();
             let row_text = cells.iter().map(|cell| str_of(cell, "t")).collect::<Vec<_>>().join("\t");
-            // A single 1px rule between rows only; hover is a clickable row's
-            // affordance, so a plain row does not light up under the pointer.
-            let line = h_flex()
-                .id(SharedString::from(format!("s{index}-r{r}")))
-                .h(rems_from_px(30_f32))
+            // The cells carry the row's click; a row's own buttons are drawn
+            // beside them, so Remove is never read as "open this project".
+            let cells_line = h_flex()
+                .flex_1()
+                .min_w_0()
                 .gap_2p5()
-                .px_1p5()
-                .when(r + 1 < row_count, |this| this.border_b_1().border_color(c(p::BORDER)))
-                .when(selected, |this| this.bg(c(p::ROW_SELECTED)))
-                .when(clickable, |this| this.hover(|style| style.bg(c(p::HOVER))))
-                // Right-click copies the row, wherever it is.
-                .on_mouse_down(gpui::MouseButton::Right, move |_, _, cx| {
-                    cx.write_to_clipboard(gpui::ClipboardItem::new_string(row_text.clone()));
-                })
                 .children(cells.iter().enumerate().map(|(i, cell)| {
                     let colour = p::named(&str_of(cell, "c"));
                     let text = str_of(cell, "t");
@@ -876,10 +892,39 @@ impl MiniOrkPage {
                             .into_any_element()
                     }
                 }));
-            match handler {
-                Some(handler) => line.cursor_pointer().on_click(handler).into_any_element(),
-                None => line.into_any_element(),
-            }
+            // `on_click` is on `StatefulInteractiveElement`, so the clickable
+            // line needs an id of its own before it can take the handler.
+            let cells_line = match handler {
+                Some(handler) => cells_line
+                    .id(SharedString::from(format!("s{index}-r{r}-cells")))
+                    .cursor_pointer()
+                    .on_click(handler)
+                    .into_any_element(),
+                None => cells_line.into_any_element(),
+            };
+            // A single 1px rule between rows only; hover is a clickable row's
+            // affordance, so a plain row does not light up under the pointer.
+            h_flex()
+                .id(SharedString::from(format!("s{index}-r{r}")))
+                .h(rems_from_px(30_f32))
+                .gap_2p5()
+                .px_1p5()
+                .when(r + 1 < row_count, |this| this.border_b_1().border_color(c(p::BORDER)))
+                .when(selected, |this| this.bg(c(p::ROW_SELECTED)))
+                .when(clickable, |this| this.hover(|style| style.bg(c(p::HOVER))))
+                // Right-click copies the row, wherever it is.
+                .on_mouse_down(gpui::MouseButton::Right, move |_, _, cx| {
+                    cx.write_to_clipboard(gpui::ClipboardItem::new_string(row_text.clone()));
+                })
+                .child(cells_line)
+                .when(!acts.is_empty(), |this| {
+                    this.child(h_flex().flex_none().gap(rems_from_px(5_f32)).children(
+                        acts.iter().enumerate().map(|(a, b)| {
+                            self.button(SharedString::from(format!("s{index}-r{r}-a{a}")), b, 22., 11.5, cx)
+                        }),
+                    ))
+                })
+                .into_any_element()
         }).collect();
         self.orca_section(index, s, Some(row_count), cx, v_flex().child(header).children(body).into_any_element())
     }
@@ -1009,6 +1054,8 @@ impl MiniOrkPage {
                     .gap_2p5()
                     .flex_wrap()
                     .items_center()
+                    // Clear of the copy button floated into the card's corner.
+                    .pr(rems_from_px(24_f32))
                     .child(div().flex_1().min_w(rems_from_px(120_f32)).child(components::section_head(&title, count)))
                     .children(actions.iter().enumerate().map(|(i, b)| {
                         self.button(SharedString::from(format!("s{index}-a{i}")), b, 24., 12., cx)
