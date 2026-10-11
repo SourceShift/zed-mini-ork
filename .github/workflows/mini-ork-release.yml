@@ -1,0 +1,118 @@
+name: Release the IDE
+
+# Build "mini-ork IDE.app" for a validated base and attach it to a release, so
+# using the IDE does not mean compiling Zed.
+#
+# Triggered by hand, or by pushing a tag named after the release (ide-v1.23.2).
+#
+# RUNNER: Zed's own release jobs run on namespace.so large runners with a shared
+# Cloudflare R2 sccache bucket. This fork has neither, so this runs on a
+# GitHub-hosted 3 vCPU macOS runner, where a cold Zed build is likely to run past
+# the 6-hour job limit. The sccache cache below makes the second run viable; a
+# genuine release wants a larger runner or a self-hosted one.
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Zed base tag to release (the value of MINI_ORK_BASE on mini-ork)
+        required: true
+  push:
+    tags: ['ide-*']
+
+permissions:
+  contents: write
+
+jobs:
+  app:
+    runs-on: macos-14
+    timeout-minutes: 355
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: mini-ork
+          submodules: recursive
+          fetch-depth: 1
+
+      - name: Resolve the tags
+        id: tags
+        env:
+          EVENT: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref_name }}
+          INPUT: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT" = "push" ]; then
+            release="$REF_NAME"
+            zed="${REF_NAME#ide-}"
+          else
+            zed="$INPUT"
+            release="ide-$INPUT"
+          fi
+          recorded="$(cat MINI_ORK_BASE)"
+          if [ "$zed" != "$recorded" ]; then
+            echo "mini-ork-release: mini-ork is based on $recorded, not $zed" >&2
+            echo "  merge the tracking pull request first, or release $recorded" >&2
+            exit 1
+          fi
+          echo "zed=$zed" >> "$GITHUB_OUTPUT"
+          echo "release=$release" >> "$GITHUB_OUTPUT"
+
+      - name: sccache
+        run: script/setup-sccache
+
+      # sccache's disk cache lives beside its binary (SCCACHE_DIR is
+      # target/sccache). R2_ACCOUNT_ID is unset here, so setup-sccache installs
+      # the binary and skips its R2 configuration — the cache is local-only and
+      # worth persisting between runs.
+      - uses: actions/cache@v4
+        with:
+          path: target/sccache
+          key: sccache-${{ runner.os }}-${{ runner.arch }}-${{ github.run_id }}
+          restore-keys: sccache-${{ runner.os }}-${{ runner.arch }}-
+
+      - name: Build
+        env:
+          RUSTC_WRAPPER: ${{ github.workspace }}/target/sccache/sccache
+          SCCACHE_DIR: ${{ github.workspace }}/target/sccache
+        run: |
+          script/mini-ork-build
+          sccache --show-stats || true
+
+      - name: Package
+        run: |
+          set -euo pipefail
+          app="target/mini-ork IDE.app"
+          test -d "$app" || { echo "mini-ork-release: $app was not produced" >&2; exit 1; }
+          ditto -c -k --sequesterRsrc --keepParent "$app" "mini-ork-IDE.app.zip"
+          shasum -a 256 "mini-ork-IDE.app.zip" > "mini-ork-IDE.app.zip.sha256"
+          cat "mini-ork-IDE.app.zip.sha256"
+
+      - name: Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE: ${{ steps.tags.outputs.release }}
+          ZED: ${{ steps.tags.outputs.zed }}
+        run: |
+          set -euo pipefail
+          # Ad-hoc signed, not notarized: macOS quarantines a download, so say so
+          # rather than let the first launch look like a crash.
+          cat > notes.md <<NOTES
+          The mini-ork IDE on Zed \`${ZED}\`.
+
+          Builds of Zed are ~100 MB and take hours from cold; this is the same
+          source, built for you.
+
+          ## Install
+
+          \`\`\`bash
+          unzip mini-ork-IDE.app.zip -d /Applications
+          xattr -dr com.apple.quarantine "/Applications/mini-ork IDE.app"
+          \`\`\`
+
+          The bundle is ad-hoc signed, not notarized — without that second line
+          Gatekeeper refuses the first launch.
+          NOTES
+          gh release create "$RELEASE" \
+            --title "mini-ork IDE on Zed $ZED" \
+            --notes-file notes.md \
+            "mini-ork-IDE.app.zip" "mini-ork-IDE.app.zip.sha256"

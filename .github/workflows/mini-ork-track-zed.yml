@@ -1,0 +1,154 @@
+name: Track Zed
+
+# Rebase the mini-ork IDE onto each new stable Zed tag and open a pull request.
+#
+# This deliberately never builds: a full Zed build is hours and ~100 GB, and a
+# GitHub-hosted runner is 3 vCPU. Preparing the branch is the part a machine can
+# do; building and launching the app is the part a human has to (script/
+# mini-ork-build). Merge the pull request only once that has happened.
+#
+# GitHub disables scheduled workflows on a repository after 60 days without
+# activity — if the base stops moving, check that first.
+on:
+  schedule:
+    - cron: '23 6 * * *'      # daily, off the hour
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Zed tag to rebase onto (default: the newest stable tag)'
+        required: false
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: mini-ork-track-zed
+  cancel-in-progress: false
+
+jobs:
+  rebase:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: mini-ork
+          fetch-depth: 0        # the cherry-pick range needs real history...
+          filter: blob:none     # ...but not every blob of a Zed-sized repo
+
+      - name: Configure git
+        run: |
+          git config user.name "mini-ork tracker"
+          git config user.email "mini-ork@users.noreply.github.com"
+
+      - name: Resolve the newest stable tag
+        id: tag
+        env:
+          UPSTREAM: https://github.com/zed-industries/zed
+          WANTED: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          base="$(cat MINI_ORK_BASE)"
+          echo "base=$base" >> "$GITHUB_OUTPUT"
+
+          if [ -n "$WANTED" ]; then
+            echo "tag=$WANTED" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          latest="$(git ls-remote --tags --refs "$UPSTREAM" \
+            | sed 's#.*refs/tags/##' \
+            | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' \
+            | sort -V | tail -1)"
+
+          if [ "$latest" = "$base" ]; then
+            echo "already on the newest stable tag ($base)"
+            echo "tag=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # A base pinned to a -pre tag can be newer than the newest stable one.
+          if [ "$(printf '%s\n%s\n' "$base" "$latest" | sort -V | tail -1)" != "$latest" ]; then
+            echo "newest stable ($latest) is not newer than base ($base); nothing to do"
+            echo "tag=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ -n "$(git ls-remote --heads origin "refs/heads/mini-ork-$latest")" ]; then
+            echo "mini-ork-$latest already exists; nothing to do"
+            echo "tag=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "rebasing $base -> $latest"
+          echo "tag=$latest" >> "$GITHUB_OUTPUT"
+
+      - name: Rebase onto the tag
+        id: rebase
+        if: steps.tag.outputs.tag != ''
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          set -euo pipefail
+          base="$(cat MINI_ORK_BASE)"
+          if script/mini-ork-upgrade "$TAG" --no-build; then
+            echo "ok=true" >> "$GITHUB_OUTPUT"
+            {
+              echo "## Rebased onto Zed \`$TAG\`"
+              echo
+              echo "- base: \`$base\` → \`$TAG\`"
+              echo "- commits replayed: $(git rev-list --count "$TAG..mini-ork-$TAG")"
+              echo "- Zed-owned files in the delta: $(git diff --name-only "$TAG..mini-ork-$TAG" -- crates Cargo.toml Cargo.lock | wc -l | tr -d ' ')"
+              echo
+              echo "Not built here — see the pull request."
+            } >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+            {
+              echo "## Rebase onto Zed \`$TAG\` needs a human"
+              echo
+              echo "A cherry-pick stopped. Nothing was pushed. Reproduce locally:"
+              echo
+              echo '```bash'
+              echo "script/mini-ork-upgrade $TAG"
+              echo '```'
+              echo
+              echo '```'
+              git status --short || true
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+
+      - name: Push the branch and open a pull request
+        if: steps.rebase.outputs.ok == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.tag.outputs.tag }}
+          BASE: ${{ steps.tag.outputs.base }}
+        run: |
+          set -euo pipefail
+          branch="mini-ork-$TAG"
+          old_base="$BASE"
+
+          {
+            echo "Automatic rebase onto Zed \`$TAG\`, from base \`$old_base\`."
+            echo
+            echo "- commits replayed: $(git rev-list --count "$TAG..$branch")"
+            echo "- Zed-owned files in the delta: $(git diff --name-only "$TAG..$branch" -- crates Cargo.toml Cargo.lock | wc -l | tr -d ' ')"
+            echo "- the \`mini_ork_ui\` submodule is not replayed; its commit is unchanged"
+            echo
+            echo "**Not built here.** A full Zed build is hours and ~100 GB, and this"
+            echo "runner is 3 vCPU. Build and launch the app before merging:"
+            echo
+            echo '```bash'
+            echo "git fetch origin $branch && git switch mini-ork && git merge --ff-only origin/$branch"
+            echo "script/mini-ork-build && script/mini-ork-ide"
+            echo '```'
+            echo
+            echo "Release Notes:"
+            echo
+            echo "- Improved the mini-ork IDE to Zed $TAG."
+          } > /tmp/pr-body.md
+
+          git push origin "HEAD:refs/heads/$branch"
+          gh pr create --base mini-ork --head "$branch" \
+            --title "Move the IDE onto Zed $TAG" \
+            --body-file /tmp/pr-body.md

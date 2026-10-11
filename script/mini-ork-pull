@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+# Move an existing mini-ork IDE checkout onto the latest released base, and
+# rebuild it.
+#
+#   script/mini-ork-pull
+#
+# Users track the `mini-ork` branch. It only ever fast-forwards — a new Zed base
+# arrives as a merge committed by whoever validated the upgrade — so this is the
+# whole update path.
+#
+# The crate pin is deliberately NOT moved. `git submodule update --init` lands on
+# the commit the release recorded, so what you build is exactly the combination
+# that was validated; `--remote` would quietly swap in a newer crate than the
+# release was tested with. Moving the pin is a maintainer action (MINI-ORK.md).
+set -euo pipefail
+cd "$(git rev-parse --show-toplevel)"
+
+current="$(git rev-parse --abbrev-ref HEAD)"
+if [[ "$current" != "mini-ork" ]]; then
+  echo "mini-ork-pull: this tracks the 'mini-ork' branch; you are on '${current}'" >&2
+  echo "  git switch mini-ork" >&2
+  exit 1
+fi
+
+if ! git diff --quiet || ! git diff --cached --quiet; then
+  echo "mini-ork-pull: commit or stash your changes first" >&2
+  exit 1
+fi
+
+git pull --ff-only
+
+# A workspace member: cargo refuses to load the workspace at all when the crate
+# directory is missing, and a clone without --recurse-submodules leaves it empty.
+git submodule update --init --recursive
+
+script/mini-ork-build

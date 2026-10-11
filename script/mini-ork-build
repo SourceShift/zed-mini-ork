@@ -42,7 +42,12 @@ fi
 # without it, so this must run before every build.
 "$(dirname "$0")/mini-ork-sync-ui"
 
-taskpolicy -c utility env \
-  ZED_RELEASE_CHANNEL=dev \
+# macOS utility QoS yields the build to the user's apps; CI runners have no
+# `taskpolicy`, and `env` stands in for it so the command is otherwise identical.
+priority=(env)
+if command -v taskpolicy >/dev/null 2>&1; then
+  priority=(taskpolicy -c utility env)
+fi
+"${priority[@]}" ZED_RELEASE_CHANNEL=dev \
   cargo build -p zed --profile release-fast -j "$jobs" "$@"
 "$(dirname "$0")/mini-ork-app"   # refresh "mini-ork IDE.app" on the new binary
