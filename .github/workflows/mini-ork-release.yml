@@ -5,11 +5,17 @@ name: Release the IDE
 #
 # Triggered by hand, or by pushing a tag named after the release (ide-v1.23.2).
 #
-# RUNNER: Zed's own release jobs run on namespace.so large runners with a shared
-# Cloudflare R2 sccache bucket. This fork has neither, so this runs on a
-# GitHub-hosted 3 vCPU macOS runner, where a cold Zed build is likely to run past
-# the 6-hour job limit. The sccache cache below makes the second run viable; a
-# genuine release wants a larger runner or a self-hosted one.
+# RUNNER: the default is GitHub's free 3 vCPU `macos-14`. Be honest about what
+# that buys: a COLD Zed build is likely to run past the 6-hour job limit, so the
+# first release on a fresh cache may not finish — the sccache cache below is what
+# makes every run after it viable. Paying for a larger runner does not change
+# that ordering, only the odds.
+#
+# To use something bigger, set the repository variable MINI_ORK_RUNNER (Settings
+# → Secrets and variables → Actions → Variables) to a runner label — a
+# GitHub-hosted larger runner such as `macos-14-large`, or `self-hosted`. No
+# workflow edit is needed, and an unset variable keeps the free default. A
+# larger runner wants a matching timeout: raise `timeout-minutes` here as well.
 on:
   workflow_dispatch:
     inputs:
@@ -24,7 +30,8 @@ permissions:
 
 jobs:
   app:
-    runs-on: macos-14
+    # Unset variable -> free GitHub-hosted runner. See RUNNER above.
+    runs-on: ${{ vars.MINI_ORK_RUNNER || 'macos-14' }}
     timeout-minutes: 355
     steps:
       - uses: actions/checkout@v4
