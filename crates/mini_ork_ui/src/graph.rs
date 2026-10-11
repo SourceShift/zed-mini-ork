@@ -24,7 +24,7 @@ use workspace::Workspace;
 
 use crate::{
     board,
-    components::{ThrottledSpinExt as _, diff_lines, diff_sections, section_for},
+    components::{ThrottledSpinExt as _, diff_lines},
     page::{MiniOrkPage, arr, str_of},
     select::{Look, Texts},
     palette::{self as p, c},
@@ -276,6 +276,11 @@ pub struct MiniOrkGraph {
     /// (re-armed by `set_model`), so the whole graph — including the
     /// rightmost node — is visible without scrolling.
     tab_fit: bool,
+    /// The stream is showing full screen: in a node tab the DAG strip above it
+    /// is dropped so the transcript gets the whole pane, and in the full-screen
+    /// graph the inspector expands over the canvas it normally sits beside.
+    /// Toggled from the stream's own header; escape clears it.
+    stream_full: bool,
     _load: Task<()>,
     _subs: Vec<Subscription>,
 }
@@ -349,6 +354,7 @@ impl MiniOrkGraph {
             texts: Texts::default(),
             tab_mode: false,
             tab_fit: false,
+            stream_full: false,
             _load: Task::ready(()),
             _subs: vec![filter_sub],
         };
@@ -398,6 +404,9 @@ impl MiniOrkGraph {
 
     fn set_tab(&mut self, tab: &str, cx: &mut Context<Self>) {
         self.tab = tab.to_string();
+        // Full screen belongs to the stream; leaving it drops the flag so the
+        // DAG strip does not stay hidden behind another tab.
+        self.stream_full = false;
         self.load_detail(cx);
         cx.notify();
     }
@@ -1152,6 +1161,21 @@ impl MiniOrkGraph {
                 .child(label)
                 .on_click(cx.listener(move |this, _, _, cx| this.set_tab(&key, cx)))
         }));
+        // Built before the header because the header carries them now: the
+        // node's actions used to sit in a footer bar of their own, which put the
+        // panel's widest row at the bottom edge and left the copy button with
+        // nothing beside it to say what it copied. The `run/node` id it copies
+        // is drawn in the header row, next to the button.
+        let copy_id = format!("{}/{}", self.model.run_id, node.id);
+        let acts: Vec<AnyElement> = arr(detail.as_ref().unwrap_or(&Value::Null), "acts")
+            .iter()
+            .enumerate()
+            .map(|(i, b)| {
+                let kind = str_of(b, "kind");
+                let handler = b.get("do").filter(|d| !d.is_null()).map(|d| self.act(d.clone()));
+                p::button(SharedString::from(format!("node-act-{i}")), str_of(b, "label"), if kind.is_empty() { "default" } else { &kind }, 26., 12.5, handler)
+            })
+            .collect();
         let header = v_flex()
             .flex_none()
             .px_3p5()
@@ -1171,6 +1195,19 @@ impl MiniOrkGraph {
                             .child(node.label.clone()),
                     )
                     .child(p::text(state_text(&node.state).to_string(), 12., mc))
+                    // The run and node this panel is about, spelled out: beside
+                    // it the copy button copies something the panel names. In a
+                    // node tab the run id appears nowhere else — `render_header`
+                    // is not rendered there — so this is the only place to read
+                    // it.
+                    .child(
+                        p::text(copy_id.clone(), 11.5, p::MUTED)
+                            .font(p::mono_font(cx))
+                            .min_w_0()
+                            .truncate()
+                            .max_w(rems_from_px(220_f32)),
+                    )
+                    .child(ui::CopyButton::new("node-copy", copy_id.clone()).tooltip_label("Copy run and node id"))
                     .child(div().flex_1())
                     .child(icon_button("node-prev", "↑").on_click(cx.listener(|this, _, _, cx| this.step(-1, cx))))
                     .child(icon_button("node-next", "↓").on_click(cx.listener(|this, _, _, cx| this.step(1, cx))))
@@ -1181,6 +1218,10 @@ impl MiniOrkGraph {
                         })))
                     }),
             )
+            .when(!acts.is_empty(), |this| {
+                // The node's own actions, promoted from the footer to the header.
+                this.child(h_flex().flex_wrap().gap_1p5().children(acts))
+            })
             .child(
                 h_flex()
                     .gap_1p5()
@@ -1217,81 +1258,48 @@ impl MiniOrkGraph {
             (Some(detail), None) => self.render_facts(detail, cx),
         };
 
-        let mut acts: Vec<AnyElement> = arr(detail.as_ref().unwrap_or(&Value::Null), "acts")
-            .iter()
-            .enumerate()
-            .map(|(i, b)| {
-                let kind = str_of(b, "kind");
-                let handler = b.get("do").filter(|d| !d.is_null()).map(|d| self.act(d.clone()));
-                p::button(SharedString::from(format!("node-act-{i}")), str_of(b, "label"), if kind.is_empty() { "default" } else { &kind }, 26., 12.5, handler)
-            })
-            .collect();
-        let copy_id = format!("{}/{}", self.model.run_id, node.id);
-        acts.push(
-            ui::CopyButton::new("node-copy", copy_id)
-                .tooltip_label("Copy node id")
-                .into_any_element(),
-        );
-
         v_flex()
             // In a node tab the inspector takes the space under the DAG strip;
-            // in the full-screen graph it is a fixed-width side panel.
+            // in the full-screen graph it is a fixed-width side panel — unless
+            // the stream is full screen, when it takes the overlay instead.
             .when(self.tab_mode, |this| this.w_full().flex_1().min_h_0())
-            .when(!self.tab_mode, |this| this.flex_none().w(rems_from_px(600_f32)).h_full().border_l_1())
+            .when(!self.tab_mode && !self.stream_full, |this| this.flex_none().w(rems_from_px(600_f32)).h_full().border_l_1())
+            .when(!self.tab_mode && self.stream_full, |this| this.flex_1().min_w_0().h_full())
             .border_color(c(p::BORDER))
             .bg(c(p::CHROME))
             .child(header)
             .child(div().flex_1().min_h_0().flex().flex_col().child(body))
-            .child(
-                h_flex()
-                    .flex_none()
-                    .flex_wrap()
-                    .gap_1p5()
-                    .px_3p5()
-                    .py_2p5()
-                    .border_t_1()
-                    .border_color(c(p::BORDER))
-                    .children(acts),
-            )
             .into_any_element()
     }
 
     /// Open a file in the workspace (a click handler).
     fn opener(&self, path: String) -> impl Fn(&ClickEvent, &mut Window, &mut App) + 'static {
-        let workspace = self.workspace.clone();
-        move |_: &ClickEvent, window: &mut Window, cx: &mut App| {
-            let (workspace, path) = (workspace.clone(), path.clone());
-            window.defer(cx, move |window, cx| {
-                if let Some(workspace) = workspace.upgrade() {
-                    store::perform(&serde_json::json!({ "path": path }), &workspace, Origin::Page(WeakEntity::new_invalid()), window, cx);
-                }
-            });
-        }
+        self.act(serde_json::json!({ "path": path }))
     }
 
-    /// Changed-file rows: clicking a row unfolds that file's own diff under it
-    /// (its slice of `diff`); "Open" opens the file when it exists on disk.
-    fn file_rows(&self, key: &str, files: &[Value], diff: &str, cx: &mut Context<Self>) -> Vec<AnyElement> {
+    /// Open a file's diff in the workspace (a click handler): what the change
+    /// did, rather than the file as it stands now. A file git has no status for
+    /// — clean, ignored, outside the project — is opened as a file instead.
+    fn differ(&self, path: String) -> impl Fn(&ClickEvent, &mut Window, &mut App) + 'static {
+        self.act(serde_json::json!({ "diff": path }))
+    }
+
+    /// Changed-file rows. The row is the change link: clicking it opens that
+    /// file's diff in the workspace, and "Open" opens the file itself. No diff
+    /// is drawn here — the tab would otherwise repeat, in miniature, what the
+    /// editor's diff view shows in full.
+    fn file_rows(&self, key: &str, files: &[Value], cx: &mut Context<Self>) -> Vec<AnyElement> {
         let mono = p::mono_font(cx);
-        let sections = diff_sections(diff);
         let mut rows: Vec<AnyElement> = Vec::new();
         for (i, f) in files.iter().enumerate() {
             let path = str_of(f, "path");
             let abs = str_of(f, "abs");
-            let slice = section_for(&sections, &path);
-            let open_key = format!("{key}:{path}");
-            let open = self.art_open.contains(&open_key);
             let mut row = h_flex()
                 .id(SharedString::from(format!("{key}-file-{i}")))
                 .gap_2p5()
                 .px_1p5()
                 .py(rems_from_px(3_f32))
                 .hover(|s| s.bg(c(p::HOVER)))
-                .child(
-                    p::text(if slice.is_none() { " " } else if open { "▾" } else { "▸" }, 11., p::SUB)
-                        .w_2p5()
-                        .flex_none(),
-                )
                 .child(div().flex_1().min_w_0().text_size(rems_from_px(12_f32)).font(mono.clone()).text_color(c(p::TEXT)).truncate().child(path.clone()))
                 .child(
                     DiffStat::new(
@@ -1302,36 +1310,24 @@ impl MiniOrkGraph {
                     .label_size(LabelSize::XSmall),
                 );
             if !abs.is_empty() {
-                let opener = self.opener(abs);
-                row = row.child(p::button(
-                    SharedString::from(format!("{key}-open-{i}")),
-                    "Open",
-                    "ghost",
-                    20.,
-                    11.,
-                    Some(Box::new(move |event, window, cx| {
-                        cx.stop_propagation();
-                        opener(event, window, cx);
-                    })),
-                ));
-            }
-            if slice.is_some() {
-                row = row.cursor_pointer().on_click(cx.listener(move |this, _, _, cx| {
-                    if !this.art_open.remove(&open_key) {
-                        this.art_open.insert(open_key.clone());
-                    }
-                    cx.notify();
-                }));
+                let opener = self.opener(abs.clone());
+                row = row
+                    .cursor_pointer()
+                    .child(p::button(
+                        SharedString::from(format!("{key}-open-{i}")),
+                        "Open",
+                        "ghost",
+                        20.,
+                        11.,
+                        Some(Box::new(move |event, window, cx| {
+                            // The row opens the diff; the button must not too.
+                            cx.stop_propagation();
+                            opener(event, window, cx);
+                        })),
+                    ))
+                    .on_click(self.differ(abs));
             }
             rows.push(row.into_any_element());
-            if let (true, Some(text)) = (open, slice) {
-                let total = text.lines().count();
-                let mut lines = diff_lines(&text, 400);
-                if total > 400 {
-                    lines.push(serde_json::json!({ "t": format!("… +{} more lines", total - 400), "c": "muted" }));
-                }
-                rows.push(div().pl_4().child(crate::page::code_box(&self.texts, &format!("{key}-diff-{i}"), lines, cx)).into_any_element());
-            }
         }
         rows
     }
@@ -1402,8 +1398,7 @@ impl MiniOrkGraph {
                     if path.is_empty() { row.into_any_element() } else { row.cursor_pointer().on_click(self.opener(path)).into_any_element() }
                 }))
         });
-        let overview_diff = str_of(detail, "diff");
-        let file_rows = self.file_rows("ov", &files, &overview_diff, cx);
+        let file_rows = self.file_rows("ov", &files, cx);
         let files_el = (!files.is_empty()).then(|| v_flex().gap_0p5().child(heading("Files")).children(file_rows));
         let final_el = (!final_text.is_empty()).then(|| {
             v_flex().gap_1().child(heading("Final message")).child(
@@ -1525,13 +1520,15 @@ impl MiniOrkGraph {
     fn render_changes(&self, node: &Node, detail: &Value, cx: &mut Context<Self>) -> AnyElement {
         let mono = p::mono_font(cx);
         let workspace = self.workspace.clone();
+        // A file named anywhere under Changes — an edit, a result — is a change
+        // link: it opens the file's diff, not the file as it stands now.
         let open_path = move |path: String| {
             let workspace = workspace.clone();
             move |_: &ClickEvent, window: &mut Window, cx: &mut App| {
                 let (workspace, path) = (workspace.clone(), path.clone());
                 window.defer(cx, move |window, cx| {
                     if let Some(workspace) = workspace.upgrade() {
-                        store::perform(&serde_json::json!({ "path": path }), &workspace, Origin::Page(WeakEntity::new_invalid()), window, cx);
+                        store::perform(&serde_json::json!({ "diff": path }), &workspace, Origin::Page(WeakEntity::new_invalid()), window, cx);
                     }
                 });
             }
@@ -1554,25 +1551,25 @@ impl MiniOrkGraph {
             }
             for (i, e) in agent_edits.iter().enumerate() {
                 let path = str_of(e, "path");
-                col = col
-                    .child(
-                        h_flex()
-                            .id(SharedString::from(format!("edit-{i}")))
-                            .gap_2()
-                            .cursor_pointer()
-                            .on_click(open_path(path.clone()))
-                            .child(div().flex_1().min_w_0().text_size(rems_from_px(12_f32)).font(mono.clone()).text_color(c(p::TEXT)).truncate().child(path.clone()))
-                            .child(p::text(str_of(e, "tool"), 11., p::SUB))
-                            .child(
-                                DiffStat::new(
-                                    SharedString::from(format!("edit-diff-stat-{i}")),
-                                    str_of(e, "added").parse::<usize>().unwrap_or(0),
-                                    str_of(e, "removed").parse::<usize>().unwrap_or(0),
-                                )
-                                .label_size(LabelSize::XSmall),
-                            ),
-                    )
-                    .child(crate::page::code_box(&self.texts, &format!("edit-diff-{i}"), diff_lines(&str_of(e, "diff"), 400), cx));
+                // The row is the change link; the diff itself opens in the
+                // editor, where it is whole.
+                col = col.child(
+                    h_flex()
+                        .id(SharedString::from(format!("edit-{i}")))
+                        .gap_2()
+                        .cursor_pointer()
+                        .on_click(open_path(path.clone()))
+                        .child(div().flex_1().min_w_0().text_size(rems_from_px(12_f32)).font(mono.clone()).text_color(c(p::TEXT)).truncate().child(path.clone()))
+                        .child(p::text(str_of(e, "tool"), 11., p::SUB))
+                        .child(
+                            DiffStat::new(
+                                SharedString::from(format!("edit-diff-stat-{i}")),
+                                str_of(e, "added").parse::<usize>().unwrap_or(0),
+                                str_of(e, "removed").parse::<usize>().unwrap_or(0),
+                            )
+                            .label_size(LabelSize::XSmall),
+                        ),
+                );
             }
             col
         });
@@ -1607,7 +1604,7 @@ impl MiniOrkGraph {
                 }))
         });
 
-        let changed_rows = self.file_rows("changed", &files, &diff, cx);
+        let changed_rows = self.file_rows("changed", &files, cx);
         let files_section = v_flex()
             .gap_0p5()
             .child(heading(format!("Files changed after {}", node.label)))
@@ -1879,7 +1876,34 @@ impl MiniOrkGraph {
                             ui::CopyButton::new("stream-copy", transcript_text.clone())
                                 .tooltip_label("Copy transcript"),
                         )
-                    }),
+                    })
+                    .child(
+                        div()
+                            .id("stream-full")
+                            .flex_none()
+                            .size(rems_from_px(20_f32))
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .rounded(rems_from_px(4_f32))
+                            .text_color(c(if self.stream_full { p::BLUE } else { p::MUTED }))
+                            .cursor_pointer()
+                            .hover(|s| s.bg(c(p::HOVER)).text_color(c(p::TEXT)))
+                            .tooltip(ui::Tooltip::text(if self.stream_full {
+                                "Exit full screen"
+                            } else {
+                                "Full screen"
+                            }))
+                            .child(
+                                Icon::new(if self.stream_full { IconName::Minimize } else { IconName::MaximizeAlt })
+                                    .size(IconSize::XSmall)
+                                    .color(c(if self.stream_full { p::BLUE } else { p::MUTED }).into()),
+                            )
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                this.stream_full = !this.stream_full;
+                                cx.notify();
+                            })),
+                    ),
             )
             .child(
                 h_flex()
@@ -2270,28 +2294,40 @@ impl Render for MiniOrkGraph {
                     self.tab_fit = true;
                 }
             }
-            let dag = div()
-                .id("node-tab-dag")
-                .flex_none()
-                .h(px(NODE_TAB_DAG_H))
-                .min_h_0()
-                .border_b_1()
-                .border_color(c(p::BORDER))
-                .child(if self.list_view { self.render_list(cx) } else { self.render_graph(cx) });
+            // Full screen: the strip is dropped so the stream below gets the
+            // whole tab. Built only when it will be shown — the canvas lays out
+            // every node, and a hidden strip should not pay for that.
+            let dag = (!self.stream_full).then(|| {
+                div()
+                    .id("node-tab-dag")
+                    .flex_none()
+                    .h(px(NODE_TAB_DAG_H))
+                    .min_h_0()
+                    .border_b_1()
+                    .border_color(c(p::BORDER))
+                    .child(if self.list_view { self.render_list(cx) } else { self.render_graph(cx) })
+            });
             let inspector = selected.map(|node| self.render_inspector(&node, window, cx));
             self.texts.end();
             return v_flex()
                 .id("mini-ork-node-tab")
                 .track_focus(&self.focus_handle)
+                .on_key_down(cx.listener(|this, event: &KeyDownEvent, _, cx| {
+                    if event.keystroke.key == "escape" && this.stream_full {
+                        this.stream_full = false;
+                        cx.notify();
+                    }
+                }))
                 .size_full()
                 .bg(c(p::CHROME))
                 .text_color(c(p::TEXT))
-                .child(dag)
+                .children(dag)
                 .children(inspector)
                 .into_any_element();
         }
         let header = self.render_header(window, cx);
-        let canvas = if self.list_view { self.render_list(cx) } else { self.render_graph(cx) };
+        let canvas = (!self.stream_full)
+            .then(|| if self.list_view { self.render_list(cx) } else { self.render_graph(cx) });
         let inspector = selected.map(|node| self.render_inspector(&node, window, cx));
         self.texts.end();
         v_flex()
@@ -2300,7 +2336,10 @@ impl Render for MiniOrkGraph {
             .key_context("MiniOrkRunGraph")
             .on_key_down(cx.listener(|this, event: &KeyDownEvent, _, cx| {
                 if event.keystroke.key == "escape" {
-                    if this.selected.is_some() {
+                    if this.stream_full {
+                        this.stream_full = false;
+                        cx.notify();
+                    } else if this.selected.is_some() {
                         this.selected = None;
                         cx.notify();
                     } else {
@@ -2314,7 +2353,7 @@ impl Render for MiniOrkGraph {
             .text_color(c(p::TEXT))
             .occlude()
             .child(header)
-            .child(h_flex().flex_1().min_h_0().items_stretch().child(canvas).children(inspector))
+            .child(h_flex().flex_1().min_h_0().items_stretch().children(canvas).children(inspector))
             .with_animation(
                 "graph-fade-in",
                 gpui::Animation::new(Duration::from_millis(180)),
