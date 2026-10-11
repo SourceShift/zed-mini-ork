@@ -42,6 +42,26 @@ cat > "$app/Contents/Info.plist" <<PLIST
 </plist>
 PLIST
 
+# Sign the assembled bundle. `ln -f` copies the Mach-O's own ad-hoc signature,
+# which covers the executable and not the app around it: without this the bundle
+# has no Contents/_CodeSignature, macOS calls the signature malformed ("code has
+# no resources but signature indicates they must be present") and refuses to
+# cache the result, so every launch re-validates the whole binary — 50 s of
+# re-reading against 0.4 s once the bundle is signed. Must run after the binary
+# and Info.plist are in place and before lsregister, which reads the signature.
+#
+# The explicit requirement matters as much as the signature. Ad-hoc signing
+# otherwise derives the designated requirement from the cdhash, which changes on
+# every rebuild — and TCC (Removable Volumes, Full Disk Access) identifies an
+# ad-hoc app by that requirement, so each rebuild would silently lose the grants
+# the IDE needs to read a checkout on an external volume. Naming the identifier
+# instead keeps one identity across builds.
+/usr/bin/codesign --force --deep --sign - \
+  --identifier dev.mini-ork.ide \
+  --requirements '=designated => identifier "dev.mini-ork.ide"' \
+  "$app" \
+  || echo "mini-ork: ad-hoc codesign failed; launches will be slow" >&2
+
 touch "$app"
 /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f "$app" >/dev/null 2>&1 || true
 mkdir -p "$HOME/Applications"
