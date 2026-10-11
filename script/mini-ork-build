@@ -5,19 +5,39 @@
 #
 # - macOS utility QoS (`taskpolicy -c utility`): the build yields to your apps
 #   (background QoS starved even a one-crate rebuild for 11 minutes).
-# - MINI_ORK_BUILD_JOBS parallel jobs (default 4): peak RAM grows with every
-#   rustc running at once, so fewer jobs is the main memory lever.
-# - MINI_ORK_BUILD_DEBUG=false drops debug info: rustc and the linker need far
-#   less memory and the binary is a fraction of the size. Changing it rebuilds
-#   everything, so it is used for from-scratch builds (upgrades), not for the
-#   everyday rebuild (default: the profile's own setting).
+# - MINI_ORK_BUILD_JOBS parallel jobs (default: one per core, capped at 8):
+#   peak RAM grows with every rustc running at once, so this is also the memory
+#   lever — lower it if the machine swaps.
+# - Debug info is pinned to "limited" (line tables only) rather than the
+#   profile's "full". The zed binary carries DWARF from every crate and the
+#   linker merges all of it, which is what makes an otherwise one-crate rebuild
+#   take a minute; line tables keep panic backtraces at file:line and cut the
+#   link hard. Whatever this is set to, keep it constant — any change rehashes
+#   the whole target dir. MINI_ORK_BUILD_DEBUG overrides it (full|limited|false,
+#   or 0/1) at the cost of one full rebuild.
+# - MINI_ORK_LLD=0 falls back to Apple's linker. By default, when Homebrew's
+#   llvm is installed, ld64.lld links the (very large) zed binary markedly
+#   faster; if it is absent the system linker is used silently.
 # After the first build, an edit to crates/mini_ork_ui rebuilds that crate and
-# relinks Zed — about a minute.
+# relinks Zed.
 set -euo pipefail
 cd "$(dirname "$0")/.."
-jobs="${MINI_ORK_BUILD_JOBS:-4}"
+ncpu="$(sysctl -n hw.ncpu 2>/dev/null || echo 4)"
+default_jobs=$(( ncpu > 8 ? 8 : ncpu ))
+jobs="${MINI_ORK_BUILD_JOBS:-$default_jobs}"
+
+# Exported rather than passed through `env` so the `mini-ork-app` step below
+# sees the same fingerprint and never rebuilds against a different one.
+export CARGO_PROFILE_RELEASE_FAST_DEBUG="${MINI_ORK_BUILD_DEBUG:-limited}"
+
+# ld64.lld is keg-only (the `lld` formula), hence the absolute path. Exported
+# (not passed to `env`) so it propagates through taskpolicy too.
+lld="/opt/homebrew/opt/lld/bin/ld64.lld"
+if [[ "${MINI_ORK_LLD:-1}" != "0" && -x "$lld" ]]; then
+  export CARGO_TARGET_AARCH64_APPLE_DARWIN_RUSTFLAGS="-C link-arg=-fuse-ld=$lld"
+fi
+
 taskpolicy -c utility env \
   ZED_RELEASE_CHANNEL=dev \
-  ${MINI_ORK_BUILD_DEBUG:+CARGO_PROFILE_RELEASE_FAST_DEBUG=$MINI_ORK_BUILD_DEBUG} \
   cargo build -p zed --profile release-fast -j "$jobs" "$@"
 "$(dirname "$0")/mini-ork-app"   # refresh "mini-ork IDE.app" on the new binary

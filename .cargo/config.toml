@@ -4,6 +4,9 @@ rustflags = ["-C", "symbol-mangling-version=v0", "--cfg", "tokio_unstable"]
 
 [alias]
 xtask = "run --package xtask --"
+# Fast inner loop for mini-ork UI work: type-checks just the crate, no codegen
+# and no relink of the zed binary. Seconds instead of the ~1 minute full build.
+ui-check = "check -p mini_ork_ui"
 perf-test = ["test", "--profile", "release-fast", "--lib", "--bins", "--tests", "--all-features", "--config", "target.'cfg(true)'.runner='cargo run -p perf --release'", "--config", "target.'cfg(true)'.rustflags=[\"--cfg\", \"perf_enabled\"]"]
 # Keep similar flags here to share some ccache
 perf-compare = ["run", "--profile", "release-fast", "-p", "perf", "--config", "target.'cfg(true)'.rustflags=[\"--cfg\", \"perf_enabled\"]", "--", "compare"]
