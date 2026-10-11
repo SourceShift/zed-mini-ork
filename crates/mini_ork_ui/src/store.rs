@@ -209,6 +209,9 @@ impl BoardStore {
         let poll = cx.spawn(async move |this, cx| {
             let (changed_tx, mut changed_rx) = futures::channel::mpsc::unbounded::<()>();
             let mut watched: Option<PathBuf> = None;
+            // When the last read landed. Stamped at the top of the body, so it
+            // is always assigned before the floor below reads it.
+            let mut read_at: Instant;
             loop {
                 let Ok((bin, root)) = this.update(cx, |this, cx| (this.bin.clone(), this.project_root(cx)))
                 else {
@@ -230,19 +233,37 @@ impl BoardStore {
                     None => Err(anyhow::anyhow!("Open a project folder to see its mini-ork state.")),
                 };
                 let home = result.as_ref().ok().map(|(home, _)| home.clone());
+                // Stamped when the read lands, not when it is issued, so the
+                // floor below measures the gap between two readings of
+                // mini-ork rather than between two turns of this loop.
+                read_at = Instant::now();
                 let updated = this.update(cx, |this, cx| {
                     match result {
                         Ok((home, board)) => {
                             this.home = Some(home);
-                            this.announce_finished(&board, cx);
-                            this.prefetch_inbox(&board, cx);
-                            this.board = Some(board);
-                            this.error = None;
-                            this.generation += 1;
+                            // A read that returns the board already held is the
+                            // common case — the watcher fires on a state.db WAL
+                            // checkpoint as readily as on a run moving — and
+                            // re-rendering for it costs a full layout of the
+                            // page, which at the poll's cadence was most of this
+                            // window's CPU. Only a real change repaints.
+                            if this.board.as_ref() != Some(&board) || this.error.is_some() {
+                                this.announce_finished(&board, cx);
+                                this.prefetch_inbox(&board, cx);
+                                this.board = Some(board);
+                                this.error = None;
+                                this.generation += 1;
+                                cx.notify();
+                            }
                         }
-                        Err(error) => this.error = Some(error.to_string()),
+                        Err(error) => {
+                            let error = error.to_string();
+                            if this.error.as_deref() != Some(error.as_str()) {
+                                this.error = Some(error);
+                                cx.notify();
+                            }
+                        }
                     }
-                    cx.notify();
                 });
                 if updated.is_err() {
                     break;
@@ -267,11 +288,12 @@ impl BoardStore {
                     watched = Some(home);
                 }
                 let active = cx.update(|cx| cx.active_window().is_some());
-                cx.background_executor()
-                    .timer(if active { MIN_GAP } else { MIN_GAP_INACTIVE })
-                    .await;
-                // Wait for the next change (or the safety read), then drain the
-                // burst so one read covers it.
+                // Wait for the next change — the watcher is the beat, not a
+                // timer — then drain the burst so one read covers it. Waiting
+                // first and pacing second is what makes an idle window cost one
+                // read a minute instead of one every `MIN_GAP`: a window that
+                // is open but watching a finished run holds no writes, so
+                // nothing wakes it but the safety read.
                 {
                     use futures::{FutureExt as _, StreamExt as _};
                     let mut next = changed_rx.next().fuse();
@@ -282,6 +304,15 @@ impl BoardStore {
                     }
                 }
                 while changed_rx.try_recv().is_ok() {}
+                // The floor, applied to the *next* read rather than the last
+                // one: a run that writes faster than `MIN_GAP` still reads at
+                // a human pace, but the first change after an idle stretch is
+                // read at once instead of after a full gap.
+                let floor = if active { MIN_GAP } else { MIN_GAP_INACTIVE };
+                let since = read_at.elapsed();
+                if since < floor {
+                    cx.background_executor().timer(floor - since).await;
+                }
             }
         });
         Self {

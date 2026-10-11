@@ -3678,15 +3678,22 @@ async fn watch_git_dir_subdirectories(git_dir_abs_path: &Path, fs: &dyn Fs, watc
 /// Each directory is watched before its children are enumerated, so that a child
 /// created concurrently is either seen by the enumeration or reported by the watch.
 async fn watch_dir_tree(root_abs_path: PathBuf, fs: &dyn Fs, watcher: &dyn Watcher) {
+    // A filesystem that refuses to be watched refuses *every* directory, and
+    // this runs on every rescan. On an external volume, where FSEvents is
+    // unavailable until the volume permission is granted, the per-directory
+    // walk turned one denial into one failed `add` and one error line per
+    // entry — thousands of syscalls and log lines per rescan, which is what
+    // pinned a core. Probe the root once: if the OS will not watch it, stop
+    // here rather than walk the tree to fail again in every subdirectory.
+    if let Err(error) = watcher
+        .add(&root_abs_path)
+        .with_context(|| format!("failed to watch directory {root_abs_path:?}"))
+    {
+        log::warn!("not watching {root_abs_path:?}: {error:#}");
+        return;
+    }
     let mut dirs_to_watch = vec![root_abs_path];
     while let Some(dir_abs_path) = dirs_to_watch.pop() {
-        if !fs.is_dir(&dir_abs_path).await {
-            continue;
-        }
-        watcher
-            .add(&dir_abs_path)
-            .with_context(|| format!("failed to watch directory {dir_abs_path:?}"))
-            .log_err();
         let Some(mut children) = fs.read_dir(&dir_abs_path).await.log_err() else {
             continue;
         };
@@ -3695,6 +3702,7 @@ async fn watch_dir_tree(root_abs_path: PathBuf, fs: &dyn Fs, watcher: &dyn Watch
                 continue;
             };
             if fs.is_dir(&child_abs_path).await {
+                watcher.add(&child_abs_path).log_err();
                 dirs_to_watch.push(child_abs_path);
             }
         }
