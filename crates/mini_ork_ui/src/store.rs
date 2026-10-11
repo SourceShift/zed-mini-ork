@@ -464,6 +464,23 @@ pub fn perform(
         let title = action.get("title").and_then(Value::as_str).unwrap_or_default().to_string();
         let tab = action.get("tab").and_then(Value::as_str).map(String::from);
         crate::page::open_run(workspace, run_id.to_string(), title, tab, window, cx);
+    } else if let Some(path) = action.get("diff").and_then(Value::as_str) {
+        // A file under "Changes" opens as its diff, not as its current
+        // contents: the reader clicked the change, not the file. The diff view
+        // needs a path git has a status for, so a file that is clean, ignored
+        // or outside the project falls back to being opened as a file.
+        let path = PathBuf::from(path);
+        let weak = workspace.downgrade();
+        let diffed = workspace.update(cx, |_, cx| {
+            git_ui::solo_diff_view::open_or_focus_path(weak, &path, window, cx)
+        });
+        if !diffed {
+            workspace.update(cx, |workspace, cx| {
+                workspace
+                    .open_abs_path(path, OpenOptions::default(), window, cx)
+                    .detach_and_log_err(cx);
+            });
+        }
     } else if let Some(path) = action.get("path").and_then(Value::as_str) {
         let path = PathBuf::from(path);
         workspace.update(cx, |workspace, cx| {
