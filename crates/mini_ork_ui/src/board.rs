@@ -338,7 +338,9 @@ pub async fn run_action(bin: PathBuf, home: PathBuf, args: Vec<String>, with_hom
         command.arg("--home").arg(&home);
     }
     if let Some(project) = home.parent() {
-        command.current_dir(project);
+        // `current_dir` moves the process but does not set `PWD`, and commands
+        // such as `init` read `PWD` to learn which folder they are in.
+        command.current_dir(project).env("PWD", project);
     }
     let output = command
         .output()
