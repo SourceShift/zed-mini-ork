@@ -62,3 +62,5 @@ crates/docs_preprocessor/actions.json
 .local*
 .cache
 sources
+# mini-ork per-project home (state.db, runs, worktrees — runtime, not source)
+.mini-ork/
