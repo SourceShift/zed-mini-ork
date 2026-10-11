@@ -68,6 +68,25 @@ if [[ "$resume" == 0 ]]; then
   echo "mini-ork commits to carry over:"
   git log --oneline "${old_base}..HEAD"
   git fetch --depth 1 "$upstream" "refs/tags/${tag}:refs/tags/${tag}"
+  if [[ -e crates/mini_ork_ui ]]; then
+    # The replay starts before the crate became a submodule, so its earliest
+    # commits add crates/mini_ork_ui as plain files. A materialised submodule
+    # checkout occupies that path and git then refuses to write them
+    # ("untracked working tree files would be overwritten by merge"), which is
+    # what every clone that has actually been built looks like — the fresh
+    # clone the first run was tested on leaves the directory empty. Empty it.
+    # The content is only the pinned commit, but check first: edits inside the
+    # checkout, tracked or not, exist nowhere else, and `git diff` does not
+    # report untracked ones.
+    if [[ -n "$(git -C crates/mini_ork_ui status --porcelain 2>/dev/null)" ]]; then
+      echo "mini-ork-upgrade: crates/mini_ork_ui has uncommitted changes" >&2
+      echo "  land or stash them (they exist nowhere else), then run again" >&2
+      exit 1
+    fi
+    # A no-op when the submodule was never initialised, which is fine.
+    git submodule deinit -f crates/mini_ork_ui >/dev/null 2>&1 || true
+    rm -rf crates/mini_ork_ui
+  fi
   git switch -c "mini-ork-${tag}" "${tag}"
   # shellcheck disable=SC2086
   git cherry-pick $commits
