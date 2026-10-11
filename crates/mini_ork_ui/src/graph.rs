@@ -13,12 +13,12 @@ use std::{
 };
 
 use gpui::{
-    AnimationExt as _, AnyElement, App, Bounds, ClickEvent, ClipboardItem, Context, DismissEvent, EventEmitter,
+    AnimationExt as _, AnyElement, App, Bounds, ClickEvent, Context, DismissEvent, EventEmitter,
     FocusHandle, Focusable, KeyDownEvent, PathBuilder, Pixels, Point, Render, ScrollHandle,
     SharedString, Subscription, Task, WeakEntity, Window, canvas, fill, point, px, size,
 };
 use serde_json::Value;
-use ui::{CommonAnimationExt as _, prelude::*};
+use ui::{CommonAnimationExt as _, DiffStat, prelude::*};
 use ui_input::{ERASED_EDITOR_FACTORY, ErasedEditor, ErasedEditorEvent};
 use workspace::Workspace;
 
@@ -173,6 +173,20 @@ impl Model {
         let y = 26. + (self.max_rows() - n.len) as f32 * (NH + GY) / 2. + n.row as f32 * (NH + GY);
         (x, y)
     }
+}
+
+/// The zoom at which a run's whole DAG fits `width` after `gutter` of chrome.
+///
+/// Both hosts that show the canvas unprompted (a node tab's strip, the run
+/// page's DAG section) want the same thing: the rightmost node visible without
+/// panning, and never blown up past 1:1 — a three-node recipe stretched to fill
+/// a window reads as a different picture of the same run.
+pub(crate) fn fit_zoom(width: f32, model: &Model, gutter: f32) -> f32 {
+    let w = model.width();
+    if width <= gutter || w <= 0. {
+        return 1.;
+    }
+    ((width - gutter) / w).clamp(0.4, 1.)
 }
 
 #[derive(Clone, Copy)]
@@ -586,7 +600,6 @@ impl MiniOrkGraph {
                 .flex()
                 .items_center()
                 .justify_center()
-                .rounded(px(5.))
                 .border_1()
                 .border_color(c(p::BORDER2))
                 .text_color(c(p::TEXT))
@@ -610,7 +623,6 @@ impl MiniOrkGraph {
                 this.child(
                     div()
                         .px(px(6.))
-                        .rounded(px(4.))
                         .border_1()
                         .border_color(c(p::BORDER2))
                         .text_size(px(11.))
@@ -629,7 +641,6 @@ impl MiniOrkGraph {
             .child(div().flex_1())
             .child(
                 h_flex()
-                    .rounded(px(6.))
                     .border_1()
                     .border_color(c(p::BORDER2))
                     .overflow_hidden()
@@ -659,7 +670,6 @@ impl MiniOrkGraph {
                     .px(px(9.))
                     .flex()
                     .items_center()
-                    .rounded(px(5.))
                     .border_1()
                     .border_color(c(p::BORDER2))
                     .bg(c(p::BG))
@@ -695,7 +705,6 @@ impl MiniOrkGraph {
                                 .px(px(9.))
                                 .flex()
                                 .items_center()
-                                .rounded(px(5.))
                                 .border_1()
                                 .border_color(c(p::BORDER2))
                                 .text_size(px(12.))
@@ -722,7 +731,6 @@ impl MiniOrkGraph {
                     .px(px(10.))
                     .flex()
                     .items_center()
-                    .rounded(px(5.))
                     .border_1()
                     .border_color(c(p::BORDER2))
                     .bg(c(p::HOVER))
@@ -740,240 +748,275 @@ impl MiniOrkGraph {
 impl MiniOrkGraph {
     // ── canvas ────────────────────────────────────────────────────────────
 
+    /// The run graph's canvas (see `render_canvas`), drawing the graph's own
+    /// zoom, selection and pan state.
     fn render_graph(&self, cx: &mut Context<Self>) -> AnyElement {
-        let z = self.zoom;
-        let model = self.model.clone();
-        let (w, h) = (model.width() * z, model.height() * z);
-        let selected = self.selected.clone();
-        let mono = p::mono_font(cx);
-
-        // Edges: every node of one column to every node of the next, as in the
-        // design; the selected node's edges are blue, edges into pending nodes dim.
-        let edge_model = model.clone();
-        let edge_query = self.query.clone();
-        let edges = canvas(
-            |_, _, _| (),
-            move |bounds: Bounds<Pixels>, _, window, _| {
-                let origin = bounds.origin;
-                let at = |x: f32, y: f32| -> Point<Pixels> { point(origin.x + px(x * z), origin.y + px(y * z)) };
-                let matches = |n: &Node| {
-                    edge_query.is_empty()
-                        || [n.label.as_str(), n.lane.as_str(), n.state.as_str(), n.role.as_str()]
-                            .join(" ")
-                            .to_lowercase()
-                            .contains(&edge_query)
-                };
-                for ci in 0..edge_model.cols.len().saturating_sub(1) {
-                    for a in &edge_model.cols[ci] {
-                        for b in &edge_model.cols[ci + 1] {
-                            let (ax, ay) = edge_model.pos(a);
-                            let (bx, by) = edge_model.pos(b);
-                            let (x1, y1, x2, y2) = (ax + NW, ay + NH / 2., bx, by + NH / 2.);
-                            let hot = selected.as_deref().is_some_and(|s| s == a.id || s == b.id);
-                            let mut colour = if hot {
-                                c(p::BLUE)
-                            } else if b.state.is_empty() || b.state == "pending" {
-                                c(p::BORDER2)
-                            } else {
-                                c(p::DIM)
-                            };
-                            if !(matches(a) && matches(b)) {
-                                colour = colour.opacity(0.25);
-                            }
-                            let mut path = PathBuilder::stroke(px(if hot { 2. } else { 1.3 } * z.max(0.6)));
-                            path.move_to(at(x1, y1));
-                            path.cubic_bezier_to(at(x2, y2), at(x1 + 36., y1), at(x2 - 36., y2));
-                            if let Ok(path) = path.build() {
-                                window.paint_path(path, colour);
-                            }
-                        }
-                    }
-                }
-            },
-        )
-        .absolute()
-        .top_0()
-        .left_0()
-        .size_full();
-
-        let heads = model.heads.iter().enumerate().map(|(i, head)| {
-            div()
-                .absolute()
-                .left(px(i as f32 * (NW + GX) * z))
-                .top_0()
-                .w(px(NW * z))
-                .text_size(px(10.5 * z))
-                .text_color(c(p::DIM))
-                .child(head.to_uppercase())
-                .into_any_element()
+        let this = cx.entity().downgrade();
+        let on_node = std::rc::Rc::new(move |node: &str, _: &mut Window, cx: &mut App| {
+            this.update(cx, |this, cx| this.select(node.to_string(), cx)).ok();
         });
+        render_canvas(
+            &self.model,
+            self.zoom,
+            self.selected.as_deref(),
+            &self.query,
+            &self.canvas_scroll,
+            &self.drag,
+            on_node,
+            cx,
+        )
+    }
+}
 
-        let nodes = model.flat().into_iter().cloned().collect::<Vec<_>>().into_iter().map(|n| {
-            let (x, y) = model.pos(&n);
-            let on = self.selected.as_deref() == Some(n.id.as_str());
-            let (m, mc) = mark(&n.state);
-            let border = if on {
-                c(p::BLUE)
-            } else if n.state == "running" {
-                p::ca(0x74ade88c)
-            } else if n.state == "failed" {
-                p::ca(0xd0727799)
-            } else {
-                c(p::BORDER2)
+/// The DAG canvas: dot grid, curved edges, column heads, nodes. Shared by the
+/// run graph overlay, a node tab's strip and the run page's DAG section, so the
+/// three cannot drift into looking like three renderers of the same run.
+///
+/// `on_node` is the one thing the hosts disagree on: the overlay and the node
+/// tab select the node into their inspector, and the run page opens the node's
+/// own tab.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn render_canvas(
+    model: &Model,
+    zoom: f32,
+    selected: Option<&str>,
+    query: &str,
+    scroll: &ScrollHandle,
+    drag: &std::rc::Rc<std::cell::Cell<Option<(Point<Pixels>, Point<Pixels>)>>>,
+    on_node: std::rc::Rc<dyn Fn(&str, &mut Window, &mut App)>,
+    cx: &mut App,
+) -> AnyElement {
+    // The state this canvas reads is the renderer's, not the store's: owned
+    // here so the closures below can capture it and outlive the call.
+    let selected = selected.map(String::from);
+    let matches = |n: &Node| {
+        query.is_empty()
+            || [n.label.as_str(), n.lane.as_str(), n.state.as_str(), n.role.as_str()]
+                .join(" ")
+                .to_lowercase()
+                .contains(query)
+    };
+    let z = zoom;
+    let model = model.clone();
+    let (w, h) = (model.width() * z, model.height() * z);
+    let mono = p::mono_font(cx);
+
+    // Edges: every node of one column to every node of the next, as in the
+    // design; the selected node's edges are blue, edges into pending nodes dim.
+    let edge_model = model.clone();
+    let edge_query = query.to_string();
+    let edge_selected = selected.clone();
+    let edges = canvas(
+        |_, _, _| (),
+        move |bounds: Bounds<Pixels>, _, window, _| {
+            let origin = bounds.origin;
+            let at = |x: f32, y: f32| -> Point<Pixels> { point(origin.x + px(x * z), origin.y + px(y * z)) };
+            let matches = |n: &Node| {
+                edge_query.is_empty()
+                    || [n.label.as_str(), n.lane.as_str(), n.state.as_str(), n.role.as_str()]
+                        .join(" ")
+                        .to_lowercase()
+                        .contains(&edge_query)
             };
-            let pending = n.state.is_empty() || n.state == "pending";
-            let id = n.id.clone();
-            div()
-                .id(SharedString::from(format!("graph-node-{}", n.id)))
-                .absolute()
-                .left(px(x * z))
-                .top(px(y * z))
-                .w(px(NW * z))
-                .h(px(NH * z))
-                .px(px(10. * z))
-                .py(px(8. * z))
-                .flex()
-                .flex_col()
-                .gap(px(3. * z))
-                .rounded(px(8.))
-                .border(px(if on { 2. } else { 1. }))
-                .border_color(border)
-                .bg(c(if pending { 0x2a2e36 } else { 0x323843 }))
-                .when(!self.matches(&n), |this| this.opacity(0.28))
-                .cursor_pointer()
-                .hover(|s| s.border_color(c(p::BLUE)))
-                .child(
-                    h_flex()
-                        .gap(px(6. * z))
-                        .min_w_0()
-                        .child(p::lane_mark(&n.lane, 18. * z))
-                        .child(
-                            div()
-                                .min_w_0()
-                                .truncate()
-                                .text_size(px(12.5 * z))
-                                .font_weight(gpui::FontWeight::SEMIBOLD)
-                                .text_color(c(p::TEXT))
-                                .child(n.label.clone()),
-                        ),
-                )
-                .child(
-                    h_flex()
-                        .gap(px(5. * z))
-                        .min_w_0()
-                        .child(p::text(p::lane_label(&n.lane), 11. * z, p::TEXT).truncate())
-                        .when(!n.role.is_empty(), |this| {
-                            this.child(p::text(format!("· {}", n.role), 11. * z, p::SUB).truncate())
-                        }),
-                )
-                .child(
-                    h_flex()
-                        .gap(px(8. * z))
-                        .font(mono.clone())
-                        .text_size(px(11. * z))
-                        .child(div().text_color(c(mc)).child(m))
-                        .child(div().text_color(c(mc)).child(state_text(&n.state).to_string()))
-                        .child(div().text_color(c(p::SUB)).child(n.cost.clone()))
-                        .child(div().text_color(c(p::SUB)).child(n.dur.clone())),
-                )
-                .on_click(cx.listener(move |this, _, _, cx| this.select(id.clone(), cx)))
-                .into_any_element()
-        });
-
-        let dots = canvas(
-            |_, _, _| (),
-            |bounds: Bounds<Pixels>, _, window, _| {
-                let colour = c(0x353b45);
-                let (bw, bh) = (f32::from(bounds.size.width), f32::from(bounds.size.height));
-                let mut y = 9.;
-                while y < bh {
-                    let mut x = 9.;
-                    while x < bw {
-                        window.paint_quad(
-                            fill(
-                                Bounds::new(point(bounds.origin.x + px(x), bounds.origin.y + px(y)), size(px(2.), px(2.))),
-                                colour,
-                            )
-                            .corner_radii(px(1.)),
-                        );
-                        x += 18.;
-                    }
-                    y += 18.;
-                }
-            },
-        )
-        .absolute()
-        .top_0()
-        .left_0()
-        .size_full();
-
-        div()
-            .relative()
-            .flex_1()
-            .min_w_0()
-            .h_full()
-            .bg(c(0x262a31))
-            .child(dots)
-            .child(
-                div()
-                    .id("graph-canvas")
-                    .size_full()
-                    .overflow_scroll()
-                    .track_scroll(&self.canvas_scroll)
-                    // Drag the canvas to pan; the wheel/trackpad scrolls both ways.
-                    .on_mouse_down(gpui::MouseButton::Left, {
-                        let drag = self.drag.clone();
-                        let scroll = self.canvas_scroll.clone();
-                        move |event: &gpui::MouseDownEvent, _, _| drag.set(Some((event.position, scroll.offset())))
-                    })
-                    .on_mouse_up(gpui::MouseButton::Left, {
-                        let drag = self.drag.clone();
-                        move |_, _, _| drag.set(None)
-                    })
-                    .on_mouse_move({
-                        let drag = self.drag.clone();
-                        let scroll = self.canvas_scroll.clone();
-                        move |event: &gpui::MouseMoveEvent, window, _| {
-                            if let Some((start, offset)) = drag.get() {
-                                if event.pressed_button != Some(gpui::MouseButton::Left) {
-                                    drag.set(None);
-                                    return;
-                                }
-                                scroll.set_offset(point(offset.x + (event.position.x - start.x), offset.y + (event.position.y - start.y)));
-                                window.refresh();
-                            }
+            for ci in 0..edge_model.cols.len().saturating_sub(1) {
+                for a in &edge_model.cols[ci] {
+                    for b in &edge_model.cols[ci + 1] {
+                        let (ax, ay) = edge_model.pos(a);
+                        let (bx, by) = edge_model.pos(b);
+                        let (x1, y1, x2, y2) = (ax + NW, ay + NH / 2., bx, by + NH / 2.);
+                        let hot = edge_selected.as_deref().is_some_and(|s| s == a.id || s == b.id);
+                        let mut colour = if hot {
+                            c(p::BLUE)
+                        } else if b.state.is_empty() || b.state == "pending" {
+                            c(p::BORDER2)
+                        } else {
+                            c(p::DIM)
+                        };
+                        if !(matches(a) && matches(b)) {
+                            colour = colour.opacity(0.25);
                         }
-                    })
+                        let mut path = PathBuilder::stroke(px(if hot { 2. } else { 1.3 } * z.max(0.6)));
+                        path.move_to(at(x1, y1));
+                        path.cubic_bezier_to(at(x2, y2), at(x1 + 36., y1), at(x2 - 36., y2));
+                        if let Ok(path) = path.build() {
+                            window.paint_path(path, colour);
+                        }
+                    }
+                }
+            }
+        },
+    )
+    .absolute()
+    .top_0()
+    .left_0()
+    .size_full();
+
+    let heads = model.heads.iter().enumerate().map(|(i, head)| {
+        div()
+            .absolute()
+            .left(px(i as f32 * (NW + GX) * z))
+            .top_0()
+            .w(px(NW * z))
+            .text_size(px(10.5 * z))
+            .text_color(c(p::DIM))
+            .child(head.to_uppercase())
+            .into_any_element()
+    });
+
+    let nodes = model.flat().into_iter().cloned().collect::<Vec<_>>().into_iter().map(|n| {
+        let (x, y) = model.pos(&n);
+        let on = selected.as_deref() == Some(n.id.as_str());
+        let (m, mc) = mark(&n.state);
+        let border = if on {
+            c(p::BLUE)
+        } else if n.state == "running" {
+            p::ca(0x74ade88c)
+        } else if n.state == "failed" {
+            p::ca(0xd0727799)
+        } else {
+            c(p::BORDER2)
+        };
+        let pending = n.state.is_empty() || n.state == "pending";
+        let id = n.id.clone();
+        div()
+            .id(SharedString::from(format!("graph-node-{}", n.id)))
+            .absolute()
+            .left(px(x * z))
+            .top(px(y * z))
+            .w(px(NW * z))
+            .h(px(NH * z))
+            .px(px(10. * z))
+            .py(px(8. * z))
+            .flex()
+            .flex_col()
+            .gap(px(3. * z))
+            .border(px(if on { 2. } else { 1. }))
+            .border_color(border)
+            .bg(c(if pending { 0x2a2e36 } else { 0x323843 }))
+            .when(!matches(&n), |this| this.opacity(0.28))
+            .cursor_pointer()
+            .hover(|s| s.border_color(c(p::BLUE)))
+            .child(
+                h_flex()
+                    .gap(px(6. * z))
+                    .min_w_0()
+                    .child(p::lane_mark(&n.lane, 18. * z))
                     .child(
-                        div().flex_none().w(px(w + 56.)).h(px(h + 56.)).p(px(28.)).child(
-                            div()
-                                .relative()
-                                .w(px(w))
-                                .h(px(h))
-                                .child(edges)
-                                .children(heads)
-                                .children(nodes),
-                        ),
+                        div()
+                            .min_w_0()
+                            .truncate()
+                            .text_size(px(12.5 * z))
+                            .font_weight(gpui::FontWeight::SEMIBOLD)
+                            .text_color(c(p::TEXT))
+                            .child(n.label.clone()),
                     ),
             )
-            .when(self.selected.is_none(), |this| {
-                this.child(
-                    div()
-                        .absolute()
-                        .left(px(16.))
-                        .bottom(px(16.))
-                        .px(px(10.))
-                        .py(px(6.))
-                        .rounded(px(6.))
-                        .border_1()
-                        .border_color(c(p::BORDER))
-                        .bg(c(p::CHROME))
-                        .child(p::text("Click a node to inspect it", 12., p::SUB)),
-                )
-            })
+            .child(
+                h_flex()
+                    .gap(px(5. * z))
+                    .min_w_0()
+                    .child(p::text(p::lane_label(&n.lane), 11. * z, p::TEXT).truncate())
+                    .when(!n.role.is_empty(), |this| {
+                        this.child(p::text(format!("· {}", n.role), 11. * z, p::SUB).truncate())
+                    }),
+            )
+            .child(
+                h_flex()
+                    .gap(px(8. * z))
+                    .font(mono.clone())
+                    .text_size(px(11. * z))
+                    .child(div().text_color(c(mc)).child(m))
+                    .child(div().text_color(c(mc)).child(state_text(&n.state).to_string()))
+                    .child(div().text_color(c(p::SUB)).child(n.cost.clone()))
+                    .child(div().text_color(c(p::SUB)).child(n.dur.clone())),
+            )
+            .on_click({
+                            let on_node = on_node.clone();
+                            move |_: &ClickEvent, window: &mut Window, cx: &mut App| (on_node)(&id, window, cx)
+                        })
             .into_any_element()
-    }
+    });
 
+    let dots = canvas(
+        |_, _, _| (),
+        |bounds: Bounds<Pixels>, _, window, _| {
+            let colour = c(0x353b45);
+            let (bw, bh) = (f32::from(bounds.size.width), f32::from(bounds.size.height));
+            let mut y = 9.;
+            while y < bh {
+                let mut x = 9.;
+                while x < bw {
+                    window.paint_quad(
+                        fill(
+                            Bounds::new(point(bounds.origin.x + px(x), bounds.origin.y + px(y)), size(px(2.), px(2.))),
+                            colour,
+                        )
+                        .corner_radii(px(1.)),
+                    );
+                    x += 18.;
+                }
+                y += 18.;
+            }
+        },
+    )
+    .absolute()
+    .top_0()
+    .left_0()
+    .size_full();
+
+    div()
+        .relative()
+        .flex_1()
+        .min_w_0()
+        .h_full()
+        .bg(c(0x262a31))
+        .child(dots)
+        .child(
+            div()
+                .id("graph-canvas")
+                .size_full()
+                .overflow_scroll()
+                .track_scroll(&scroll)
+                // Drag the canvas to pan; the wheel/trackpad scrolls both ways.
+                .on_mouse_down(gpui::MouseButton::Left, {
+                    let drag = drag.clone();
+                    let scroll = scroll.clone();
+                    move |event: &gpui::MouseDownEvent, _, _| drag.set(Some((event.position, scroll.offset())))
+                })
+                .on_mouse_up(gpui::MouseButton::Left, {
+                    let drag = drag.clone();
+                    move |_, _, _| drag.set(None)
+                })
+                .on_mouse_move({
+                    let drag = drag.clone();
+                    let scroll = scroll.clone();
+                    move |event: &gpui::MouseMoveEvent, window, _| {
+                        if let Some((start, offset)) = drag.get() {
+                            if event.pressed_button != Some(gpui::MouseButton::Left) {
+                                drag.set(None);
+                                return;
+                            }
+                            scroll.set_offset(point(offset.x + (event.position.x - start.x), offset.y + (event.position.y - start.y)));
+                            window.refresh();
+                        }
+                    }
+                })
+                .child(
+                    div().flex_none().w(px(w + 56.)).h(px(h + 56.)).p(px(28.)).child(
+                        div()
+                            .relative()
+                            .w(px(w))
+                            .h(px(h))
+                            .child(edges)
+                            .children(heads)
+                            .children(nodes),
+                    ),
+                ),
+        )
+        .into_any_element()
+}
+
+impl MiniOrkGraph {
     fn render_list(&self, cx: &mut Context<Self>) -> AnyElement {
         let mono = p::mono_font(cx);
         let stages = self.model.cols.iter().enumerate().map(|(ci, col)| {
@@ -991,7 +1034,6 @@ impl MiniOrkGraph {
                         .gap(px(10.))
                         .px(px(12.))
                         .py(px(8.))
-                        .rounded(px(7.))
                         .border_1()
                         .border_color(if on { c(p::BLUE) } else { c(p::BORDER2) })
                         .bg(c(if pending { 0x2a2e36 } else { 0x323843 }))
@@ -1065,7 +1107,6 @@ impl MiniOrkGraph {
                 .flex()
                 .items_center()
                 .justify_center()
-                .rounded(px(4.))
                 .text_color(c(p::MUTED))
                 .cursor_pointer()
                 .hover(|s| s.bg(c(p::HOVER)))
@@ -1169,14 +1210,11 @@ impl MiniOrkGraph {
             })
             .collect();
         let copy_id = format!("{}/{}", self.model.run_id, node.id);
-        acts.push(p::button(
-            "node-copy",
-            "Copy node id",
-            "ghost",
-            26.,
-            12.5,
-            Some(Box::new(move |_, _, cx| cx.write_to_clipboard(ClipboardItem::new_string(copy_id.clone())))),
-        ));
+        acts.push(
+            ui::CopyButton::new("node-copy", copy_id)
+                .tooltip_label("Copy node id")
+                .into_any_element(),
+        );
 
         v_flex()
             // In a node tab the inspector takes the space under the DAG strip;
@@ -1231,7 +1269,6 @@ impl MiniOrkGraph {
                 .gap(px(10.))
                 .px(px(6.))
                 .py(px(3.))
-                .rounded(px(4.))
                 .hover(|s| s.bg(c(p::HOVER)))
                 .child(
                     p::text(if slice.is_none() { " " } else if open { "▾" } else { "▸" }, 11., p::SUB)
@@ -1239,8 +1276,14 @@ impl MiniOrkGraph {
                         .flex_none(),
                 )
                 .child(div().flex_1().min_w_0().text_size(px(12.)).font(mono.clone()).text_color(c(p::TEXT)).truncate().child(path.clone()))
-                .child(p::text(format!("+{}", str_of(f, "added")), 11.5, p::GREEN).font(mono.clone()))
-                .child(p::text(format!("−{}", str_of(f, "removed")), 11.5, p::RED).font(mono.clone()));
+                .child(
+                    DiffStat::new(
+                        SharedString::from(format!("{key}-file-diff-{i}")),
+                        str_of(f, "added").parse::<usize>().unwrap_or(0),
+                        str_of(f, "removed").parse::<usize>().unwrap_or(0),
+                    )
+                    .label_size(LabelSize::XSmall),
+                );
             if !abs.is_empty() {
                 let opener = self.opener(abs);
                 row = row.child(p::button(
@@ -1355,7 +1398,6 @@ impl MiniOrkGraph {
                         .overflow_y_scroll()
                         .px(px(10.))
                         .py(px(8.))
-                        .rounded(px(6.))
                         .bg(c(p::BG))
                         .border_1()
                         .border_color(c(p::BORDER))
@@ -1420,7 +1462,6 @@ impl MiniOrkGraph {
                         .gap(px(8.))
                         .px(px(6.))
                         .py(px(4.))
-                        .rounded(px(4.))
                         .cursor_pointer()
                         .hover(|s| s.bg(c(p::HOVER)))
                         .child(p::text(if open { "▾" } else { "▸" }, 11., p::SUB).w(px(10.)).flex_none())
@@ -1505,8 +1546,14 @@ impl MiniOrkGraph {
                             .on_click(open_path(path.clone()))
                             .child(div().flex_1().min_w_0().text_size(px(12.)).font(mono.clone()).text_color(c(p::TEXT)).truncate().child(path.clone()))
                             .child(p::text(str_of(e, "tool"), 11., p::SUB))
-                            .child(p::text(format!("+{}", str_of(e, "added")), 11.5, p::GREEN).font(mono.clone()))
-                            .child(p::text(format!("−{}", str_of(e, "removed")), 11.5, p::RED).font(mono.clone())),
+                            .child(
+                                DiffStat::new(
+                                    SharedString::from(format!("edit-diff-stat-{i}")),
+                                    str_of(e, "added").parse::<usize>().unwrap_or(0),
+                                    str_of(e, "removed").parse::<usize>().unwrap_or(0),
+                                )
+                                .label_size(LabelSize::XSmall),
+                            ),
                     )
                     .child(crate::page::code_box(&self.texts, &format!("edit-diff-{i}"), diff_lines(&str_of(e, "diff"), 400), cx));
             }
@@ -1641,7 +1688,6 @@ impl MiniOrkGraph {
                             .w(px(186.))
                             .px(px(9.))
                             .py(px(6.))
-                            .rounded(px(6.))
                             .bg(c(p::BG))
                             .border_1()
                             .border_color(c(p::BORDER))
@@ -1690,7 +1736,6 @@ impl MiniOrkGraph {
                                             .overflow_y_scroll()
                                             .px(px(10.))
                                             .py(px(8.))
-                                            .rounded(px(6.))
                                             .bg(c(p::BG))
                                             .border_1()
                                             .border_color(c(p::BORDER))
@@ -1774,7 +1819,6 @@ impl MiniOrkGraph {
                     .px(px(7.))
                     .flex()
                     .items_center()
-                    .rounded(px(10.))
                     .border_1()
                     .border_color(c(if on { p::DIM } else { p::BORDER2 }))
                     .when(on, |this| this.bg(c(p::SELECTED)))
@@ -1791,7 +1835,6 @@ impl MiniOrkGraph {
                 .flex()
                 .items_center()
                 .justify_center()
-                .rounded(px(4.))
                 .text_color(c(p::MUTED))
                 .cursor_pointer()
                 .hover(|s| s.bg(c(p::HOVER)).text_color(c(p::TEXT)))
@@ -1815,14 +1858,10 @@ impl MiniOrkGraph {
                     .child(p::text(str_of(detail, "meta"), 11.5, p::DIM).truncate().min_w_0())
                     .child(div().flex_1())
                     .when(!self.stream.is_empty(), |this| {
-                        this.child(p::button(
-                            "stream-copy",
-                            "⧉ Copy",
-                            "ghost",
-                            22.,
-                            11.5,
-                            Some(Box::new(move |_, _, cx| cx.write_to_clipboard(ClipboardItem::new_string(transcript_text.clone())))),
-                        ))
+                        this.child(
+                            ui::CopyButton::new("stream-copy", transcript_text.clone())
+                                .tooltip_label("Copy transcript"),
+                        )
                     }),
             )
             .child(
@@ -1954,7 +1993,6 @@ impl MiniOrkGraph {
                     .px(px(7.))
                     .flex()
                     .items_center()
-                    .rounded(px(4.))
                     .border_1()
                     .border_color(c(if on { p::DIM } else { p::BORDER2 }))
                     .when(on, |this| this.bg(c(p::SELECTED)))
@@ -1978,7 +2016,6 @@ impl MiniOrkGraph {
                         .gap(px(8.))
                         .px(px(10.))
                         .py(px(6.))
-                        .rounded(px(8.))
                         .border_1()
                         .border_color(c(p::DIM))
                         .bg(c(0x262a31))
@@ -2053,7 +2090,6 @@ impl MiniOrkGraph {
                 div()
                     .px(px(10.))
                     .py(px(7.))
-                    .rounded(px(6.))
                     .border_1()
                     .border_color(if steer { p::ca(0xdec18480) } else { c(p::BORDER2) })
                     .bg(if steer { p::ca(0xdec18410) } else { c(0x262a31) })
@@ -2112,7 +2148,6 @@ impl MiniOrkGraph {
                         let colour = str_of(l, "c");
                         div()
                             .px(px(6.))
-                            .rounded(px(2.))
                             .when_some(bg, |this, bg| this.bg(bg))
                             .child(self.texts.text(
                                 key(&format!("l{i}")),
@@ -2205,13 +2240,16 @@ impl Render for MiniOrkGraph {
             // full-screen canvas keeps the two from drifting; only the height
             // is bounded so the detail below stays visible.
             if !self.tab_fit {
-                // Fit the whole DAG across the strip once, so the rightmost
-                // node (rollback, publisher) isn't cut off behind the panel
-                // edge. Never zooms in past 100% in a 280px-tall strip.
-                let vw = f32::from(window.viewport_size().width);
-                let w = self.model.width();
-                if vw > 0. && w > 0. {
-                    self.zoom = ((vw - 56.) / w).clamp(0.4, 1.);
+                // Fit the whole DAG across the strip, so the rightmost node
+                // (rollback, publisher) isn't cut off behind the panel edge,
+                // and never zoom in past 100%. Measured from the container the
+                // canvas actually got — a node tab's strip spans the pane, and
+                // the run page embeds this view inside its own padding, so the
+                // window width would fit both to a box neither one has. Waits
+                // for the first layout rather than guessing.
+                let measured = f32::from(self.canvas_scroll.bounds().size.width);
+                if measured > 0. {
+                    self.zoom = fit_zoom(measured, &self.model, 0.);
                     self.tab_fit = true;
                 }
             }

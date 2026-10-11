@@ -150,6 +150,11 @@ pub struct MiniOrkPage {
     fade: u64,
     /// The DAG card scrolls sideways, as in the design.
     dag_scroll: ScrollHandle,
+    /// The DAG canvas' pan-in-progress anchor: the pointer's last position and
+    /// the scroll offset it was handed at the time. The canvas is the same one
+    /// a node tab draws, so it drags the same way; the state has to live on the
+    /// page because the page — not a `MiniOrkGraph` — is what renders it here.
+    dag_drag: std::rc::Rc<std::cell::Cell<Option<(gpui::Point<gpui::Pixels>, gpui::Point<gpui::Pixels>)>>>,
     /// The run flow map scrolls sideways over its own track.
     flow_scroll: ScrollHandle,
     /// The Graph tab's Steps · Flow map toggle: true draws the flow map and
@@ -168,6 +173,12 @@ pub struct MiniOrkPage {
     graph: Option<Entity<crate::graph::MiniOrkGraph>>,
     /// Open the graph (on this node, if any) once the page has loaded.
     pub(crate) pending_graph: Option<Option<String>>,
+    /// The DAG tab's run graph: the same view a node tab hosts, so a node
+    /// clicked in the page's DAG is inspected in the page — its transcript,
+    /// retry, gate and merge below the canvas — instead of in a second tab.
+    /// Built on the frame after the DAG is on screen, because it needs a
+    /// window (see `ensure_dag_graph`).
+    dag_graph: Option<Entity<crate::graph::MiniOrkGraph>>,
     _graph_sub: Option<Subscription>,
     /// Board reads this page has followed (it re-reads when the board moves).
     seen_board: u64,
@@ -213,6 +224,7 @@ impl MiniOrkPage {
             shapes: HashMap::new(),
             fade: 0,
             dag_scroll: ScrollHandle::new(),
+            dag_drag: Default::default(),
             flow_scroll: ScrollHandle::new(),
             show_flow_map: false,
             flow_focus: None,
@@ -220,6 +232,7 @@ impl MiniOrkPage {
             texts: Texts::default(),
             graph: None,
             pending_graph: None,
+            dag_graph: None,
             _graph_sub: None,
             seen_board: 0,
             last_reload: std::time::Instant::now(),
@@ -393,8 +406,20 @@ impl MiniOrkPage {
                     .ok();
                     return;
                 };
+                // Show the previous answer for this page at once, so the click
+                // that opened it lands on content rather than a skeleton; the
+                // read below replaces it moments later.
+                this.update(cx, |this, cx| {
+                    if this.data.is_none() {
+                        if let Some(cached) = crate::store::cached_page(&home, &key, tab.as_deref(), &args, cx) {
+                            this.data = Some(Ok(cached));
+                            cx.notify();
+                        }
+                    }
+                })
+                .ok();
                 let result = cx
-                    .background_spawn(board::fetch_page(bin, home, key.clone(), tab.clone(), args.clone()))
+                    .background_spawn(board::fetch_page(bin, home.clone(), key.clone(), tab.clone(), args.clone()))
                     .await;
                 let refresh = this
                     .update(cx, |this, cx| {
@@ -415,8 +440,16 @@ impl MiniOrkPage {
                                 graph.update(cx, |graph, cx| graph.set_model(model, cx));
                             }
                         }
+                        // The DAG tab's graph follows the page the same way a
+                        // live run's nodes appear in it without a reload.
+                        if let (Ok(value), Some(graph)) = (&result, this.dag_graph.clone()) {
+                            if let Some(model) = this.args.get("run").and_then(|run| crate::graph::Model::from_page(value, run)) {
+                                graph.update(cx, |graph, cx| graph.set_model(model, cx));
+                            }
+                        }
                         if let Ok(value) = &result {
                             this.cache.insert(this.cache_key(), value.clone());
+                            crate::store::remember_page(&home, &key, tab.as_deref(), &args, value.clone(), cx);
                             let tab = this.tab.clone().unwrap_or_else(|| str_of(value, "tab"));
                             let shapes: Vec<Shape> = arr(value, "sections")
                                 .iter()
@@ -531,7 +564,6 @@ impl MiniOrkPage {
                             .children(chips.iter().map(|chip| {
                                 div()
                                     .px(px(7.))
-                                    .rounded(px(4.))
                                     .border_1()
                                     .border_color(c(p::BORDER2))
                                     .text_size(px(11.5))
@@ -636,6 +668,18 @@ impl MiniOrkPage {
             // With the flow map drawn the older column DAG below it is
             // redundant; the flow card carries its own full-screen button.
             if hide_dag && str_of(s, "type") == "dag" {
+                continue;
+            }
+            // The embedded run graph is the inspector: it holds the clicked
+            // node's transcript and its retry / gate / merge steps. The
+            // section the engine sends beside the DAG is a shallower copy of
+            // one node and stays empty until a node is named as a page arg.
+            // Only on the DAG tab — the graph outlives a tab switch, and
+            // another tab's inspector is the only one it would get.
+            if self.dag_graph.is_some()
+                && matches!(str_of(page, "tab").as_str(), "dag" | "graph")
+                && str_of(s, "type") == "inspector"
+            {
                 continue;
             }
             if s.get("full").and_then(Value::as_bool).unwrap_or(false) {
@@ -982,14 +1026,12 @@ impl MiniOrkPage {
                         div()
                             .flex_1()
                             .h(px(8.))
-                            .rounded(px(4.))
                             .bg(c(p::BG))
                             .overflow_hidden()
                             .child(
                                 div()
                                     .h_full()
                                     .w(gpui::relative(pct as f32 / 100.))
-                                    .rounded(px(4.))
                                     .bg(p::named(&str_of(item, "c"))),
                             ),
                     )
@@ -1015,7 +1057,6 @@ impl MiniOrkPage {
                 v_flex()
                     .px(px(9.))
                     .py(px(5.))
-                    .rounded(px(6.))
                     .border_1()
                     .border_color(c(p::BORDER2))
                     .bg(c(p::BG))
@@ -1046,7 +1087,6 @@ impl MiniOrkPage {
                 div()
                     .px(px(7.))
                     .py(px(1.))
-                    .rounded(px(4.))
                     .border_1()
                     .border_color(c(p::BORDER2))
                     .text_size(px(11.5))
@@ -1069,7 +1109,6 @@ impl MiniOrkPage {
                     .h(px(24.))
                     .px(px(10.))
                     .items_center()
-                    .rounded(px(12.))
                     .border_1()
                     .border_color(c(if on { p::DIM } else { p::BORDER2 }))
                     .when(on, |this| this.bg(c(p::SELECTED)))
@@ -1086,128 +1125,219 @@ impl MiniOrkPage {
 
     fn render_dag(&self, index: usize, s: &Value, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
         let mono = p::mono_font(cx);
-        // Columns keep their width so a wide DAG overflows and scrolls.
-        let mut row = h_flex().flex_none().items_center().gap(px(10.));
-        for (ci, column) in arr(s, "cols").iter().enumerate() {
-            if ci > 0 {
-                row = row.child(p::text("→", 14., p::DIM).flex_none());
+        // The canvas a node tab leads with, drawn here from the same model, so
+        // the run page's DAG and the DAG tab's DAG cannot drift into two
+        // pictures of one run. The payload is already in memory (`self.data`),
+        // so unlike a node tab this needs no fetch — only the model's columns.
+        let model = self.args.get("run").and_then(|run| {
+            self.data
+                .as_ref()
+                .and_then(|data| data.as_ref().ok())
+                .and_then(|page| crate::graph::Model::from_page(page, run))
+        });
+        // The legacy path: an engine that predates the page-level `graph`
+        // object still describes the DAG as a section of columns. Built only
+        // when there is no model to draw, so the canvas path pays nothing.
+        let fallback: Option<AnyElement> = model.is_none().then(|| {
+            // Columns keep their width so a wide DAG overflows and scrolls.
+            let mut row = h_flex().flex_none().items_center().gap(px(10.));
+            for (ci, column) in arr(s, "cols").iter().enumerate() {
+                if ci > 0 {
+                    row = row.child(p::text("→", 14., p::DIM).flex_none());
+                }
+                let nodes = column.as_array().cloned().unwrap_or_default();
+                row = row.child(v_flex().flex_none().gap(px(8.)).children(nodes.iter().enumerate().map(|(ni, node)| {
+                    let state = str_of(node, "state");
+                    let selected = bool_of(node, "sel");
+                    let (mark, colour) = match state.as_str() {
+                        "done" => ("✓", p::GREEN),
+                        "running" => ("●", p::BLUE),
+                        "failed" => ("✗", p::RED),
+                        "skipped" => ("–", p::DIM),
+                        _ => ("○", p::DIM),
+                    };
+                    let status = match state.as_str() {
+                        "running" => "working".to_string(),
+                        other => other.to_string(),
+                    };
+                    let cost = str_of(node, "cost");
+                    let status = if cost.is_empty() { status } else { format!("{status} · {cost}") };
+                    let lane = str_of(node, "lane");
+                    let role = str_of(node, "role");
+                    let border = if selected {
+                        c(p::BLUE)
+                    } else if state == "running" {
+                        p::ca(0x74ade880)
+                    } else {
+                        c(p::BORDER2)
+                    };
+                    // Any node opens the run graph full screen on that node's stream.
+                    let node_id = str_of(node, "id");
+                    let el = v_flex()
+                        .id(SharedString::from(format!("s{index}-n{ci}-{ni}")))
+                        .w(px(128.))
+                        .px(px(9.))
+                        .py(px(7.))
+                        .gap(px(2.))
+                        .border_1()
+                        .border_color(border)
+                        .bg(c(if state == "pending" { p::BG } else { p::NODE_BG }))
+                        .child(
+                            h_flex()
+                                .gap(px(6.))
+                                .min_w_0()
+                                .child(p::lane_mark(&lane, 18.))
+                                .child(
+                                    div()
+                                        .min_w_0()
+                                        .truncate()
+                                        .text_size(px(12.5))
+                                        .font_weight(gpui::FontWeight::SEMIBOLD)
+                                        .text_color(c(p::TEXT))
+                                        .child(str_of(node, "label")),
+                                ),
+                        )
+                        .child(
+                            h_flex()
+                                .gap(px(5.))
+                                .min_w_0()
+                                .child(p::text(p::lane_label(&lane), 11., p::TEXT).truncate())
+                                .when(!role.is_empty(), |this| {
+                                    this.child(p::text(format!("· {role}"), 11., p::SUB).truncate())
+                                }),
+                        )
+                        .child(
+                            h_flex()
+                                .gap(px(6.))
+                                .child(p::text(mark, 10., colour))
+                                .child(p::text(status, 11., colour).font(mono.clone())),
+                        );
+                    el.cursor_pointer()
+                        .hover(|s| s.border_color(c(p::BLUE)))
+                        .on_click(cx.listener(move |this, _, window, cx| {
+                            this.open_node_tab(node_id.clone(), window, cx)
+                        }))
+                        .into_any_element()
+                })));
             }
-            let nodes = column.as_array().cloned().unwrap_or_default();
-            row = row.child(v_flex().flex_none().gap(px(8.)).children(nodes.iter().enumerate().map(|(ni, node)| {
-                let state = str_of(node, "state");
-                let selected = bool_of(node, "sel");
-                let (mark, colour) = match state.as_str() {
-                    "done" => ("✓", p::GREEN),
-                    "running" => ("●", p::BLUE),
-                    "failed" => ("✗", p::RED),
-                    "skipped" => ("–", p::DIM),
-                    _ => ("○", p::DIM),
-                };
-                let status = match state.as_str() {
-                    "running" => "working".to_string(),
-                    other => other.to_string(),
-                };
-                let cost = str_of(node, "cost");
-                let status = if cost.is_empty() { status } else { format!("{status} · {cost}") };
-                let lane = str_of(node, "lane");
-                let role = str_of(node, "role");
-                let border = if selected {
-                    c(p::BLUE)
-                } else if state == "running" {
-                    p::ca(0x74ade880)
-                } else {
-                    c(p::BORDER2)
-                };
-                // Any node opens the run graph full screen on that node's stream.
-                let node_id = str_of(node, "id");
-                let el = v_flex()
-                    .id(SharedString::from(format!("s{index}-n{ci}-{ni}")))
-                    .w(px(128.))
-                    .px(px(9.))
-                    .py(px(7.))
-                    .gap(px(2.))
-                    .rounded(px(7.))
-                    .border_1()
-                    .border_color(border)
-                    .bg(c(if state == "pending" { p::BG } else { p::NODE_BG }))
-                    .child(
-                        h_flex()
-                            .gap(px(6.))
-                            .min_w_0()
-                            .child(p::lane_mark(&lane, 18.))
-                            .child(
-                                div()
-                                    .min_w_0()
-                                    .truncate()
-                                    .text_size(px(12.5))
-                                    .font_weight(gpui::FontWeight::SEMIBOLD)
-                                    .text_color(c(p::TEXT))
-                                    .child(str_of(node, "label")),
-                            ),
-                    )
-                    .child(
-                        h_flex()
-                            .gap(px(5.))
-                            .min_w_0()
-                            .child(p::text(p::lane_label(&lane), 11., p::TEXT).truncate())
-                            .when(!role.is_empty(), |this| {
-                                this.child(p::text(format!("· {role}"), 11., p::SUB).truncate())
-                            }),
-                    )
-                    .child(
-                        h_flex()
-                            .gap(px(6.))
-                            .child(p::text(mark, 10., colour))
-                            .child(p::text(status, 11., colour).font(mono.clone())),
-                    );
-                el.cursor_pointer()
-                    .hover(|s| s.border_color(c(p::BLUE)))
-                    .on_click(cx.listener(move |this, _, window, cx| {
-                        this.open_node_tab(node_id.clone(), window, cx)
-                    }))
-                    .into_any_element()
-            })));
-        }
+            row.into_any_element()
+        });
         let legend = str_of(s, "legend");
-        let scroller = div()
-            .id(("dag-scroll", index))
-            .w_full()
-            .overflow_x_scroll()
-            .track_scroll(&self.dag_scroll)
-            .pt(px(36.))
-            .pb(px(12.))
-            .child(row);
+        // The DAG is a two-axis viewport: a wide run scrolls sideways, a deep
+        // one scrolls down. Bounding the height keeps a tall DAG from growing
+        // past the window and pushing the sections below out of reach.
+        //
+        // The canvas brings its own scroll container and pan handlers (see
+        // `graph::render_canvas`), and exactly one element may track a handle — a
+        // second container would apply the same offset again and move the
+        // content at double speed. So the canvas path hands it a bounded box
+        // and nothing else; only the legacy column row needs a scroller here.
+        let dag_height = (f32::from(window.viewport_size().height) - 200.).clamp(240., 760.);
+        let scroller = match model {
+            Some(model) => {
+                // Fit against the box the canvas actually gets — the container's
+                // bounds from the last frame — and not against the window. This
+                // section sits inside the page's side padding and the card's, so
+                // a window-based guess would fit the run into a box wider than
+                // this one and clip the last column. A resized window re-fits on
+                // the next frame for the same reason. The first frame has no
+                // bounds yet; fitting to 1:1 covers it and the next frame
+                // corrects.
+                let measured = f32::from(self.dag_scroll.bounds().size.width);
+                let zoom = crate::graph::fit_zoom(measured, &model, 0.);
+                let page = cx.entity().downgrade();
+                // Clicking a node here opens the node's own tab, the same
+                // detail a click in the run graph's DAG opens. The page handle
+                // travels with it so the inspector's retry/gate/merge steps can
+                // act through `Origin::Page` rather than going nowhere.
+                let on_node = std::rc::Rc::new(move |node: &str, window: &mut Window, cx: &mut App| {
+                    page.update(cx, |this, cx| this.open_node_tab(node.to_string(), window, cx)).ok();
+                });
+                div()
+                    .id(("dag-scroll", index))
+                    .relative()
+                    .w_full()
+                    .min_w_0()
+                    .h(px(dag_height))
+                    .child(crate::graph::render_canvas(
+                        &model,
+                        zoom,
+                        None,
+                        "",
+                        &self.dag_scroll,
+                        &self.dag_drag,
+                        on_node,
+                        cx,
+                    ))
+            }
+            None => div()
+                .id(("dag-scroll", index))
+                .relative()
+                .w_full()
+                .min_w_0()
+                .max_h(px(dag_height))
+                .pt(px(36.))
+                .pb(px(12.))
+                .child(fallback.unwrap_or_else(|| div().into_any_element()))
+                .custom_scrollbars(
+                    Scrollbars::always_visible(ScrollAxes::Both).tracked_scroll_handle(&self.dag_scroll),
+                    window,
+                    cx,
+                ),
+        };
+        // Once the run graph exists it leads: the same strip a node tab shows,
+        // with the clicked node's inspector under it, so the page can be read
+        // and acted on without opening a second tab. The canvas above is the
+        // first frame's stand-in — the graph is built a frame later, because
+        // building it needs a window.
+        let body: AnyElement = match self.dag_graph.clone() {
+            Some(graph) => {
+                // Tall enough for the strip plus a transcript, short enough
+                // that the run's own panels below it stay in reach.
+                let graph_height = (f32::from(window.viewport_size().height) - 320.).clamp(420., 720.);
+                div().w_full().min_w_0().h(px(graph_height)).child(graph).into_any_element()
+            }
+            None => scroller.into_any_element(),
+        };
+        // An icon, not a label: the canvas it acts on is the whole card, so a
+        // text button either sat in the padding above it or, as a later child
+        // of the card, was painted over by the canvas itself. Nested in a
+        // wrapper with the canvas and added after it, so it draws on top and
+        // stays over the graph however tall the card grows. Top-left, where
+        // the flow map keeps its own copy of this control and where the
+        // embedded canvas has no chrome of its own to collide with.
         let full_screen = div()
             .id(("dag-full", index))
             .absolute()
             .top(px(8.))
-            .right(px(8.))
-            .h(px(24.))
-            .px(px(9.))
+            .left(px(8.))
+            .size(px(26.))
             .flex()
             .items_center()
-            .rounded(px(5.))
+            .justify_center()
+            .rounded(px(6.))
             .border_1()
             .border_color(c(p::BORDER2))
             .bg(c(p::BG))
-            .text_size(px(12.))
-            .text_color(c(p::MUTED))
             .cursor_pointer()
-            .hover(|s| s.bg(c(p::HOVER)).text_color(c(p::TEXT)))
+            .hover(|s| s.bg(c(p::HOVER)))
             .tooltip(ui::Tooltip::text("Full screen · inspect every node"))
-            .child("⤢ Full screen")
+            .child(
+                Icon::new(IconName::MaximizeAlt)
+                    .size(IconSize::Small)
+                    .color(c(p::MUTED).into()),
+            )
             .on_click(cx.listener(|this, _, window, cx| this.open_graph(None, window, cx)));
         card()
             .relative()
             .p(px(16.))
-            .child(full_screen)
             .child(
-                div().relative().w_full().child(scroller).custom_scrollbars(
-                    Scrollbars::always_visible(ScrollAxes::Horizontal)
-                        .tracked_scroll_handle(&self.dag_scroll),
-                    window,
-                    cx,
-                ),
+                div()
+                    .relative()
+                    .w_full()
+                    .min_w_0()
+                    .child(body)
+                    .child(full_screen),
             )
             .when(!legend.is_empty(), |this| this.child(p::text(legend, 11.5, p::SUB).mt(px(12.))))
             .into_any_element()
@@ -1290,7 +1420,6 @@ impl MiniOrkPage {
                     .overflow_y_scroll()
                     .px(px(10.))
                     .py(px(8.))
-                    .rounded(px(6.))
                     .bg(c(p::BG))
                     .border_1()
                     .border_color(c(p::BORDER))
@@ -1454,6 +1583,34 @@ impl MiniOrkPage {
         cx.notify();
     }
 
+    /// Build the DAG tab's run graph, or move the existing one onto the run's
+    /// current model. The graph needs a window to build its filter and steer
+    /// editors, so this runs from a deferred action on the frame after the DAG
+    /// is on screen — the same reason `open_graph` is called that way.
+    fn ensure_dag_graph(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(run) = self.args.get("run").cloned() else {
+            return;
+        };
+        let Some(Ok(page)) = self.data.clone() else {
+            return;
+        };
+        let Some(model) = crate::graph::Model::from_page(&page, &run) else {
+            return;
+        };
+        if let Some(graph) = self.dag_graph.clone() {
+            graph.update(cx, |graph, cx| graph.set_model(model, cx));
+            return;
+        }
+        let (workspace, page_handle) = (self.workspace.clone(), cx.entity().downgrade());
+        let graph = cx.new(|cx| {
+            let mut graph = crate::graph::MiniOrkGraph::new(model, None, workspace, page_handle, window, cx);
+            graph.tab_mode = true;
+            graph
+        });
+        self.dag_graph = Some(graph);
+        cx.notify();
+    }
+
     /// Re-read when the board moved (mini-ork wrote to the project) and this
     /// page is the one in front — so what you look at is never stale.
     fn follow_board(&mut self, cx: &mut Context<Self>) {
@@ -1490,7 +1647,6 @@ fn card() -> Div {
         .bg(c(p::CHROME))
         .border_1()
         .border_color(c(p::BORDER))
-        .rounded(px(8.))
         .min_w_0()
 }
 
@@ -1504,7 +1660,6 @@ pub(crate) fn code_box<T: 'static>(texts: &Texts, key: &str, lines: Vec<Value>, 
         .relative()
         .px(px(10.))
         .py(px(8.))
-        .rounded(px(6.))
         .bg(c(p::BG))
         .border_1()
         .border_color(c(p::BORDER))
@@ -1522,18 +1677,13 @@ pub(crate) fn code_box<T: 'static>(texts: &Texts, key: &str, lines: Vec<Value>, 
         .when(!lines.is_empty(), |this| {
             this.child(
                 div()
-                    .id(SharedString::from(format!("{key}-copy")))
                     .absolute()
                     .top(px(4.))
                     .right(px(6.))
-                    .px(px(6.))
-                    .rounded(px(4.))
-                    .text_size(px(11.))
-                    .text_color(c(p::DIM))
-                    .cursor_pointer()
-                    .hover(|s| s.bg(c(p::HOVER)).text_color(c(p::TEXT)))
-                    .child("⧉ Copy")
-                    .on_click(move |_, _, cx| cx.write_to_clipboard(gpui::ClipboardItem::new_string(all.clone()))),
+                    .child(ui::CopyButton::new(
+                        SharedString::from(format!("{key}-copy")),
+                        all.clone(),
+                    )),
             )
         });
     texts.nested_scroll(format!("{key}-box"), block)
@@ -1605,6 +1755,22 @@ impl Render for MiniOrkPage {
                     page.update(cx, |page, cx| page.open_graph(node, window, cx)).ok();
                 });
             }
+            // The DAG tab leads with the run graph, so the page carries one
+            // rather than drawing a canvas of its own that cannot inspect a
+            // node. Deferred for the window it needs to build.
+            if self.dag_graph.is_none()
+                && !self.show_flow_map
+                && self
+                    .data
+                    .as_ref()
+                    .and_then(|data| data.as_ref().ok())
+                    .is_some_and(|page| matches!(str_of(page, "tab").as_str(), "dag" | "graph"))
+            {
+                let page = cx.entity().downgrade();
+                window.defer(cx, move |window, cx| {
+                    page.update(cx, |page, cx| page.ensure_dag_graph(window, cx)).ok();
+                });
+            }
         }
         let source = self.source();
         let bar = self.loading.then(|| loading::sweep_bar(("page-sweep", self.generation as usize)));
@@ -1670,6 +1836,15 @@ impl Render for MiniOrkPage {
             }
         };
         self.texts.end();
+        // The DAG tab is a canvas, not prose. A node tab's strip runs edge to
+        // edge, so this tab drops the centred reading column — otherwise the
+        // canvas would be fitted into a 1080px box and draw the same run
+        // smaller than the node tab does.
+        let dag_tab = self
+            .data
+            .as_ref()
+            .and_then(|data| data.as_ref().ok())
+            .is_some_and(|page| matches!(str_of(page, "tab").as_str(), "dag" | "graph"));
         div()
             .id("mini-ork-page")
             .track_focus(&self.focus_handle)
@@ -1686,7 +1861,11 @@ impl Render for MiniOrkPage {
                     .px(px(20.))
                     .pt(px(16.))
                     .pb(px(48.))
-                    .child(div().max_w(px(1080.)).mx_auto().child(content))
+                    .child(
+                        div()
+                            .when(!dag_tab, |this| this.max_w(px(1080.)).mx_auto())
+                            .child(content),
+                    )
             })
             .when_some(self.graph.clone(), |this, graph| {
                 this.child(
