@@ -147,6 +147,13 @@ Our delta is what decides how painful this is: currently ~62 commits, of which
 not replayed at all; it is a submodule. Keep that file count small: prefer a new
 crate over an edit to a Zed file.
 
+The collision set is stable and small, which is what makes a weekly rebase
+viable. Across `v1.22.0 → v1.23.2` upstream changed 298 files, but only four of
+ours: `Cargo.toml`, `Cargo.lock`, `crates/zed/Cargo.toml`,
+`crates/zed/src/zed.rs`. Two are manifests (take upstream, re-add our entries)
+and `zed.rs` is the hook that pulls the crate's pages in. Everything else
+replayed untouched.
+
 ## Upgrading to a new Zed release
 
 ```bash
