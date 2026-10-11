@@ -627,6 +627,11 @@ impl MiniOrkPage {
             header = header.on_click(cx.listener(move |this, _, _, cx| {
                 this.toggle_step_expanded("story", &step_id_for_toggle, cx);
             }));
+            // A story has no card header of its own, so the section's floated
+            // copy button lands on the first row: pad the row clear of it.
+            if i == 0 {
+                header = header.pr(rems_from_px(24_f32));
+            }
 
             let mut row_el = v_flex().gap_1p5().child(header);
 
