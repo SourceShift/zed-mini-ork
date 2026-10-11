@@ -11,7 +11,7 @@ use serde_json::Value;
 
 /// What `mini-ork board --json` returns that the shell reads; the rest of
 /// the document (learnings, automations, …) is for pages and is ignored here.
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, PartialEq)]
 pub struct Board {
     #[serde(default)]
     pub project: String,
@@ -24,7 +24,7 @@ pub struct Board {
 }
 
 /// The title bar and status bar numbers (`board --json` → `header`).
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, PartialEq)]
 pub struct Header {
     #[serde(default)]
     pub project: String,
@@ -57,7 +57,7 @@ pub struct Header {
     pub version: String,
 }
 
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, PartialEq)]
 pub struct Nodes {
     #[serde(default)]
     pub configured: u64,
@@ -65,7 +65,7 @@ pub struct Nodes {
 
 /// One model lane's health over the last 24 h (`board --json` → `header.lanes`).
 /// Every field defaults so an older engine that never sends `lanes` still parses.
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, PartialEq)]
 pub struct Lane {
     #[serde(default)]
     pub lane: String,
@@ -79,7 +79,7 @@ pub struct Lane {
     pub last_error: String,
 }
 
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, PartialEq)]
 pub struct Counts {
     #[serde(default)]
     pub working: u64,
@@ -91,7 +91,7 @@ pub struct Counts {
     pub failed: u64,
 }
 
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, PartialEq)]
 pub struct Run {
     pub id: String,
     #[serde(default)]
@@ -195,7 +195,7 @@ async fn run_json(bin: &Path, args: &[String], home: &Path) -> Result<Value> {
 
 /// A page of runs (`mini-ork board runs [--query Q] --offset N --limit M`): full-text
 /// search over runs' titles, kickoffs and main artifacts, newest first without a query.
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, PartialEq)]
 pub struct RunsPage {
     #[serde(default)]
     pub runs: Vec<Run>,
