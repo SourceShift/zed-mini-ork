@@ -141,7 +141,8 @@ fn project_switcher(project: &str, workspace: Option<Entity<Workspace>>) -> impl
                     });
                 }
                 let add_workspace = workspace.clone();
-                let manage_workspace = workspace.clone();
+                // Last use of `workspace` here, so it moves rather than clones.
+                let manage_workspace = workspace;
                 menu.separator()
                     .entry("Add project…", None, move |window, cx| {
                         projects::add(&add_workspace, window, cx)

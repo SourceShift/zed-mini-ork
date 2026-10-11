@@ -205,7 +205,7 @@ pub fn project_actions(
         ContextMenuEntry::new("Remove from list")
             .disabled(entry.is_current)
             .handler({
-                let root = entry.root.clone();
+                let root = entry.root;
                 move |_, _| forget(&root)
             }),
     )
@@ -319,21 +319,13 @@ pub fn open_or_init(workspace: &Entity<Workspace>, root: PathBuf, window: &mut W
 }
 
 /// Ask for a folder, then open it as a project, initializing it when needed.
+/// One path for every "add a project" affordance in the IDE.
 pub fn add(workspace: &Entity<Workspace>, window: &mut Window, cx: &mut App) {
-    pick_root(workspace, "Add mini-ork project", window, cx);
-}
-
-/// Ask for an existing project folder, then switch this window to it.
-pub fn pick(workspace: &Entity<Workspace>, window: &mut Window, cx: &mut App) {
-    pick_root(workspace, "Open mini-ork project", window, cx);
-}
-
-fn pick_root(workspace: &Entity<Workspace>, prompt: &str, window: &mut Window, cx: &mut App) {
     let paths = cx.prompt_for_paths(PathPromptOptions {
         files: false,
         directories: true,
         multiple: false,
-        prompt: Some(prompt.into()),
+        prompt: Some("Add mini-ork project".into()),
     });
     let workspace = workspace.downgrade();
     window

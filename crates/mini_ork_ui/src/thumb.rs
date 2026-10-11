@@ -457,7 +457,14 @@ mod tests {
         Thumb::build(RawDag {
             nodes: ["planner", "a", "b", "join"]
                 .iter()
-                .map(|id| RawNode { id: (*id).into(), lane: None, state: "done".into() })
+                .map(|id| RawNode {
+                    id: (*id).into(),
+                    lane: None,
+                    state: "done".into(),
+                    kind: None,
+                    started_at: None,
+                    duration_ms: None,
+                })
                 .collect(),
             edges: [("planner", "a"), ("planner", "b"), ("a", "join"), ("b", "join")]
                 .iter()
@@ -492,7 +499,14 @@ mod tests {
         let thumb = Thumb::build(RawDag {
             nodes: ["planner", "implementer", "verifier", "publisher"]
                 .iter()
-                .map(|id| RawNode { id: (*id).into(), lane: None, state: "done".into() })
+                .map(|id| RawNode {
+                    id: (*id).into(),
+                    lane: None,
+                    state: "done".into(),
+                    kind: None,
+                    started_at: None,
+                    duration_ms: None,
+                })
                 .collect(),
             edges: vec![
                 RawEdge { from: "planner".into(), to: "implementer".into(), edge_type: "depends_on".into() },
@@ -533,7 +547,14 @@ mod tests {
         let thumb = Thumb::build(RawDag {
             nodes: ids
                 .iter()
-                .map(|id| RawNode { id: (*id).into(), lane: None, state: "done".into() })
+                .map(|id| RawNode {
+                    id: (*id).into(),
+                    lane: None,
+                    state: "done".into(),
+                    kind: None,
+                    started_at: None,
+                    duration_ms: None,
+                })
                 .collect(),
             edges: vec![
                 raw("planner", "code_impact_lens", "depends_on"),
@@ -581,7 +602,14 @@ mod tests {
         let thumb = Thumb::build(RawDag {
             nodes: ids
                 .iter()
-                .map(|id| RawNode { id: id.clone(), lane: None, state: "done".into() })
+                .map(|id| RawNode {
+                    id: id.clone(),
+                    lane: None,
+                    state: "done".into(),
+                    kind: None,
+                    started_at: None,
+                    duration_ms: None,
+                })
                 .collect(),
             // A plain chain: one node per layer, so `usable` never limits `d`.
             edges: (0..11)
@@ -613,7 +641,14 @@ mod tests {
         let thumb = Thumb::build(RawDag {
             nodes: ids
                 .iter()
-                .map(|id| RawNode { id: id.clone(), lane: None, state: "done".into() })
+                .map(|id| RawNode {
+                    id: id.clone(),
+                    lane: None,
+                    state: "done".into(),
+                    kind: None,
+                    started_at: None,
+                    duration_ms: None,
+                })
                 .collect(),
             edges: (0..13)
                 .map(|i| RawEdge {
@@ -657,7 +692,14 @@ mod tests {
         let thumb = Thumb::build(RawDag {
             nodes: ["a", "b"]
                 .iter()
-                .map(|id| RawNode { id: (*id).into(), lane: None, state: "done".into() })
+                .map(|id| RawNode {
+                    id: (*id).into(),
+                    lane: None,
+                    state: "done".into(),
+                    kind: None,
+                    started_at: None,
+                    duration_ms: None,
+                })
                 .collect(),
             edges: vec![
                 RawEdge { from: "a".into(), to: "b".into(), edge_type: "depends_on".into() },
@@ -673,7 +715,14 @@ mod tests {
         let thumb = Thumb::build(RawDag {
             nodes: ["a", "b"]
                 .iter()
-                .map(|id| RawNode { id: (*id).into(), lane: None, state: "done".into() })
+                .map(|id| RawNode {
+                    id: (*id).into(),
+                    lane: None,
+                    state: "done".into(),
+                    kind: None,
+                    started_at: None,
+                    duration_ms: None,
+                })
                 .collect(),
             edges: vec![
                 RawEdge { from: "a".into(), to: "ghost".into(), edge_type: "depends_on".into() },
