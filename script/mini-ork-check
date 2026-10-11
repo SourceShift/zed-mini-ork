@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# Type-check the mini-ork IDE crate.
+#
+# Same as `cargo ui-check`, but syncs the generated crate first: a cargo alias
+# cannot run shell, and it expands only after the workspace is already loaded,
+# so `cargo ui-check` alone cannot work on a clone where crates/mini_ork_ui has
+# not been materialised yet.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+"$(dirname "$0")/mini-ork-sync-ui"
+exec cargo ui-check "$@"

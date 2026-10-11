@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+# Make crates/mini_ork_ui/ exist and match the canonical source in repo A.
+#
+# The mini_ork_ui crate is a member of this cargo workspace, and cargo refuses
+# to load the workspace at all when a member directory is missing — so
+# `cargo build -p zed`, `cargo metadata`, `cargo ui-check` and rust-analyzer all
+# die without this having run. The canonical source lives in the `mini-ork`
+# repository at `ui/`; this copies it in. Run by script/mini-ork-build before
+# every build, and by script/mini-ork-check before a type-check.
+#
+# Repo A is located relative to the MAIN checkout of this repo (not this
+# worktree), so this also works from a `git worktree` of zed-mini-ork.
+# Override with MINI_ORK_SRC=/path/to/mini-ork.
+set -euo pipefail
+root="$(cd "$(dirname "$0")/.." && pwd)"
+common="$(git -C "$root" rev-parse --path-format=absolute --git-common-dir)"
+src="${MINI_ORK_SRC:-$(dirname "$(dirname "$common")")/mini-ork}/ui"
+
+if ! grep -q '^name = "mini_ork_ui"$' "$src/Cargo.toml" 2>/dev/null; then
+  echo "mini-ork: the mini-ork UI crate is not at $src" >&2
+  echo "  Expected repo A's crate at ui/ (a Cargo.toml with name = \"mini_ork_ui\")." >&2
+  echo "  Clone mini-ork next to this repo's main checkout, or set" >&2
+  echo "  MINI_ORK_SRC=/path/to/mini-ork." >&2
+  exit 1
+fi
+
+dst="$root/crates/mini_ork_ui"
+# Interlock: only ever replace a directory git already ignores. Two halves,
+# both required — a missing ignore rule OR a still-tracked copy each mean the
+# `rm -rf` below would delete files git still cares about.
+if git -C "$root" ls-files --error-unmatch crates/mini_ork_ui >/dev/null 2>&1; then
+  echo "mini-ork: crates/mini_ork_ui is still tracked; refusing to overwrite it." >&2
+  echo "  Untrack it first: git rm -r --cached crates/mini_ork_ui" >&2
+  exit 1
+fi
+# --no-index so a tracked path would still be evaluated (plain check-ignore
+# answers "not ignored" for tracked paths, which is why the check above is a
+# separate, explicit one).
+git -C "$root" check-ignore -q --no-index crates/mini_ork_ui || {
+  echo "mini-ork: refusing to sync — crates/mini_ork_ui is not gitignored." >&2
+  echo "  Add '/crates/mini_ork_ui' to .gitignore." >&2
+  exit 1
+}
+
+# Replace, never merge: a module deleted in repo A must not linger compiled.
+# `cp -a` keeps mtimes so the build stays incremental.
+rm -rf "$dst"
+mkdir -p "$dst"
+cp -a "$src/." "$dst/"
+# Read-only files, so an editor that opens the copy fails loudly on save
+# instead of silently editing a file the next sync overwrites. Files only —
+# leaving directories writable keeps the `rm -rf` above working next time.
+find "$dst" -type f -exec chmod a-w {} +
+echo "mini-ork: crates/mini_ork_ui <- $src" >&2

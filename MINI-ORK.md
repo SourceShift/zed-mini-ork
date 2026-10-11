@@ -19,9 +19,14 @@ status bar); `~/.config/zed/settings.json` is shared with Zed and never written.
 
 | What | Where | Touches Zed's files? |
 |---|---|---|
-| Shell and pages | `crates/mini_ork_ui/` | no — a new crate |
-| Hooks | `Cargo.toml`, `crates/zed/Cargo.toml`, `crates/zed/src/main.rs`, `crates/zed/src/zed.rs` | yes — 5 lines (`git diff $(cat MINI_ORK_BASE) -- Cargo.toml crates/zed`) |
-| Tooling | `script/mini-ork-*`, `MINI-ORK.md`, `MINI_ORK_BASE` | no — new files |
+| Shell and pages | `mini-ork/ui/` (synced to `crates/mini_ork_ui/` at build time) | no — a new crate |
+| Hooks and fork edits | `Cargo.toml`, `crates/zed/*`, `crates/ui/*`, `crates/inspector_ui/*`, `crates/icons/*`, `crates/git_ui/*`, `crates/worktree/*`, `assets/*`, `.cargo/config.toml` | yes — run `git diff --name-only "$(cat MINI_ORK_BASE)..HEAD"` for the exact list |
+| Tooling | `script/mini-ork-*` (incl. `mini-ork-sync-ui`, `mini-ork-check`), `MINI-ORK.md`, `MINI_ORK_BASE` | no — new files |
+
+The crate source is **not** in this repo: it lives canonically in the mini-ork
+repo at `ui/` and is copied into `crates/mini_ork_ui/` before every cargo
+command (see "Build and run"). `crates/mini_ork_ui/` is generated and
+git-ignored — edit `mini-ork/ui/` instead.
 
 Every page is data: `mini-ork board page <key> [--tab T] [--arg k=v]` returns
 it as JSON (`mini_ork/ide_pages/spec.py` in mini-ork) and `page.rs` draws it, so a
@@ -36,6 +41,17 @@ the IDE without clicking through it.
 
 ## Build and run
 
+**This repo is one half of a two-checkout setup.** The `mini_ork_ui` crate is a
+member of this cargo workspace, and cargo refuses to load the workspace when a
+member directory is missing — so a fresh clone of this repo **will not build**
+(and rust-analyzer will show the whole project as broken) until the crate is
+materialised. `script/mini-ork-sync-ui` does that: it copies `ui/` from a
+`mini-ork` checkout cloned **next to** this repo's main checkout. Set
+`MINI_ORK_SRC=/path/to/mini-ork` if it lives elsewhere.
+
+You do not normally run it by hand — `script/mini-ork-build` and
+`script/mini-ork-check` call it first.
+
 ```bash
 script/mini-ork-build                 # utility priority, one job per core (cap 8)
 open -a "mini-ork IDE" ~/path/to/project   # or script/mini-ork-ide <folder>
@@ -49,7 +65,7 @@ from Spotlight, Launchpad and the Dock like any app.
 `script/mini-ork-build` keeps the Mac usable while it builds: background QoS
 (efficiency cores) and one parallel job per core, capped at 8
 (`MINI_ORK_BUILD_JOBS` lowers it — the memory lever). A first build is long;
-after that, a change to `crates/mini_ork_ui` rebuilds in about a minute. Avoid
+after that, a change to `mini-ork/ui` rebuilds in about a minute. Avoid
 toggling features of core crates (e.g. GPUI `test-support`): that recompiles
 most of Zed.
 
@@ -67,9 +83,11 @@ of it — that merge, not the one-crate compile, is what the rebuild time goes
 into. Backtraces still carry file:line. `MINI_ORK_BUILD_DEBUG=full` restores
 locals at the cost of one full rebuild.
 
-- `cargo ui-check` — type-check `crates/mini_ork_ui` alone, no codegen and no
-  relink. Seconds instead of a minute; run it while editing, then
-  `script/mini-ork-build` to look at the result.
+- `script/mini-ork-check` — syncs the crate, then type-checks it alone (`cargo
+  ui-check`), no codegen and no relink. Seconds instead of a minute; run it
+  while editing, then `script/mini-ork-build` to look at the result. (Use the
+  script, not bare `cargo ui-check`: the alias cannot sync the crate, and cargo
+  needs the crate present to load the workspace at all.)
 - Page content is data, not code: `mini-ork board page <key>` returns JSON that
   `page.rs` draws, so page changes need no rebuild at all (see above).
 - `sccache` wraps rustc (`~/.cargo/config.toml`, cache on the external SSD).
@@ -90,13 +108,15 @@ from `mini-ork zed setup` works unchanged).
 script/mini-ork-upgrade v1.23.0
 ```
 
-It checks out the new tag, re-applies our commits (crate, hooks, tooling),
-records the new base in `MINI_ORK_BASE` and builds. A stop during the
-cherry-pick means a hook line conflicted or a Zed API the crate uses changed;
-fix it, `git cherry-pick --continue`, then `script/mini-ork-upgrade v1.23.0 --resume`.
+It checks out the new tag, re-applies our commits (fork edits + tooling; the
+crate is synced, not committed), untracks any `crates/mini_ork_ui` a replay
+left behind, records the new base in `MINI_ORK_BASE` and builds. A stop during
+the cherry-pick means a fork file conflicted or a Zed API the crate uses
+changed; fix it, `git cherry-pick --continue`, then
+`script/mini-ork-upgrade v1.23.0 --resume`.
 
 ## Licence
 
-Zed's editor crates are GPL-3.0-or-later; this IDE, including
-`crates/mini_ork_ui`, is distributed under the same terms. mini-ork itself
-(Apache-2.0) is a separate program the IDE runs.
+Zed's editor crates are GPL-3.0-or-later; this IDE, including the `mini_ork_ui`
+crate source at `mini-ork/ui/`, is distributed under the same terms. mini-ork
+itself (Apache-2.0) is a separate program the IDE runs.
