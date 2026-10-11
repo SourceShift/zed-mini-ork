@@ -80,17 +80,21 @@ echo "${tag}" > MINI_ORK_BASE
 git add MINI_ORK_BASE
 git commit -q -m "mini-ork: base ${tag}" || true
 
-# crates/mini_ork_ui is the mini_ork-ui submodule now (see MINI-ORK.md), so a
-# replay from an older base can leave it tracked as plain files. Untrack those
-# here, not in the replayed diff: .gitignore does not apply to tracked paths, so
-# a `--ours` resolution of the .gitignore hunk would silently leave the crate
-# both tracked AND ignored — cargo would compile the stale copy and nothing would
-# report it.
-if [[ -n "$(git ls-files crates/mini_ork_ui)" ]]; then
-  git rm -r --cached -q crates/mini_ork_ui
-  git commit -q -m "mini-ork: untrack crates/mini_ork_ui (it is the mini-ork-ui submodule)"
+# The crate is the mini_ork-ui submodule (see MINI-ORK.md). Assert that this
+# branch records it as a gitlink, rather than repair it here. A replay from a
+# base older than the submodule commit can leave it tracked as plain files, and
+# `git rm -r --cached crates/mini_ork_ui` looks like the fix — but a gitlink is
+# a tracked path too, so that command deletes the *correct* entry just as
+# happily, and .gitmodules, Cargo.toml and the gitlink then disagree three ways.
+# The pin is not recoverable from inside this repo, so fail closed and name it.
+if [[ -z "$(git ls-files --stage crates/mini_ork_ui | awk '$1 == "160000" { print $2; exit }')" ]]; then
+  echo "mini-ork-upgrade: crates/mini_ork_ui is not a gitlink on this branch" >&2
+  echo "  (a replay left it as plain files, or a cherry-pick conflict ate it)" >&2
+  echo "  restore it, then re-run with --resume:" >&2
+  echo "    git submodule update --init --recursive && git add crates/mini_ork_ui" >&2
+  echo "    git commit -m 'mini-ork: restore the crates/mini_ork_ui gitlink'" >&2
+  exit 1
 fi
-rm -rf crates/mini_ork_ui
 if git check-ignore -q --no-index crates/mini_ork_ui; then
   echo "mini-ork-upgrade: a .gitignore rule still ignores crates/mini_ork_ui" >&2
   exit 1
