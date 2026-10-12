@@ -77,7 +77,7 @@ use settings::{
     SettingsFile, SettingsStore, VIM_KEYMAP_PATH, initial_local_debug_tasks_content,
     initial_project_settings_content, initial_tasks_content, update_settings_file,
 };
-use mini_ork_ui::MiniOrkSidebar as Sidebar;
+use sidebar::Sidebar;
 #[cfg(debug_assertions)]
 use workspace::workspace_error::{ErrorAction, ErrorSeverity, WorkspaceError};
 
@@ -545,6 +545,29 @@ pub fn initialize_workspace(app_state: Arc<AppState>, cx: &mut App) {
                 })
                 .ok();
         });
+    })
+    .detach();
+
+    // mini-ork's activity rail goes in the left dock, not the sidebar slot.
+    // The slot belongs to `sidebar::Sidebar`, which is the only view that
+    // carries Zed's thread list (`ThreadMetadataStore`); putting the rail there
+    // is what made created threads invisible. The rail's own `Panel` impl is in
+    // `mini_ork_ui::MiniOrkSidebar`.
+    cx.observe_new(move |workspace: &mut Workspace, window, cx| {
+        let Some(window) = window else {
+            return;
+        };
+        if workspace.panel::<mini_ork_ui::MiniOrkSidebar>(cx).is_some() {
+            return;
+        }
+        let Some(multi_workspace) = workspace
+            .multi_workspace()
+            .and_then(|multi_workspace| multi_workspace.upgrade())
+        else {
+            return;
+        };
+        let rail = cx.new(|cx| mini_ork_ui::MiniOrkSidebar::new(multi_workspace, window, cx));
+        workspace.add_panel(rail, window, cx);
     })
     .detach();
 
