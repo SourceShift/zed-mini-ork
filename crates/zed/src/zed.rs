@@ -548,11 +548,13 @@ pub fn initialize_workspace(app_state: Arc<AppState>, cx: &mut App) {
     })
     .detach();
 
-    // mini-ork's activity rail goes in the left dock, not the sidebar slot.
+    // mini-ork's activity rail goes in the right dock, not the sidebar slot.
     // The slot belongs to `sidebar::Sidebar`, which is the only view that
     // carries Zed's thread list (`ThreadMetadataStore`); putting the rail there
-    // is what made created threads invisible. The rail's own `Panel` impl is in
-    // `mini_ork_ui::MiniOrkSidebar`.
+    // is what made created threads invisible. The left dock is where the agent
+    // panel lives — the threads the board lists — and a dock shows one panel at
+    // a time, so the rail takes the other side. The rail's own `Panel` impl is
+    // in `mini_ork_ui::MiniOrkSidebar`.
     cx.observe_new(move |workspace: &mut Workspace, window, cx| {
         let Some(window) = window else {
             return;
