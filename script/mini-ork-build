@@ -27,6 +27,12 @@
 #   build's I/O is the target directory, so pointing that at a faster or more
 #   reliable disk leaves the source tree where it is (mini-ork-app and
 #   mini-ork-ide follow it, so they package and launch the right binary).
+# - sccache is bypassed. It is wired in globally as `rustc-wrapper` in
+#   ~/.cargo/config.toml, but its server wedges here: the rustc processes it
+#   spawns sit in uninterruptible sleep at ~0 CPU while every compile waits on
+#   its socket, so a build that reaches the compile phase never finishes.
+#   MINI_ORK_BUILD_SCCACHE=1 opts back in (its cache directory is on the
+#   external volume, which is worth moving before you rely on it again).
 # After the first build, an edit to the mini_ork_ui crate (its own repo, vendored
 # at crates/mini_ork_ui below — see MINI-ORK.md) rebuilds that crate and relinks
 # Zed.
@@ -45,6 +51,18 @@ export CARGO_PROFILE_RELEASE_FAST_DEBUG="${MINI_ORK_BUILD_DEBUG:-limited}"
 lld="/opt/homebrew/opt/lld/bin/ld64.lld"
 if [[ "${MINI_ORK_LLD:-1}" != "0" && -x "$lld" ]]; then
   export CARGO_TARGET_AARCH64_APPLE_DARWIN_RUSTFLAGS="-C link-arg=-fuse-ld=$lld"
+fi
+
+# sccache is configured globally (`rustc-wrapper` in ~/.cargo/config.toml) and
+# its server wedges on this machine, so a build that reaches the compile phase
+# stops there rather than failing: the rustc processes the server spawns sit in
+# uninterruptible sleep at ~0 CPU while every compile waits on its socket. An
+# empty value is how cargo is told there is no wrapper — the environment
+# outranks the config — and MINI_ORK_BUILD_SCCACHE=1 re-enables it for anyone
+# whose cache directory is on a disk that keeps up.
+if [[ -z "${MINI_ORK_BUILD_SCCACHE:-}" ]]; then
+  export RUSTC_WRAPPER=""
+  export CARGO_BUILD_RUSTC_WRAPPER=""
 fi
 
 # ---- one build at a time ---------------------------------------------------
