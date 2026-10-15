@@ -4,7 +4,14 @@
 # re-run after every build (script/mini-ork-build does).
 set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
-bin="$root/target/release-fast/zed"
+# A build redirected with CARGO_TARGET_DIR puts the binary somewhere else, and
+# the stale one still sitting in `target/` would pass the check below — so an
+# app assembled after a redirected build would silently be the previous UI.
+# Relative values resolve against the repo root, the directory the build runs
+# cargo from.
+target_dir="${CARGO_TARGET_DIR:-$root/target}"
+[[ "$target_dir" = /* ]] || target_dir="$root/$target_dir"
+bin="$target_dir/release-fast/zed"
 [[ -x "$bin" ]] || { echo "build first: script/mini-ork-build" >&2; exit 1; }
 app="${MINI_ORK_APP_DIR:-$root/target}/mini-ork IDE.app"
 version="$(sed -n 's/^version = "\(.*\)"/\1/p' "$root/crates/zed/Cargo.toml" | head -1)"

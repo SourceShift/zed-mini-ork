@@ -3,8 +3,10 @@
 #
 #   script/mini-ork-build            # the usual: rebuild after a change
 #
-# - macOS utility QoS (`taskpolicy -c utility`): the build yields to your apps
-#   (background QoS starved even a one-crate rebuild for 11 minutes).
+# - MINI_ORK_BUILD_QOS (utility|background) demotes the build below your apps
+#   with `taskpolicy`. There is no demotion by default: both classes throttle
+#   the manifest-phase filesystem work hard enough that a one-crate rebuild was
+#   measured sitting in `stat` for minutes before rustc ever started.
 # - MINI_ORK_BUILD_JOBS parallel jobs (default: one per core, capped at 8):
 #   peak RAM grows with every rustc running at once, so this is also the memory
 #   lever — lower it if the machine swaps.
@@ -21,6 +23,10 @@
 # - One build at a time. A second `script/mini-ork-build` kills the build still
 #   running before it starts, rather than queueing behind it — see the lock
 #   below.
+# - CARGO_TARGET_DIR moves the build off this checkout's volume. Nearly all of a
+#   build's I/O is the target directory, so pointing that at a faster or more
+#   reliable disk leaves the source tree where it is (mini-ork-app and
+#   mini-ork-ide follow it, so they package and launch the right binary).
 # After the first build, an edit to the mini_ork_ui crate (its own repo, vendored
 # at crates/mini_ork_ui below — see MINI-ORK.md) rebuilds that crate and relinks
 # Zed.
@@ -118,11 +124,18 @@ lock_taken=1
 # without it, so this must run before every build.
 "$(dirname "$0")/mini-ork-sync-ui"
 
-# macOS utility QoS yields the build to the user's apps; CI runners have no
-# `taskpolicy`, and `env` stands in for it so the command is otherwise identical.
+# The build is heavy, so the default is to run it at the same priority as your
+# apps: that competes with them, but it is the setting that makes progress.
+# Demoting it with taskpolicy instead leaves the build starved for filesystem
+# metadata — the manifest phase and cargo's own fingerprint checks are almost
+# entirely `stat` calls, and a demoted process gets so few of them that a
+# one-crate rebuild sat for minutes before rustc started. Opt into yielding with
+# MINI_ORK_BUILD_QOS=utility (or background) when a responsive machine matters
+# more than a finished build. CI runners have no taskpolicy, and `env` stands in
+# for it so the command is otherwise identical either way.
 priority=(env)
-if command -v taskpolicy >/dev/null 2>&1; then
-  priority=(taskpolicy -c utility env)
+if [[ -n "${MINI_ORK_BUILD_QOS:-}" ]] && command -v taskpolicy >/dev/null 2>&1; then
+  priority=(taskpolicy -c "$MINI_ORK_BUILD_QOS" env)
 fi
 "${priority[@]}" ZED_RELEASE_CHANNEL=dev \
   cargo build -p zed --profile release-fast -j "$jobs" "$@"

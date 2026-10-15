@@ -5,6 +5,11 @@
 # sharing your Zed settings (~/.config/zed), with its own window state.
 set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
-bin="${root}/target/release-fast/zed"
+# Follows CARGO_TARGET_DIR, so it launches what the last build produced rather
+# than an older binary left in `target/`. Relative values resolve against the
+# repo root, the directory the build runs cargo from.
+target_dir="${CARGO_TARGET_DIR:-$root/target}"
+[[ "$target_dir" = /* ]] || target_dir="$root/$target_dir"
+bin="$target_dir/release-fast/zed"
 [[ -x "$bin" ]] || { echo "not built yet: ZED_RELEASE_CHANNEL=dev cargo build -p zed --profile release-fast" >&2; exit 1; }
 exec "$bin" "$@"
