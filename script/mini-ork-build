@@ -18,6 +18,9 @@
 # - MINI_ORK_LLD=0 falls back to Apple's linker. By default, when Homebrew's
 #   llvm is installed, ld64.lld links the (very large) zed binary markedly
 #   faster; if it is absent the system linker is used silently.
+# - One build at a time. A second `script/mini-ork-build` kills the build still
+#   running before it starts, rather than queueing behind it — see the lock
+#   below.
 # After the first build, an edit to the mini_ork_ui crate (its own repo, vendored
 # at crates/mini_ork_ui below — see MINI-ORK.md) rebuilds that crate and relinks
 # Zed.
@@ -37,6 +40,79 @@ lld="/opt/homebrew/opt/lld/bin/ld64.lld"
 if [[ "${MINI_ORK_LLD:-1}" != "0" && -x "$lld" ]]; then
   export CARGO_TARGET_AARCH64_APPLE_DARWIN_RUSTFLAGS="-C link-arg=-fuse-ld=$lld"
 fi
+
+# ---- one build at a time ---------------------------------------------------
+# Two `cargo build -p zed` runs do not go twice as fast — they halve each
+# other's throughput and double peak memory — and the second one spends most of
+# its life on cargo's own build-directory lock anyway. So a build left running
+# from an earlier session is not a build in progress; it is a queue every later
+# invocation files in behind. Rather than wait, the new build supersedes it:
+# kill it, wait for it to die, take the lock.
+#
+# `mkdir` is the claim, because creating a directory is atomic — exactly one
+# process can win it. The owner's PID goes inside, and the lock is stale only
+# when that PID is gone, so there is no other staleness to detect.
+lock_dir="target/mini-ork-build.lock"
+lock_taken=""
+
+# Deepest child first: an orphaned rustc goes on compiling — and on holding the
+# machine — long after the cargo that spawned it is gone.
+kill_tree() {
+  local pid="$1" child
+  for child in $(pgrep -P "$pid" 2>/dev/null || true); do
+    kill_tree "$child"
+  done
+  kill -9 "$pid" 2>/dev/null || true
+}
+
+# The PID in a lock left behind by a `kill -9` can be recycled onto an unrelated
+# process long before the next build reads it. Killing that would be worse than
+# doing without the lock, so a holder is only superseded when it still looks
+# like this script — otherwise its lock is treated as the leftover it is.
+is_this_build() {
+  ps -o command= -p "$1" 2>/dev/null | grep -q 'mini-ork-build'
+}
+
+# Only our own lock is removed: a build that refuses to die keeps a live lock,
+# and deleting it on the way out would let a third build start beside it.
+cleanup() {
+  if [[ -n "$lock_taken" ]]; then
+    rm -rf "$lock_dir"
+  fi
+}
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
+for _ in $(seq 1 600); do
+  mkdir "$lock_dir" 2>/dev/null && break
+  holder="$(cat "$lock_dir/pid" 2>/dev/null || true)"
+  if [[ "$holder" =~ ^[0-9]+$ ]] && kill -0 "$holder" 2>/dev/null && is_this_build "$holder"; then
+    echo "mini-ork-build: superseding build $holder" >&2
+    kill_tree "$holder"
+    for _ in $(seq 1 100); do
+      kill -0 "$holder" 2>/dev/null || break
+      sleep 0.1
+    done
+    if kill -0 "$holder" 2>/dev/null; then
+      echo "mini-ork-build: build $holder will not die; not starting a second" >&2
+      exit 1
+    fi
+  fi
+  # The holder is gone, so what remains is a leftover directory. Rename before
+  # removing: only one process can win the rename, so a build racing here
+  # cannot delete the lock the winner has just created.
+  stale="$lock_dir.stale.$$"
+  if mv "$lock_dir" "$stale" 2>/dev/null; then
+    rm -rf "$stale"
+  fi
+done
+if [[ ! -d "$lock_dir" ]]; then
+  echo "mini-ork-build: could not take the build lock" >&2
+  exit 1
+fi
+echo $$ > "$lock_dir/pid"
+lock_taken=1
 
 # The crate is the mini_ork_ui submodule; cargo will not even load the workspace
 # without it, so this must run before every build.
