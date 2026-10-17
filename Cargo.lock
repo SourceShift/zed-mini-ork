@@ -11110,6 +11110,8 @@ dependencies = [
  "serde",
  "serde_json",
  "settings",
+ "task",
+ "terminal_view",
  "theme",
  "ui",
  "ui_input",
