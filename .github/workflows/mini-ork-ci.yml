@@ -1,0 +1,104 @@
+name: mini-ork CI
+
+# fork-guard proves the fork's edits survived the upstream replay (seconds).
+# ui-check proves the mini_ork_ui crate and the Zed hook call sites still
+# compile. Upstream's run_tests.yml is gated to zed-industries and is
+# deliberately not edited.
+#
+# Sync PRs target `mini-ork`; `main` is a byte-identical upstream mirror.
+
+on:
+  pull_request:
+    branches: [mini-ork]
+  push:
+    branches: [mini-ork]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mini-ork-ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: "1"
+  CARGO_INCREMENTAL: "0"
+
+jobs:
+  fork-guard:
+    name: fork-guard
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          filter: blob:none
+          persist-credentials: false
+      - name: Ensure the base tag exists
+        run: |
+          set -euo pipefail
+          base="$(cat MINI_ORK_BASE)"
+          if ! git rev-parse -q --verify "refs/tags/$base^{commit}" >/dev/null; then
+            # The tracker fetches the new tag into its own runner only; the tag
+            # is public and immutable, so fetch it straight from upstream.
+            git fetch --depth 1 https://github.com/zed-industries/zed \
+              "refs/tags/$base:refs/tags/$base"
+          fi
+      - name: Guard the fork invariants
+        run: script/mini-ork-guard
+      - name: Self-test the guard
+        run: script/mini-ork-guard --self-test
+
+  ui-check:
+    name: ui-check
+    needs: fork-guard
+    if: github.event_name != 'push'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Cache the toolchain
+        uses: actions/cache@v4
+        with:
+          path: ~/.rustup/toolchains
+          key: rustup-${{ runner.os }}-${{ hashFiles('rust-toolchain.toml') }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: mini-ork-ui-check
+          cache-on-failure: true
+      - name: Linux dependencies
+        run: script/linux
+      - name: Type-check mini_ork_ui
+        run: script/mini-ork-check
+      - name: Type-check the Zed hook call sites
+        run: cargo check -p zed --bin zed
+
+  # Advisory: kept off the weekly PR path because gpui/test-support unifies
+  # features and forces a GPUI rebuild plus a test-binary link.
+  ui-test:
+    name: ui-test
+    needs: ui-check
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 1
+          persist-credentials: false
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: mini-ork-ui-check
+          cache-on-failure: true
+      - name: Linux dependencies
+        run: script/linux
+      - name: Test mini_ork_ui
+        run: cargo test -p mini_ork_ui --lib

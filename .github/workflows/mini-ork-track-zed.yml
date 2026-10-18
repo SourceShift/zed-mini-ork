@@ -18,9 +18,12 @@ on:
         description: 'Zed tag to rebase onto (default: the newest stable tag)'
         required: false
 
+# Pushes and pull requests created with GITHUB_TOKEN do not trigger other
+# workflows, so a tracker PR made with it would never get the mini-ork CI
+# checks. The GitHub App token below carries the write access instead; it must
+# have Contents, Pull requests and Workflows read/write on this repository.
 permissions:
-  contents: write
-  pull-requests: write
+  contents: read
 
 concurrency:
   group: mini-ork-track-zed
@@ -30,9 +33,19 @@ jobs:
   rebase:
     runs-on: ubuntu-latest
     steps:
+      - name: Mint a token that can trigger workflows
+        id: app
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ vars.MINI_ORK_APP_ID }}
+          private-key: ${{ secrets.MINI_ORK_APP_PRIVATE_KEY }}
+          owner: SourceShift
+          repositories: zed-mini-ork
+
       - uses: actions/checkout@v4
         with:
           ref: mini-ork
+          token: ${{ steps.app.outputs.token }}
           fetch-depth: 0        # the cherry-pick range needs real history...
           filter: blob:none     # ...but not every blob of a Zed-sized repo
 
@@ -117,10 +130,14 @@ jobs:
             exit 1
           fi
 
+      - name: Guard the replayed branch
+        if: steps.rebase.outputs.ok == 'true'
+        run: script/mini-ork-guard
+
       - name: Push the branch and open a pull request
         if: steps.rebase.outputs.ok == 'true'
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ steps.app.outputs.token }}
           TAG: ${{ steps.tag.outputs.tag }}
           BASE: ${{ steps.tag.outputs.base }}
         run: |

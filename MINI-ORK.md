@@ -141,8 +141,8 @@ launched it. `.github/workflows/mini-ork-release.yml` will build the app and
 attach it to a release, but that job wants a bigger runner than the 3 vCPU
 GitHub gives away (see the comment in the workflow).
 
-Our delta is what decides how painful this is: currently ~62 commits, of which
-**13 files and ~140 lines touch Zed's own code**. Everything else — `assets/`,
+Our delta is what decides how painful this is: currently well over a hundred
+commits, of which **about a dozen files touch Zed's own code**. Everything else — `assets/`,
 `script/`, this file, `.gitmodules` — is ours and cannot conflict. The crate is
 not replayed at all; it is a submodule. Keep that file count small: prefer a new
 crate over an edit to a Zed file.
@@ -153,6 +153,60 @@ ours: `Cargo.toml`, `Cargo.lock`, `crates/zed/Cargo.toml`,
 `crates/zed/src/zed.rs`. Two are manifests (take upstream, re-add our entries)
 and `zed.rs` is the hook that pulls the crate's pages in. Everything else
 replayed untouched.
+
+## What protects the fork's changes
+
+`main` is a byte-identical mirror of upstream Zed; `mini-ork` is the release
+branch users build and the only branch we push changes to. **Sync pull requests
+always target `mini-ork`** — a pull request into `main` (for example from
+`zed-industries/zed:main`) cannot update what users run.
+
+Upstream's own `run_tests.yml` looks like it should guard those PRs, but every
+job in it is gated on `github.repository_owner == 'zed-industries' ||
+github.repository_owner == 'zed-extensions'`, so on this fork every check reports
+SKIPPED. That is why the fork has its own checks — and why upstream workflow
+files are **never edited**: they are replayed on every rebase, and a local edit
+becomes a conflict.
+
+`script/mini-ork-guard` (run locally and in CI) proves a replay kept the fork
+edits. It reads `script/mini-ork-invariants.txt`, one record per line:
+
+```
+path<TAB>literal      the file must contain the literal
+exists<TAB>path       the path must exist and be non-empty
+```
+
+Each marker must be absent from `MINI_ORK_BASE`, so ordinary upstream text cannot
+satisfy it, and every file in the fork delta must be covered by a marker. The
+guard also checks that `MINI_ORK_BASE` names a real tag, is an ancestor of HEAD
+and is the immediate base of the delta; that `crates/mini_ork_ui` is a
+mode-160000 gitlink pointing at `SourceShift/mini-ork-ui`; that no upstream
+workflow file was touched; and that no conflict markers remain. It runs in
+`script/mini-ork-upgrade` right after the replay, before the build or publish,
+and its self-test (`script/mini-ork-guard --self-test`) is part of CI.
+
+**When you change a fork hook, update its manifest record in the same commit.**
+A new fork edit is a CI failure until it is recorded — that is the coverage
+check doing its job.
+
+`.github/workflows/mini-ork-ci.yml` runs on pull requests and pushes to
+`mini-ork`: `fork-guard` (seconds) and `ui-check` (`script/mini-ork-check` plus
+`cargo check -p zed --bin zed`, because the crate check alone does not compile
+the Zed hook call sites). `ui-test` is advisory and manual — a test link rebuilds
+GPUI and is slow on a hosted runner.
+
+Scheduled workflows are only registered from the repository's **default
+branch**, so the fork's default branch is `mini-ork` (its content is unchanged;
+`main` remains the mirror). The 16 upstream schedules that become visible then
+must stay disabled — they need upstream secrets and have nothing to do here.
+
+The tracking workflow mints a GitHub App token instead of using `GITHUB_TOKEN`:
+pushes and pull requests created with `GITHUB_TOKEN` do not trigger other
+workflows, so the tracker's PR would never run the checks. The app needs
+Contents, Pull requests and Workflows read/write on this repository; its id and
+key live in the `MINI_ORK_APP_ID` repository variable and the
+`MINI_ORK_APP_PRIVATE_KEY` secret. Without them the tracker fails at the first
+step and opens nothing.
 
 ## Upgrading to a new Zed release
 

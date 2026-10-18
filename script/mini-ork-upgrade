@@ -125,6 +125,10 @@ fi
 git submodule sync --recursive
 git submodule update --init --recursive
 
+# The replay is the only step that can silently drop a fork edit. Prove it did
+# not before the branch is built or published; the guard takes seconds.
+"$script_dir/mini-ork-guard"
+
 branch="mini-ork-${tag}"
 
 if [[ "$build" == 1 ]]; then

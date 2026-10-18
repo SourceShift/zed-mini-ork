@@ -1,0 +1,401 @@
+#!/usr/bin/env bash
+#
+# Prove that a sync or rebase kept every edit the fork adds to upstream Zed.
+#
+# The manifest (script/mini-ork-invariants.txt) is the source of truth: each
+# marker is a literal the fork adds, and the guard checks both that the literal
+# is present now and that it is absent from MINI_ORK_BASE, so a marker cannot be
+# satisfied by ordinary upstream text. Coverage is enforced in both directions:
+# every delta file must be described by the manifest, and every manifest path
+# must actually be part of the fork delta.
+#
+# Runs locally and in CI. No network access by default.
+
+set -uo pipefail
+
+script_path=$0
+case $script_path in
+  /*) ;;
+  *) script_path=$PWD/$script_path ;;
+esac
+
+manifest=script/mini-ork-invariants.txt
+root=
+markers_only=0
+allow_pre=${MINI_ORK_ALLOW_PRE:-0}
+self_test=0
+
+usage() {
+  cat <<'EOF'
+Usage: script/mini-ork-guard [options]
+
+Checks that the forked edits survived an upstream sync.
+
+Options:
+  --manifest FILE   Marker manifest (default: script/mini-ork-invariants.txt)
+  --root DIR        Repository root (default: git toplevel)
+  --markers-only    Skip git history checks; only verify the manifest
+  --allow-pre       Accept a vX.Y.Z-pre base tag (also MINI_ORK_ALLOW_PRE=1)
+  --self-test       Exercise the guard against a hermetic fixture
+  --help            Show this help
+
+Exit status: 0 when every check passes, 1 on failure, 2 on usage/setup errors.
+EOF
+}
+
+while [ $# -gt 0 ]; do
+  case $1 in
+    --manifest)
+      [ $# -ge 2 ] || { echo "mini-ork-guard: --manifest needs a value" >&2; exit 2; }
+      manifest=$2
+      shift 2
+      ;;
+    --root)
+      [ $# -ge 2 ] || { echo "mini-ork-guard: --root needs a value" >&2; exit 2; }
+      root=$2
+      shift 2
+      ;;
+    --markers-only)
+      markers_only=1
+      shift
+      ;;
+    --allow-pre)
+      allow_pre=1
+      shift
+      ;;
+    --self-test)
+      self_test=1
+      shift
+      ;;
+    --help|-h)
+      usage
+      exit 0
+      ;;
+    *)
+      echo "mini-ork-guard: unknown option: $1" >&2
+      usage >&2
+      exit 2
+      ;;
+  esac
+done
+
+fails=0
+passes=0
+skips=0
+
+fail() { printf 'FAIL  %s\n' "$*"; fails=$((fails + 1)); }
+pass() { printf '  ok  %s\n' "$*"; passes=$((passes + 1)); }
+skip() { printf 'skip  %s\n' "$*"; skips=$((skips + 1)); }
+warn() { printf 'warn  %s\n' "$*"; }
+
+check_manifest() {
+  if [ ! -f "$manifest" ]; then
+    fail "manifest: $manifest not found"
+    return
+  fi
+
+  while IFS= read -r line || [ -n "$line" ]; do
+    line=${line%$'\r'}
+    case $line in
+      ''|'#'*) continue ;;
+    esac
+
+    if [ "$line" = "${line%%$'\t'*}" ]; then
+      fail "manifest: missing TAB separator: $line"
+      continue
+    fi
+
+    kind=${line%%$'\t'*}
+    value=${line#*$'\t'}
+
+    case $kind in
+      path)
+        if [ "$value" = "${value%%$'\t'*}" ]; then
+          fail "manifest: path record needs path<TAB>literal: $line"
+          continue
+        fi
+        marker_path=${value%%$'\t'*}
+        literal=${value#*$'\t'}
+
+        if [ ! -f "$marker_path" ]; then
+          fail "marker: $marker_path is missing"
+          continue
+        fi
+        if grep -Fq -- "$literal" "$marker_path"; then
+          pass "marker: $marker_path contains $literal"
+        else
+          fail "marker: $marker_path is missing literal: $literal"
+        fi
+        printf '%s\t%s\n' "$marker_path" "$literal" >> "$marker_records"
+        ;;
+      exists)
+        if [ -s "$value" ]; then
+          pass "exists: $value"
+        else
+          fail "exists: $value is missing or empty"
+        fi
+        ;;
+      *)
+        fail "manifest: unknown record type '$kind': $line"
+        ;;
+    esac
+  done < "$manifest"
+}
+
+anti_rot() {
+  while IFS= read -r record; do
+    [ -n "$record" ] || continue
+    marker_path=${record%%$'\t'*}
+    literal=${record#*$'\t'}
+
+    if printf '%s\n' "$delta_all" | grep -Fxq -- "$marker_path"; then
+      :
+    else
+      fail "anti-rot: $marker_path is not part of the fork delta"
+    fi
+
+    if ! git cat-file -e "$base:$marker_path" 2>/dev/null; then
+      skip "anti-rot: $marker_path does not exist at $base"
+    elif base_blob=$(GIT_NO_LAZY_FETCH=1 git show "$base:$marker_path" 2>/dev/null); then
+      if printf '%s\n' "$base_blob" | grep -Fq -- "$literal"; then
+        fail "anti-rot: $marker_path already contains '$literal' at $base"
+      else
+        pass "anti-rot: $marker_path is fork-specific"
+      fi
+    else
+      skip "anti-rot: base blob unavailable for $marker_path"
+    fi
+  done < "$marker_records"
+}
+
+coverage() {
+  cut -f1 "$marker_records" | sort -u > "$covered_paths"
+
+  while IFS= read -r delta_path; do
+    [ -n "$delta_path" ] || continue
+    case $delta_path in
+      crates/mini_ork_ui|crates/mini_ork_ui/*) continue ;;
+      crates/*|Cargo.toml|Cargo.lock|.cargo/*) ;;
+      *) continue ;;
+    esac
+
+    if grep -Fxq -- "$delta_path" "$covered_paths"; then
+      :
+    else
+      fail "coverage: $delta_path is in the fork delta but has no manifest marker"
+    fi
+  done <<EOF
+$delta_all
+EOF
+}
+
+cleanup() {
+  rm -f "$marker_records" "$covered_paths"
+}
+
+run_self_test() {
+  tmp=$(mktemp -d "${TMPDIR:-/tmp}/mini-ork-guard.XXXXXX") || {
+    echo "mini-ork-guard: cannot create a temporary directory" >&2
+    exit 2
+  }
+  trap 'rm -rf "$tmp"' EXIT
+
+  mkdir -p "$tmp/src"
+  printf 'FORK_MARKER\n' > "$tmp/src/a.txt"
+  printf 'content\n' > "$tmp/src/b.txt"
+  : > "$tmp/src/empty.txt"
+
+  guard=$script_path
+  run_fixture() {
+    "${BASH:-bash}" "$guard" --markers-only --root "$tmp" --manifest "$tmp/manifest" >/dev/null 2>&1
+  }
+  expect_pass() {
+    if run_fixture; then
+      pass "self-test: $1"
+    else
+      fail "self-test: $1 (expected pass)"
+    fi
+  }
+  expect_fail() {
+    if run_fixture; then
+      fail "self-test: $1 (expected failure)"
+    else
+      pass "self-test: $1"
+    fi
+  }
+
+  printf 'path\tsrc/a.txt\tFORK_MARKER\nexists\tsrc/b.txt\n' > "$tmp/manifest"
+  expect_pass "a satisfied fixture passes"
+
+  printf 'nothing here\n' > "$tmp/src/a.txt"
+  expect_fail "a removed literal is detected"
+
+  printf 'path\tsrc/a.txt\tFORK_MARKER\nexists\tsrc/empty.txt\n' > "$tmp/manifest"
+  expect_fail "an empty exists target is detected"
+
+  printf 'path\tsrc/missing.txt\tFORK_MARKER\n' > "$tmp/manifest"
+  expect_fail "a missing marker file is detected"
+
+  printf 'path src/a.txt FORK_MARKER\n' > "$tmp/manifest"
+  expect_fail "a malformed manifest line is detected"
+}
+
+if [ "$self_test" = 1 ]; then
+  run_self_test
+  printf '\nself-test summary: %d passed, %d failed\n' "$passes" "$fails"
+  if [ "$fails" -gt 0 ]; then exit 1; fi
+  exit 0
+fi
+
+if [ -z "$root" ]; then
+  if ! root=$(git rev-parse --show-toplevel 2>/dev/null); then
+    echo "mini-ork-guard: not inside a git repository; pass --root" >&2
+    exit 2
+  fi
+fi
+if [ ! -d "$root" ]; then
+  echo "mini-ork-guard: root is not a directory: $root" >&2
+  exit 2
+fi
+root=$(cd "$root" && pwd -P)
+case $manifest in
+  /*) ;;
+  *) manifest=$root/$manifest ;;
+esac
+
+cd "$root" || exit 2
+
+marker_records=$(mktemp "${TMPDIR:-/tmp}/mini-ork-guard-records.XXXXXX") || exit 2
+covered_paths=$(mktemp "${TMPDIR:-/tmp}/mini-ork-guard-covered.XXXXXX") || exit 2
+trap cleanup EXIT
+
+base=
+if [ "$markers_only" = 0 ]; then
+  if [ ! -f MINI_ORK_BASE ]; then
+    fail "base: MINI_ORK_BASE is missing"
+    exit 2
+  fi
+  base=$(tr -d '[:space:]' < MINI_ORK_BASE)
+
+  if [ -z "$base" ]; then
+    echo "mini-ork-guard: MINI_ORK_BASE is empty" >&2
+    exit 2
+  fi
+
+  if [[ $base =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-pre)?$ ]]; then
+    pass "base: $base has a valid tag format"
+  else
+    fail "base: $base is not vX.Y.Z or vX.Y.Z-pre"
+    exit 1
+  fi
+
+  case $base in
+    *-pre)
+      if [ "$allow_pre" = 1 ]; then
+        warn "base: $base is a pre-release tag"
+      else
+        fail "base: $base is a pre-release tag; pass --allow-pre for a manual override"
+        exit 1
+      fi
+      ;;
+  esac
+
+  if git rev-parse -q --verify "refs/tags/$base^{commit}" >/dev/null; then
+    pass "base: tag $base exists"
+  else
+    fail "base: tag $base is not fetched; run: git fetch https://github.com/zed-industries/zed refs/tags/$base:refs/tags/$base"
+    exit 1
+  fi
+
+  if git merge-base --is-ancestor "$base" HEAD; then
+    pass "base: $base is an ancestor of HEAD"
+  else
+    fail "base: $base is not an ancestor of HEAD"
+    exit 1
+  fi
+
+  base_sha=$(git rev-parse "$base^{commit}")
+  # The fork's history contains merges of the upstream stable line, so the
+  # immediate-base relation is "base is a parent of some delta commit", not
+  # "base is the parent of the oldest commit by topo order".
+  if git rev-list --parents "$base..HEAD" |
+     awk -v want="$base_sha" '{ for (i = 2; i <= NF; i++) if ($i == want) found = 1 } END { exit found ? 0 : 1 }'; then
+    pass "base: $base is the immediate base of the delta"
+  else
+    fail "base: no delta commit has $base as a parent; MINI_ORK_BASE is stale"
+  fi
+
+  delta_count=$(git rev-list --count "$base..HEAD")
+  pass "delta: $delta_count commits after $base"
+
+  gitlink=$(git ls-files --stage -- crates/mini_ork_ui)
+  gitlink_lines=$(printf '%s\n' "$gitlink" | wc -l | tr -d ' ')
+  read -r gitlink_mode gitlink_sha gitlink_stage gitlink_path <<< "$gitlink"
+  if [ -n "$gitlink" ] &&
+     [ "$gitlink_lines" -eq 1 ] &&
+     [ "$gitlink_mode" = 160000 ] &&
+     [ "$gitlink_stage" = 0 ] &&
+     [ "$gitlink_path" = crates/mini_ork_ui ] &&
+     [[ $gitlink_sha =~ ^[0-9a-f]{40}$ ]]; then
+    pass "submodule: crates/mini_ork_ui is a mode-160000 gitlink"
+  else
+    fail "submodule: crates/mini_ork_ui is not a single mode-160000 gitlink"
+  fi
+  if git check-ignore -q --no-index -- crates/mini_ork_ui; then
+    fail "submodule: crates/mini_ork_ui is git-ignored"
+  fi
+
+  submodule_path=$(git config -f .gitmodules --get submodule.crates/mini_ork_ui.path 2>/dev/null) || submodule_path=
+  submodule_url=$(git config -f .gitmodules --get submodule.crates/mini_ork_ui.url 2>/dev/null) || submodule_url=
+  submodule_branch=$(git config -f .gitmodules --get submodule.crates/mini_ork_ui.branch 2>/dev/null) || submodule_branch=
+  if [ "$submodule_path" = crates/mini_ork_ui ] &&
+     [ "$submodule_branch" = main ] &&
+     { [ "$submodule_url" = https://github.com/SourceShift/mini-ork-ui.git ] ||
+       [ "$submodule_url" = https://github.com/SourceShift/mini-ork-ui ]; }; then
+    pass "submodule: .gitmodules points at SourceShift/mini-ork-ui on main"
+  else
+    fail "submodule: .gitmodules is wrong (path='$submodule_path' url='$submodule_url' branch='$submodule_branch')"
+  fi
+
+  workflow_delta=$(git diff --name-only "$base..HEAD" -- .github/workflows)
+  workflows_before=$fails
+  while IFS= read -r workflow_path; do
+    [ -n "$workflow_path" ] || continue
+    case $workflow_path in
+      .github/workflows/mini-ork-*.yml) ;;
+      *) fail "workflows: $workflow_path is an upstream workflow; fork edits belong in mini-ork-*.yml" ;;
+    esac
+  done <<EOF
+$workflow_delta
+EOF
+  if [ "$fails" -eq "$workflows_before" ]; then
+    pass "workflows: no upstream workflow file was edited"
+  fi
+
+  delta_all=$(git diff --name-only "$base..HEAD")
+  delta_files=$(git diff --name-only --diff-filter=ACMR "$base..HEAD")
+  if [ -n "$delta_files" ]; then
+    conflicts=$(git grep -n -E '^(<<<<<<< |>>>>>>> )' -- $delta_files 2>/dev/null)
+    if [ -n "$conflicts" ]; then
+      fail "conflicts: unresolved markers in delta files"
+      printf '%s\n' "$conflicts"
+    else
+      pass "conflicts: no unresolved markers in delta files"
+    fi
+  fi
+fi
+
+check_manifest
+
+if [ "$markers_only" = 0 ]; then
+  anti_rot
+  coverage
+fi
+
+printf '\nsummary: %d passed, %d failed, %d skipped\n' "$passes" "$fails" "$skips"
+if [ "$fails" -gt 0 ]; then
+  echo "mini-ork-guard: fork invariants are broken; see FAIL lines above" >&2
+  exit 1
+fi
+echo "mini-ork-guard: fork invariants hold"
+exit 0

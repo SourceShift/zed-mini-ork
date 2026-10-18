@@ -1,0 +1,75 @@
+# Fork invariants for SourceShift/zed-mini-ork.
+#
+# One record per line, separated by a literal TAB:
+#
+#   path<TAB>literal      the file must contain the literal string
+#   exists<TAB>path       the path must exist and be non-empty
+#
+# Every `path` marker must be absent at MINI_ORK_BASE and must touch a file in
+# the fork delta; `script/mini-ork-guard` enforces both. When you intentionally
+# change a fork hook, update the matching record in the same commit.
+
+# Workspace wiring
+path	Cargo.toml	"crates/mini_ork_ui",
+path	Cargo.toml	mini_ork_ui = { path = "crates/mini_ork_ui" }
+path	Cargo.lock	name = "mini_ork_ui"
+path	.cargo/config.toml	ui-check = "check -p mini_ork_ui"
+
+# Zed integration
+path	crates/zed/Cargo.toml	mini_ork_ui.workspace = true
+path	crates/zed/Cargo.toml	features = ["profiler", "stacker", "inspector"]
+path	crates/zed/Cargo.toml	inspector_ui = { workspace = true, features = ["dev-inspector"] }
+path	crates/zed/Cargo.toml	ui = { workspace = true, features = ["inspector"] }
+path	crates/zed/src/main.rs	mini_ork_ui::init(cx);
+path	crates/zed/src/zed.rs	mini_ork_ui::MiniOrkSidebar
+path	crates/zed/src/zed.rs	workspace.add_panel(rail, window, cx);
+
+# UI crate hooks
+path	crates/ui/Cargo.toml	inspector = ["gpui/inspector", "gpui_macros/inspector"]
+path	crates/ui/src/traits/styled_ext.rs	any(feature = "inspector", debug_assertions)
+path	crates/ui/src/ui.rs	pub use traits::transformable::*;
+path	crates/inspector_ui/Cargo.toml	dev-inspector = []
+path	crates/inspector_ui/src/inspector_ui.rs	feature = "dev-inspector"
+path	crates/inspector_ui/src/inspector.rs	Copy element reference
+
+# Provider icons and workspace/solo-diff fixes
+path	crates/icons/src/icons.rs	AiKimi,
+path	crates/icons/src/icons.rs	AiMiniMax,
+path	crates/icons/src/icons.rs	AiQwen,
+path	crates/worktree/src/worktree.rs	not watching {root_abs_path:?}
+path	crates/git_ui/src/solo_diff_view.rs	pub fn open_or_focus_path(
+path	crates/git_ui/src/solo_diff_view.rs	SoloDiffView::open_or_focus(entry, repository, workspace.clone(), window, cx)
+
+# Submodule
+path	.gitmodules	path = crates/mini_ork_ui
+path	.gitmodules	url = https://github.com/SourceShift/mini-ork-ui.git
+
+# Assets
+exists	assets/icons/ai_kimi.svg
+exists	assets/icons/ai_mini_max.svg
+exists	assets/icons/ai_qwen.svg
+exists	assets/images/llm/README.md
+exists	assets/images/llm/claude.svg
+exists	assets/images/llm/deepseek.png
+exists	assets/images/llm/gemini.png
+exists	assets/images/llm/grok.png
+exists	assets/images/llm/kimi.png
+exists	assets/images/llm/minimax.svg
+exists	assets/images/llm/mistral.png
+exists	assets/images/llm/qwen.png
+exists	assets/images/llm/zai.png
+
+# Fork tooling and release plumbing
+exists	MINI-ORK.md
+exists	MINI_ORK_BASE
+exists	script/mini-ork-app
+exists	script/mini-ork-build
+exists	script/mini-ork-check
+exists	script/mini-ork-guard
+exists	script/mini-ork-ide
+exists	script/mini-ork-pull
+exists	script/mini-ork-sync-ui
+exists	script/mini-ork-upgrade
+exists	.github/workflows/mini-ork-ci.yml
+exists	.github/workflows/mini-ork-release.yml
+exists	.github/workflows/mini-ork-track-zed.yml
