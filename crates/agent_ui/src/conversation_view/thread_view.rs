@@ -280,6 +280,18 @@ fn parse_single_fenced_code_block(markdown: &str) -> Option<(&str, &str)> {
     Some((tag, code))
 }
 
+fn permission_option_kind_str(kind: acp_v1::PermissionOptionKind) -> Option<&'static str> {
+    match kind {
+        acp_v1::PermissionOptionKind::AllowOnce => Some("AllowOnce"),
+        acp_v1::PermissionOptionKind::AllowAlways => Some("AllowAlways"),
+        acp_v1::PermissionOptionKind::RejectOnce => Some("RejectOnce"),
+        acp_v1::PermissionOptionKind::RejectAlways => Some("RejectAlways"),
+        // The enum is non-exhaustive; an unknown kind cannot be answered
+        // safely, so the option is skipped instead of guessed.
+        _ => None,
+    }
+}
+
 /// Walks `code` exactly once: for each line it validates and strips the
 /// `NNN\t` prefix, then pushes the line's content into the accumulating
 /// code buffer (with `\n` between lines, no trailing newline). Verifies that
@@ -3258,6 +3270,19 @@ impl ThreadView {
         );
     }
 
+    fn handle_focus_message_editor(
+        &mut self,
+        _: &crate::thread_card::FocusMessageEditor,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.message_editor
+            .read(cx)
+            .focus_handle(cx)
+            .focus(window, cx);
+        cx.notify();
+    }
+
     fn permission_action_target(
         &self,
         session_id: Option<&str>,
@@ -3280,6 +3305,45 @@ impl ThreadView {
         };
         request.legacy_options()?;
         Some((session_id, request.id))
+    }
+
+    fn resolved_permission_for(
+        &self,
+        tool_call: &ToolCall,
+        session_id: &acp_v1::SessionId,
+        cx: &App,
+    ) -> Option<crate::thread_card::ResolvedPermission> {
+        let conversation = self.conversation.read(cx);
+        let request = conversation
+            .threads
+            .get(session_id)?
+            .read(cx)
+            .permission_request_for_tool(&tool_call.id)?;
+        let options = request.legacy_options()?;
+        let flat = match options {
+            acp_thread::PermissionOptions::Flat(opts) => opts
+                .iter()
+                .filter_map(|o| {
+                    let kind = permission_option_kind_str(o.kind)?;
+                    Some((o.option_id.0.to_string(), kind.to_string()))
+                })
+                .collect(),
+            acp_thread::PermissionOptions::Dropdown(choices)
+            | acp_thread::PermissionOptions::DropdownWithPatterns { choices, .. } => choices
+                .iter()
+                .flat_map(|choice| {
+                    let allow = permission_option_kind_str(choice.allow.kind)
+                        .map(|kind| (choice.allow.option_id.0.to_string(), kind.to_string()));
+                    let deny = permission_option_kind_str(choice.deny.kind)
+                        .map(|kind| (choice.deny.option_id.0.to_string(), kind.to_string()));
+                    [allow, deny].into_iter().flatten()
+                })
+                .collect(),
+        };
+        Some(crate::thread_card::ResolvedPermission {
+            request_id: request.id.clone(),
+            options: flat,
+        })
     }
 
     pub fn handle_select_permission_granularity(
@@ -7019,6 +7083,9 @@ impl ThreadView {
                 }
             }
             AgentThreadEntry::ToolCall(tool_call) => {
+                if crate::thread_card::suppresses_entry(tool_call.meta.as_ref()) {
+                    return Empty.into_any();
+                }
                 // A canceled tool call that produced visible output is still worth
                 // showing, but one that was canceled before producing anything just
                 // renders as a useless "Canceled" card — hide those entirely.
@@ -8776,6 +8843,19 @@ impl ThreadView {
             tool_call.id.0,
             layout.id_str()
         )));
+
+        let card_view = crate::thread_card::ThreadCardView {
+            session_id: active_session_id,
+            tool_call_id: tool_call.id.0.to_string(),
+            entry_ix,
+            permission: self.resolved_permission_for(tool_call, active_session_id, cx),
+            workspace: self.workspace.upgrade(),
+        };
+        if let Some(card) =
+            crate::thread_card::render(tool_call.meta.as_ref(), &card_view, window, cx)
+        {
+            return div().w_full().id(container_id).child(card);
+        }
 
         div().w_full().id(container_id).map(|this| {
             if tool_call.is_subagent() {
@@ -13141,6 +13221,7 @@ impl Render for ThreadView {
             .on_action(cx.listener(Self::allow_once))
             .on_action(cx.listener(Self::reject_once))
             .on_action(cx.listener(Self::handle_authorize_tool_call))
+            .on_action(cx.listener(Self::handle_focus_message_editor))
             .on_action(cx.listener(Self::handle_select_permission_granularity))
             .on_action(cx.listener(Self::handle_toggle_command_pattern))
             .on_action(cx.listener(Self::open_permission_dropdown))

@@ -59,6 +59,11 @@ exists	assets/images/llm/mistral.png
 exists	assets/images/llm/qwen.png
 exists	assets/images/llm/zai.png
 
+# Thread cards
+path	crates/agent_ui/src/thread_card.rs	mini_ork
+path	crates/agent_ui/src/agent_ui.rs	mod thread_card;
+path	crates/agent_ui/src/conversation_view/thread_view.rs	thread_card::
+
 # Fork tooling and release plumbing
 exists	MINI-ORK.md
 exists	MINI_ORK_BASE
