@@ -1,0 +1,26 @@
+# clippy baseline for crates/mini_ork_ui, captured on the pre-change tree.
+# Consumed by AC3 of pick-files-directories.md: the change may introduce NO
+# diagnostic that is not already listed here.
+# Format: <path under crates/mini_ork_ui/> TAB <diagnostic header>. Line and
+# column are deliberately absent, so ordinary edits do not churn this file.
+# Regenerate: ./script/clippy -p mini_ork_ui, then the awk in the AC3 fence.
+# tree: zed-mini-ork 9960d40f6f + local WIP in crates/mini_ork_ui (5c5e453)
+# command: ./script/clippy -p mini_ork_ui
+src/board.rs	error: called `Iterator::last` on a `DoubleEndedIterator`; this will needlessly iterate the entire iterator
+src/components.rs	error: function `split_button` is never used
+src/flow.rs	error: manually reimplementing `div_ceil`
+src/graph.rs	error: called `Iterator::last` on a `DoubleEndedIterator`; this will needlessly iterate the entire iterator
+src/graph.rs	error: redundant clone
+src/graph.rs	error: unused import: `CommonAnimationExt as _`
+src/loading.rs	error: unused import: `CommonAnimationExt as _`
+src/node_tab.rs	error: redundant clone
+src/page.rs	error: redundant clone
+src/page.rs	error: usage of an `Arc` that is not `Send` and `Sync`
+src/palette.rs	error: constant `RADIUS_BTN` is never used
+src/palette.rs	error: constant `TITLE` is never used
+src/palette.rs	error: function `mix` is never used
+src/sections.rs	error: redundant clone
+src/sections.rs	error: usage of an `Arc` that is not `Send` and `Sync`
+src/select.rs	error: redundant clone
+src/sidebar.rs	error: redundant clone
+src/store.rs	error: redundant clone

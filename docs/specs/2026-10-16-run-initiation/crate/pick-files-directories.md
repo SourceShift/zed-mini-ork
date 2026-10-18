@@ -96,3 +96,71 @@ rebuilt; pushing the crate alone changes nothing a user sees.
 - AC5 (precondition, passes before work starts): `cargo test -p mini_ork_ui
   --lib` reports 0 failed on the unmodified tree, so any failure afterwards is
   attributable to this change.
+
+## Probes
+
+`spec-driven-delivery` builds every gate from the executable fences below, so
+these are the acceptance criteria in the form the run can actually execute.
+They run with cwd = a `zed-mini-ork` checkout (never inside the submodule) and
+must be re-run by hand before claiming the spec is met.
+
+Four of the five are **precondition**-tagged: AC2 is the only thing this change
+turns from red to green, and AC1/AC3/AC4/AC5 are preservation invariants that
+already hold on the untouched tree (the suite is green, no clippy diagnostic is
+*added* to the ones the crate already has, the README rule is in place). `test-validity` rejects a probe
+that passes before the work as a broken baseline unless it is tagged
+precondition; tagging is what keeps those four honest rather than vacuous —
+`smoke-live` re-runs all of them after the change, so they still have to hold.
+
+```bash
+# Probes run with cwd = a zed-mini-ork checkout. The crate is a git submodule
+# and does NOT build standalone; script/clippy exists only at this root.
+test -f script/clippy && test -d crates/mini_ork_ui && test -f Cargo.lock
+
+# AC1 precondition: preservation — the whole crate's lib suite stays green.
+# Passes on the untouched tree, so it must be tagged, not treated as evidence.
+cargo test -p mini_ork_ui --lib 2>&1 | tail -25
+echo "AC1 pass: mini_ork_ui --lib reports 0 failed"
+
+# AC2: the new parse tests exist and pass. On the untouched tree the filter
+# matches nothing ("0 passed"), which is what makes this the discriminating
+# gate: the grep fails before the change and succeeds after it.
+out="$(cargo test -p mini_ork_ui --lib pick_files 2>&1)" || { printf '%s\n' "$out" | tail -40; exit 1; }
+printf '%s\n' "$out" | tail -20
+printf '%s\n' "$out" | grep -E "test result: ok\. [1-9][0-9]* passed; 0 failed" >/dev/null
+echo "AC2 pass: the pick_files parse tests pass with 0 failed"
+
+# AC3 precondition: no NEW clippy warning for this crate. The crate is not
+# clippy-clean today — 18 diagnostics already fail `--deny warnings` — so the
+# criterion is set difference, not zero. The baseline is committed beside this
+# spec; it keys on file + message, never on line/column, so ordinary edits do
+# not churn it. Regenerate it with the same awk when the pre-change tree moves.
+base=docs/specs/2026-10-16-run-initiation/crate/clippy-baseline.txt
+log="$(mktemp -t ac3-clippy.XXXXXX)"
+./script/clippy -p mini_ork_ui >"$log" 2>&1 || true   # findings are the signal, not the rc
+awk '
+  /^(error|warning): / { msg=$0; next }
+  /^[[:space:]]+--> crates\/mini_ork_ui\// {
+    loc=$0; sub(/^[[:space:]]+--> crates\/mini_ork_ui\//,"",loc); sub(/:[0-9]+:[0-9]+$/,"",loc);
+    print loc "\t" msg
+  }
+' "$log" | sort -u > "$log.new"
+grep -v '^#' "$base" | sed '/^$/d' | sort -u > "$log.base"
+new="$(comm -13 "$log.base" "$log.new")"
+if [ -n "$new" ]; then printf 'new clippy diagnostics:\n%s\n' "$new"; rm -f "$log" "$log.new" "$log.base"; exit 1; fi
+rm -f "$log" "$log.new" "$log.base"
+echo "AC3 pass: mini_ork_ui adds no clippy diagnostic beyond the baseline"
+
+# AC4 precondition: the two README lines survive, byte for byte.
+first="$(sed -n '1p' crates/mini_ork_ui/README.md)"
+second="$(sed -n '2p' crates/mini_ork_ui/README.md)"
+printf '%s\n%s\n' "$first" "$second"
+test "$first" = "> [!IMPORTANT]"
+test "$second" = "> Remove this line to confirm you've reviewed this PR before submitting."
+echo "AC4 pass: README keeps its two [!IMPORTANT] lines"
+
+# AC5 precondition: baseline — the crate's lib suite is green before any edit,
+# so a later failure is attributable to this change.
+cargo test -p mini_ork_ui --lib 2>&1 | tail -5
+echo "AC5 pass: baseline mini_ork_ui --lib reports 0 failed"
+```
