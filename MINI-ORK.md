@@ -141,18 +141,27 @@ launched it. `.github/workflows/mini-ork-release.yml` will build the app and
 attach it to a release, but that job wants a bigger runner than the 3 vCPU
 GitHub gives away (see the comment in the workflow).
 
-Our delta is what decides how painful this is: currently well over a hundred
-commits, of which **about a dozen files touch Zed's own code**. Everything else — `assets/`,
-`script/`, this file, `.gitmodules` — is ours and cannot conflict. The crate is
-not replayed at all; it is a submodule. Keep that file count small: prefer a new
-crate over an edit to a Zed file.
+Our delta is what decides how painful this is: **57 files**, of which twelve
+live under `crates/` and only eight are files upstream also changed. Everything
+else — `assets/`, `script/`, this file, `.gitmodules` — is ours and cannot
+conflict. The crate is not replayed at all; it is a submodule. Keep that file
+count small: prefer a new crate over an edit to a Zed file.
 
-The collision set is stable and small, which is what makes a weekly rebase
-viable. Across `v1.22.0 → v1.23.2` upstream changed 298 files, but only four of
-ours: `Cargo.toml`, `Cargo.lock`, `crates/zed/Cargo.toml`,
-`crates/zed/src/zed.rs`. Two are manifests (take upstream, re-add our entries)
-and `zed.rs` is the hook that pulls the crate's pages in. Everything else
-replayed untouched.
+The collision set is stable and small, which is what makes a weekly sync
+viable. Across `v1.23.2 → v1.24.3` upstream changed 485 files, and of ours these
+eight: `Cargo.toml`, `Cargo.lock`, `crates/icons/src/icons.rs`,
+`crates/inspector_ui/Cargo.toml`, `crates/ui/Cargo.toml`,
+`crates/worktree/src/worktree.rs`, `crates/zed/Cargo.toml`,
+`crates/zed/src/main.rs`. Four are manifests (take upstream, re-add our
+entries) and the rest merged cleanly three ways. Everything else was taken
+verbatim from `mini-ork`.
+
+The delta, not the commit list, is the thing being carried. The fork history
+holds some of our changes twice (two lineages), so replaying commits can
+re-merge our own edits and settle on an older copy. A sync may therefore land
+as **one delta-carried commit** — the net `v1.23.2..mini-ork` change applied to
+the new tag, with the eight collisions merged — and the next upgrade replays
+that single commit.
 
 ## What protects the fork's changes
 
@@ -196,9 +205,16 @@ the Zed hook call sites). `ui-test` is advisory and manual — a test link rebui
 GPUI and is slow on a hosted runner.
 
 Scheduled workflows are only registered from the repository's **default
-branch**, so the fork's default branch is `mini-ork` (its content is unchanged;
-`main` remains the mirror). The 16 upstream schedules that become visible then
-must stay disabled — they need upstream secrets and have nothing to do here.
+branch**. The default is currently `main` (the upstream mirror), so the fork's
+own schedules — including the Zed tracker — do not run. Moving the default to
+`mini-ork` would register them, but the `protect-main` ruleset targets
+`~DEFAULT_BRANCH` and carries a Code Scanning requirement this fork cannot
+satisfy, so it would then block direct pushes to the release branch too.
+Resolve that pair together: either point the ruleset at `main` explicitly
+before changing the default, or leave the default on `main` and run the tracker
+another way. The 16 upstream schedules that become visible under either
+arrangement must stay disabled — they need upstream secrets and have nothing to
+do here.
 
 The tracking workflow mints a GitHub App token instead of using `GITHUB_TOKEN`:
 pushes and pull requests created with `GITHUB_TOKEN` do not trigger other
@@ -211,8 +227,8 @@ step and opens nothing.
 ## Upgrading to a new Zed release
 
 ```bash
-script/mini-ork-upgrade v1.23.2              # rebase, build, stop
-script/mini-ork-upgrade v1.23.2 --publish    # ...then move mini-ork onto it
+script/mini-ork-upgrade v1.24.3              # rebase, build, stop
+script/mini-ork-upgrade v1.24.3 --publish    # ...then move mini-ork onto it
 ```
 
 It checks out the new tag, re-applies our commits (fork edits + tooling; the
@@ -220,7 +236,13 @@ crate is a submodule, not replayed), checks that the branch still records
 `crates/mini_ork_ui` as a submodule gitlink, records the new base in
 `MINI_ORK_BASE` and builds. A stop during the cherry-pick means a fork file
 conflicted or a Zed API the crate uses changed; fix it,
-`git cherry-pick --continue`, then `script/mini-ork-upgrade v1.23.2 --resume`.
+`git cherry-pick --continue`, then `script/mini-ork-upgrade v1.24.3 --resume`.
+
+If the commit replay thrashes (the range contains duplicate lineages of our
+own commits), carry the **delta** instead: on a branch off the tag, apply
+`git diff --binary "$(git merge-base …)" mini-ork` with `git apply --3way`,
+resolve the collisions, set `MINI_ORK_BASE`, then run the guard and build
+exactly as the script would. `v1.24.3` was carried this way.
 
 `--publish` is what puts the release in front of users: it merges the branch into
 `mini-ork` and pushes `fork`. It refuses to run without the build, because

@@ -78,7 +78,14 @@ if [[ "$resume" == 0 ]]; then
     # The content is only the pinned commit, but check first: edits inside the
     # checkout, tracked or not, exist nowhere else, and `git diff` does not
     # report untracked ones.
-    if [[ -n "$(git -C crates/mini_ork_ui status --porcelain 2>/dev/null)" ]]; then
+    #
+    # Only ask when the path is a work tree of its own. An uninitialised
+    # submodule leaves the directory empty (or absent), and `git -C` there
+    # resolves to the *parent* repository -- so the naive check reported the
+    # parent's untracked files as edits inside the submodule and refused to run
+    # on a fresh clone.
+    if [[ "$(git -C crates/mini_ork_ui rev-parse --show-toplevel 2>/dev/null)" == "$(pwd -P)/crates/mini_ork_ui" ]] &&
+       [[ -n "$(git -C crates/mini_ork_ui status --porcelain 2>/dev/null)" ]]; then
       echo "mini-ork-upgrade: crates/mini_ork_ui has uncommitted changes" >&2
       echo "  land or stash them (they exist nowhere else), then run again" >&2
       exit 1
