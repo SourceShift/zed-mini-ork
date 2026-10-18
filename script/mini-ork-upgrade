@@ -1,0 +1,164 @@
+#!/usr/bin/env bash
+# Move the mini-ork IDE onto a new Zed release.
+#
+#   script/mini-ork-upgrade v1.23.0                 # rebase onto the tag, then build
+#   script/mini-ork-upgrade v1.23.0 --publish       # ...then move mini-ork onto it
+#   script/mini-ork-upgrade v1.23.0 --no-build      # rebase only — what CI runs
+#   script/mini-ork-upgrade v1.23.0 --resume        # continue after fixing a conflict
+#
+# Our changes are the commits after the Zed tag recorded in MINI_ORK_BASE: the
+# fork's edits to Zed's own files (its Cargo.toml, crates/zed, crates/ui,
+# crates/inspector_ui, crates/icons, crates/git_ui, crates/worktree, assets/,
+# .cargo/config.toml) plus this repo's tooling and docs. For the exact list run
+# `git diff --name-only "$(cat MINI_ORK_BASE)..HEAD"`. The crate source is NOT
+# among them: it is the mini_ork-ui submodule at crates/mini_ork_ui/, pinned in
+# .gitmodules and materialised by `git submodule update`. The upgrade checks out
+# the new tag on a new branch, re-applies those commits, records the new base and
+# builds. If a cherry-pick stops, the conflict is in one of those fork files or a
+# Zed API our crate uses changed — fix it, `git cherry-pick --continue`, and run
+# this script again with --resume.
+set -euo pipefail
+
+# The replayed range includes the commit that rewrites this very file, and
+# `git cherry-pick` replacing a script mid-run can corrupt bash's parse of it.
+# Re-exec from a private snapshot taken before any cherry-pick happens. The
+# snapshot lives in a temp dir, so the real script dir is passed on in the env.
+script_dir="${MINI_ORK_UPGRADE_DIR:-$(cd "$(dirname "$0")" && pwd)}"
+if [[ -z "${MINI_ORK_UPGRADE_SELF:-}" ]]; then
+  snapshot="$(mktemp -t mini-ork-upgrade.XXXXXX)"
+  cp "$0" "$snapshot"
+  chmod +x "$snapshot"
+  MINI_ORK_UPGRADE_SELF="$snapshot" MINI_ORK_UPGRADE_DIR="$script_dir" exec bash "$snapshot" "$@"
+fi
+
+usage="usage: script/mini-ork-upgrade <zed tag, e.g. v1.23.0> [--resume] [--no-build] [--publish]"
+tag=""
+resume=0
+build=1
+publish=0
+for arg in "$@"; do
+  case "$arg" in
+    --resume)   resume=1 ;;
+    --no-build) build=0 ;;
+    --publish)  publish=1 ;;
+    -*)         echo "mini-ork-upgrade: unknown option ${arg}" >&2; echo "$usage" >&2; exit 1 ;;
+    *)          if [[ -z "$tag" ]]; then tag="$arg"; else
+                  echo "mini-ork-upgrade: unexpected argument ${arg}" >&2; exit 1
+                fi ;;
+  esac
+done
+[[ -n "$tag" ]] || { echo "$usage" >&2; exit 1; }
+# Publishing a branch nobody built is how a broken base reaches users.
+if [[ "$publish" == 1 && "$build" == 0 ]]; then
+  echo "mini-ork-upgrade: --publish needs the build (drop --no-build)" >&2
+  exit 1
+fi
+
+cd "$(git rev-parse --show-toplevel)"
+upstream="${MINI_ORK_ZED_UPSTREAM:-https://github.com/zed-industries/zed}"
+
+if [[ "$resume" == 0 ]]; then
+  if ! git diff --quiet || ! git diff --cached --quiet; then
+    echo "mini-ork-upgrade: commit or stash your changes first" >&2
+    exit 1
+  fi
+  old_base="$(cat MINI_ORK_BASE)"
+  commits=$(git rev-list --reverse "${old_base}..HEAD")
+  [[ -n "$commits" ]] || { echo "mini-ork-upgrade: no mini-ork commits after ${old_base}" >&2; exit 1; }
+  echo "mini-ork commits to carry over:"
+  git log --oneline "${old_base}..HEAD"
+  git fetch --depth 1 "$upstream" "refs/tags/${tag}:refs/tags/${tag}"
+  if [[ -e crates/mini_ork_ui ]]; then
+    # The replay starts before the crate became a submodule, so its earliest
+    # commits add crates/mini_ork_ui as plain files. A materialised submodule
+    # checkout occupies that path and git then refuses to write them
+    # ("untracked working tree files would be overwritten by merge"), which is
+    # what every clone that has actually been built looks like — the fresh
+    # clone the first run was tested on leaves the directory empty. Empty it.
+    # The content is only the pinned commit, but check first: edits inside the
+    # checkout, tracked or not, exist nowhere else, and `git diff` does not
+    # report untracked ones.
+    #
+    # Only ask when the path is a work tree of its own. An uninitialised
+    # submodule leaves the directory empty (or absent), and `git -C` there
+    # resolves to the *parent* repository -- so the naive check reported the
+    # parent's untracked files as edits inside the submodule and refused to run
+    # on a fresh clone.
+    if [[ "$(git -C crates/mini_ork_ui rev-parse --show-toplevel 2>/dev/null)" == "$(pwd -P)/crates/mini_ork_ui" ]] &&
+       [[ -n "$(git -C crates/mini_ork_ui status --porcelain 2>/dev/null)" ]]; then
+      echo "mini-ork-upgrade: crates/mini_ork_ui has uncommitted changes" >&2
+      echo "  land or stash them (they exist nowhere else), then run again" >&2
+      exit 1
+    fi
+    # A no-op when the submodule was never initialised, which is fine.
+    git submodule deinit -f crates/mini_ork_ui >/dev/null 2>&1 || true
+    rm -rf crates/mini_ork_ui
+  fi
+  git switch -c "mini-ork-${tag}" "${tag}"
+  # shellcheck disable=SC2086
+  git cherry-pick $commits
+  # A replay that predates the submodule brings crates/mini_ork_ui in as plain
+  # files; converge it before anything below inspects .gitmodules.
+  git submodule update --init --recursive
+fi
+
+echo "${tag}" > MINI_ORK_BASE
+git add MINI_ORK_BASE
+git commit -q -m "mini-ork: base ${tag}" || true
+
+# The crate is the mini_ork-ui submodule (see MINI-ORK.md). Assert that this
+# branch records it as a gitlink, rather than repair it here. A replay from a
+# base older than the submodule commit can leave it tracked as plain files, and
+# `git rm -r --cached crates/mini_ork_ui` looks like the fix — but a gitlink is
+# a tracked path too, so that command deletes the *correct* entry just as
+# happily, and .gitmodules, Cargo.toml and the gitlink then disagree three ways.
+# The pin is not recoverable from inside this repo, so fail closed and name it.
+if [[ -z "$(git ls-files --stage crates/mini_ork_ui | awk '$1 == "160000" { print $2; exit }')" ]]; then
+  echo "mini-ork-upgrade: crates/mini_ork_ui is not a gitlink on this branch" >&2
+  echo "  (a replay left it as plain files, or a cherry-pick conflict ate it)" >&2
+  echo "  restore it, then re-run with --resume:" >&2
+  echo "    git submodule update --init --recursive && git add crates/mini_ork_ui" >&2
+  echo "    git commit -m 'mini-ork: restore the crates/mini_ork_ui gitlink'" >&2
+  exit 1
+fi
+if git check-ignore -q --no-index crates/mini_ork_ui; then
+  echo "mini-ork-upgrade: a .gitignore rule still ignores crates/mini_ork_ui" >&2
+  exit 1
+fi
+if ! grep -qE '^[[:space:]]*path = crates/mini_ork_ui$' .gitmodules 2>/dev/null; then
+  echo "mini-ork-upgrade: .gitmodules has no crates/mini_ork_ui entry" >&2
+  exit 1
+fi
+git submodule sync --recursive
+git submodule update --init --recursive
+
+# The replay is the only step that can silently drop a fork edit. Prove it did
+# not before the branch is built or published; the guard takes seconds.
+"$script_dir/mini-ork-guard"
+
+branch="mini-ork-${tag}"
+
+if [[ "$build" == 1 ]]; then
+  # No debug info: this relinks everything anyway. The next ordinary build sets
+  # `limited` again and rehashes the target dir — the price of skipping it here.
+  MINI_ORK_BUILD_DEBUG=false "$script_dir/mini-ork-build"
+  echo "mini-ork IDE on Zed ${tag}: $script_dir/mini-ork-ide"
+fi
+
+if [[ "$publish" == 1 ]]; then
+  git rev-parse --verify -q refs/heads/mini-ork >/dev/null || {
+    echo "mini-ork-upgrade: no local 'mini-ork' branch to publish into" >&2
+    exit 1
+  }
+  git remote get-url fork >/dev/null 2>&1 || {
+    echo "mini-ork-upgrade: no 'fork' remote to publish to (see MINI-ORK.md)" >&2
+    exit 1
+  }
+  git switch mini-ork
+  git merge --no-ff -m "mini-ork: base ${tag}" "$branch"
+  git push fork mini-ork
+  echo "mini-ork-upgrade: published ${branch} — users get it with script/mini-ork-pull"
+else
+  echo "mini-ork-upgrade: ${branch} is built and ready; publish it with --publish, or:"
+  echo "  git switch mini-ork && git merge --no-ff -m 'mini-ork: base ${tag}' ${branch} && git push fork mini-ork"
+fi

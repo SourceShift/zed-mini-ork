@@ -25,6 +25,7 @@ use settings::{Settings, SettingsStore, StatusStyle};
 use std::{
     any::{Any, TypeId},
     ops::Range,
+    path::Path,
     sync::Arc,
 };
 use ui::{DiffStat, Divider, Tooltip, prelude::*};
@@ -360,6 +361,62 @@ impl SoloDiffView {
         });
         task.detach_and_notify_err(workspace, window, cx);
     }
+}
+
+/// Open (or bring forward) the diff of the file at `path`. Where
+/// `SoloDiffView::open_or_focus` takes a selection made in the git panel, this
+/// takes a path some other surface holds — the mini-ork IDE's Changes list,
+/// which knows the file's absolute path and nothing about repositories. The
+/// lookup is the one the git panel does for its own selection: the path's
+/// project path, the repository that owns it, then that file's status.
+///
+/// Answers `false` when there is nothing to diff: the path lies outside every
+/// repository of the project, or git has no status for it (clean, ignored, or
+/// already committed). The caller decides what to do then.
+pub fn open_or_focus_path(
+    workspace: WeakEntity<Workspace>,
+    path: &Path,
+    window: &mut Window,
+    cx: &mut App,
+) -> bool {
+    let Some(workspace_entity) = workspace.upgrade() else {
+        return false;
+    };
+    let Some(project_path) = workspace_entity
+        .read(cx)
+        .project()
+        .read(cx)
+        .find_project_path(path, cx)
+    else {
+        return false;
+    };
+    let found = workspace_entity
+        .read(cx)
+        .project()
+        .read(cx)
+        .repositories(cx)
+        .values()
+        .find_map(|repository| {
+            let repo_path = repository
+                .read(cx)
+                .project_path_to_repo_path(&project_path, cx)?;
+            let status = repository.read(cx).status_for_path(&repo_path)?;
+            Some((
+                GitStatusEntry {
+                    repo_path,
+                    status: status.status,
+                    staging: status.status.staging(),
+                    diff_stat: status.diff_stat,
+                },
+                repository.clone(),
+            ))
+        });
+    let Some((entry, repository)) = found else {
+        return false;
+    };
+    SoloDiffView::open_or_focus(entry, repository, workspace.clone(), window, cx)
+        .detach_and_notify_err(workspace, window, cx);
+    true
 }
 
 impl EventEmitter<EditorEvent> for SoloDiffView {}

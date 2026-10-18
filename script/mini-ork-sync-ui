@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+# Make crates/mini_ork_ui/ exist and match the commit this repo pins.
+#
+# The mini_ork_ui crate is a member of this cargo workspace, and cargo refuses
+# to load the workspace at all when a member directory is missing — so
+# `cargo build -p zed`, `cargo metadata`, `cargo ui-check` and rust-analyzer all
+# die without this having run. The crate lives in its own repository
+# (SourceShift/mini-ork-ui) and this repo vendors it as a git submodule at
+# crates/mini_ork_ui/; this materialises that submodule. Run by
+# script/mini-ork-build before every build, and by script/mini-ork-check before
+# a type-check.
+set -euo pipefail
+root="$(cd "$(dirname "$0")/.." && pwd)"
+
+git -C "$root" submodule update --init --recursive -- crates/mini_ork_ui
+
+if ! grep -q '^name = "mini_ork_ui"$' "$root/crates/mini_ork_ui/Cargo.toml" 2>/dev/null; then
+  echo "mini-ork: the mini-ork UI crate is not at crates/mini_ork_ui" >&2
+  echo "  It is the mini-ork-ui submodule. Run 'git submodule update --init'" >&2
+  echo "  here, or clone this repo with --recurse-submodules." >&2
+  exit 1
+fi
+echo "mini-ork: crates/mini_ork_ui at $(git -C "$root/crates/mini_ork_ui" rev-parse --short HEAD)" >&2

@@ -5,6 +5,14 @@ publish.workspace = true
 edition.workspace = true
 license = "GPL-3.0-or-later"
 
+[features]
+# Compiles the GPUI element inspector into optimized builds, where
+# `debug_assertions` is off and the module would otherwise be the stub that
+# only reports "available in debug builds". Off by default: the element
+# bookkeeping it enables is per-element work on every frame, and the tool is
+# only wanted while debugging UI. Enable alongside `gpui/inspector`.
+dev-inspector = []
+
 [lints]
 workspace = true
 

@@ -1,0 +1,76 @@
+#!/usr/bin/env bash
+# Assemble "mini-ork IDE.app" around the current release-fast build — no extra
+# build. The binary is hard-linked (same volume), so the app costs no space;
+# re-run after every build (script/mini-ork-build does).
+set -euo pipefail
+root="$(cd "$(dirname "$0")/.." && pwd)"
+# A build redirected with CARGO_TARGET_DIR puts the binary somewhere else, and
+# the stale one still sitting in `target/` would pass the check below — so an
+# app assembled after a redirected build would silently be the previous UI.
+# Relative values resolve against the repo root, the directory the build runs
+# cargo from.
+target_dir="${CARGO_TARGET_DIR:-$root/target}"
+[[ "$target_dir" = /* ]] || target_dir="$root/$target_dir"
+bin="$target_dir/release-fast/zed"
+[[ -x "$bin" ]] || { echo "build first: script/mini-ork-build" >&2; exit 1; }
+app="${MINI_ORK_APP_DIR:-$root/target}/mini-ork IDE.app"
+version="$(sed -n 's/^version = "\(.*\)"/\1/p' "$root/crates/zed/Cargo.toml" | head -1)"
+mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
+ln -f "$bin" "$app/Contents/MacOS/zed" 2>/dev/null || cp -f "$bin" "$app/Contents/MacOS/zed"
+
+if [[ ! -f "$app/Contents/Resources/mini-ork.icns" ]]; then
+  tmp="$(mktemp -d)"; set="$tmp/mini-ork.iconset"; mkdir -p "$set"
+  src="$root/crates/zed/resources/app-icon-dev@2x.png"
+  for s in 16 32 128 256 512; do
+    sips -z "$s" "$s" "$src" --out "$set/icon_${s}x${s}.png" >/dev/null
+    sips -z "$((s * 2))" "$((s * 2))" "$src" --out "$set/icon_${s}x${s}@2x.png" >/dev/null
+  done
+  iconutil -c icns "$set" -o "$app/Contents/Resources/mini-ork.icns"
+  rm -rf "$tmp"
+fi
+
+cat > "$app/Contents/Info.plist" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleExecutable</key><string>zed</string>
+  <key>CFBundleIdentifier</key><string>dev.mini-ork.ide</string>
+  <key>CFBundleName</key><string>mini-ork IDE</string>
+  <key>CFBundleDisplayName</key><string>mini-ork IDE</string>
+  <key>CFBundleIconFile</key><string>mini-ork</string>
+  <key>CFBundlePackageType</key><string>APPL</string>
+  <key>CFBundleShortVersionString</key><string>${version}</string>
+  <key>CFBundleVersion</key><string>${version}</string>
+  <key>LSApplicationCategoryType</key><string>public.app-category.developer-tools</string>
+  <key>LSMinimumSystemVersion</key><string>10.15.7</string>
+  <key>NSHighResolutionCapable</key><true/>
+</dict>
+</plist>
+PLIST
+
+# Sign the assembled bundle. `ln -f` copies the Mach-O's own ad-hoc signature,
+# which covers the executable and not the app around it: without this the bundle
+# has no Contents/_CodeSignature, macOS calls the signature malformed ("code has
+# no resources but signature indicates they must be present") and refuses to
+# cache the result, so every launch re-validates the whole binary — 50 s of
+# re-reading against 0.4 s once the bundle is signed. Must run after the binary
+# and Info.plist are in place and before lsregister, which reads the signature.
+#
+# The explicit requirement matters as much as the signature. Ad-hoc signing
+# otherwise derives the designated requirement from the cdhash, which changes on
+# every rebuild — and TCC (Removable Volumes, Full Disk Access) identifies an
+# ad-hoc app by that requirement, so each rebuild would silently lose the grants
+# the IDE needs to read a checkout on an external volume. Naming the identifier
+# instead keeps one identity across builds.
+/usr/bin/codesign --force --deep --sign - \
+  --identifier dev.mini-ork.ide \
+  --requirements '=designated => identifier "dev.mini-ork.ide"' \
+  "$app" \
+  || echo "mini-ork: ad-hoc codesign failed; launches will be slow" >&2
+
+touch "$app"
+/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f "$app" >/dev/null 2>&1 || true
+mkdir -p "$HOME/Applications"
+ln -sfn "$app" "$HOME/Applications/mini-ork IDE.app"
+echo "$app"

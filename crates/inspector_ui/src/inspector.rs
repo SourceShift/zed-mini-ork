@@ -115,19 +115,40 @@ fn render_inspector_id(inspector_id: &InspectorElementId, cx: &App) -> Div {
         .map(|path| path.display().to_string())
         .unwrap_or(source_location_string);
 
+    // One line naming both halves of an element: where it was built, and the
+    // id path it sits under. Pasted into a report it stands in for a
+    // screenshot — the source half points at the render code, the id half at
+    // the payload section, for a UI whose sections are named `s3-dag` and the
+    // like.
+    let reference = format!("{} · {}", source_location_string, inspector_id.path.global_id);
+
     v_flex()
         .child(
             h_flex()
                 .justify_between()
                 .child(Label::new("Element ID").size(LabelSize::Large))
                 .child(
-                    div()
-                        .id("instance-id")
-                        .text_ui(cx)
-                        .tooltip(Tooltip::text(
-                            "Disambiguates elements from the same source location",
-                        ))
-                        .child(format!("Instance {}", inspector_id.instance_id)),
+                    h_flex()
+                        .gap_1()
+                        .child(
+                            div()
+                                .id("instance-id")
+                                .text_ui(cx)
+                                .tooltip(Tooltip::text(
+                                    "Disambiguates elements from the same source location",
+                                ))
+                                .child(format!("Instance {}", inspector_id.instance_id)),
+                        )
+                        .child(
+                            ui::CopyButton::new(
+                                SharedString::from(format!(
+                                    "copy-element-ref-{}",
+                                    inspector_id.instance_id
+                                )),
+                                reference,
+                            )
+                            .tooltip_label("Copy element reference"),
+                        ),
                 ),
         )
         .child(

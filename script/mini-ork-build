@@ -1,0 +1,160 @@
+#!/usr/bin/env bash
+# Build the mini-ork IDE without taking over the machine.
+#
+#   script/mini-ork-build            # the usual: rebuild after a change
+#
+# - MINI_ORK_BUILD_QOS (utility|background) demotes the build below your apps
+#   with `taskpolicy`. There is no demotion by default: both classes throttle
+#   the manifest-phase filesystem work hard enough that a one-crate rebuild was
+#   measured sitting in `stat` for minutes before rustc ever started.
+# - MINI_ORK_BUILD_JOBS parallel jobs (default: one per core, capped at 8):
+#   peak RAM grows with every rustc running at once, so this is also the memory
+#   lever — lower it if the machine swaps.
+# - Debug info is pinned to "limited" (line tables only) rather than the
+#   profile's "full". The zed binary carries DWARF from every crate and the
+#   linker merges all of it, which is what makes an otherwise one-crate rebuild
+#   take a minute; line tables keep panic backtraces at file:line and cut the
+#   link hard. Whatever this is set to, keep it constant — any change rehashes
+#   the whole target dir. MINI_ORK_BUILD_DEBUG overrides it (full|limited|false,
+#   or 0/1) at the cost of one full rebuild.
+# - MINI_ORK_LLD=0 falls back to Apple's linker. By default, when Homebrew's
+#   llvm is installed, ld64.lld links the (very large) zed binary markedly
+#   faster; if it is absent the system linker is used silently.
+# - One build at a time. A second `script/mini-ork-build` kills the build still
+#   running before it starts, rather than queueing behind it — see the lock
+#   below.
+# - CARGO_TARGET_DIR moves the build off this checkout's volume. Nearly all of a
+#   build's I/O is the target directory, so pointing that at a faster or more
+#   reliable disk leaves the source tree where it is (mini-ork-app and
+#   mini-ork-ide follow it, so they package and launch the right binary).
+# - sccache is bypassed. It is wired in globally as `rustc-wrapper` in
+#   ~/.cargo/config.toml, but its server wedges here: the rustc processes it
+#   spawns sit in uninterruptible sleep at ~0 CPU while every compile waits on
+#   its socket, so a build that reaches the compile phase never finishes.
+#   MINI_ORK_BUILD_SCCACHE=1 opts back in (its cache directory is on the
+#   external volume, which is worth moving before you rely on it again).
+# After the first build, an edit to the mini_ork_ui crate (its own repo, vendored
+# at crates/mini_ork_ui below — see MINI-ORK.md) rebuilds that crate and relinks
+# Zed.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+ncpu="$(sysctl -n hw.ncpu 2>/dev/null || echo 4)"
+default_jobs=$(( ncpu > 8 ? 8 : ncpu ))
+jobs="${MINI_ORK_BUILD_JOBS:-$default_jobs}"
+
+# Exported rather than passed through `env` so the `mini-ork-app` step below
+# sees the same fingerprint and never rebuilds against a different one.
+export CARGO_PROFILE_RELEASE_FAST_DEBUG="${MINI_ORK_BUILD_DEBUG:-limited}"
+
+# ld64.lld is keg-only (the `lld` formula), hence the absolute path. Exported
+# (not passed to `env`) so it propagates through taskpolicy too.
+lld="/opt/homebrew/opt/lld/bin/ld64.lld"
+if [[ "${MINI_ORK_LLD:-1}" != "0" && -x "$lld" ]]; then
+  export CARGO_TARGET_AARCH64_APPLE_DARWIN_RUSTFLAGS="-C link-arg=-fuse-ld=$lld"
+fi
+
+# sccache is configured globally (`rustc-wrapper` in ~/.cargo/config.toml) and
+# its server wedges on this machine, so a build that reaches the compile phase
+# stops there rather than failing: the rustc processes the server spawns sit in
+# uninterruptible sleep at ~0 CPU while every compile waits on its socket. An
+# empty value is how cargo is told there is no wrapper — the environment
+# outranks the config — and MINI_ORK_BUILD_SCCACHE=1 re-enables it for anyone
+# whose cache directory is on a disk that keeps up.
+if [[ -z "${MINI_ORK_BUILD_SCCACHE:-}" ]]; then
+  export RUSTC_WRAPPER=""
+  export CARGO_BUILD_RUSTC_WRAPPER=""
+fi
+
+# ---- one build at a time ---------------------------------------------------
+# Two `cargo build -p zed` runs do not go twice as fast — they halve each
+# other's throughput and double peak memory — and the second one spends most of
+# its life on cargo's own build-directory lock anyway. So a build left running
+# from an earlier session is not a build in progress; it is a queue every later
+# invocation files in behind. Rather than wait, the new build supersedes it:
+# kill it, wait for it to die, take the lock.
+#
+# `mkdir` is the claim, because creating a directory is atomic — exactly one
+# process can win it. The owner's PID goes inside, and the lock is stale only
+# when that PID is gone, so there is no other staleness to detect.
+lock_dir="target/mini-ork-build.lock"
+lock_taken=""
+
+# Deepest child first: an orphaned rustc goes on compiling — and on holding the
+# machine — long after the cargo that spawned it is gone.
+kill_tree() {
+  local pid="$1" child
+  for child in $(pgrep -P "$pid" 2>/dev/null || true); do
+    kill_tree "$child"
+  done
+  kill -9 "$pid" 2>/dev/null || true
+}
+
+# The PID in a lock left behind by a `kill -9` can be recycled onto an unrelated
+# process long before the next build reads it. Killing that would be worse than
+# doing without the lock, so a holder is only superseded when it still looks
+# like this script — otherwise its lock is treated as the leftover it is.
+is_this_build() {
+  ps -o command= -p "$1" 2>/dev/null | grep -q 'mini-ork-build'
+}
+
+# Only our own lock is removed: a build that refuses to die keeps a live lock,
+# and deleting it on the way out would let a third build start beside it.
+cleanup() {
+  if [[ -n "$lock_taken" ]]; then
+    rm -rf "$lock_dir"
+  fi
+}
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
+for _ in $(seq 1 600); do
+  mkdir "$lock_dir" 2>/dev/null && break
+  holder="$(cat "$lock_dir/pid" 2>/dev/null || true)"
+  if [[ "$holder" =~ ^[0-9]+$ ]] && kill -0 "$holder" 2>/dev/null && is_this_build "$holder"; then
+    echo "mini-ork-build: superseding build $holder" >&2
+    kill_tree "$holder"
+    for _ in $(seq 1 100); do
+      kill -0 "$holder" 2>/dev/null || break
+      sleep 0.1
+    done
+    if kill -0 "$holder" 2>/dev/null; then
+      echo "mini-ork-build: build $holder will not die; not starting a second" >&2
+      exit 1
+    fi
+  fi
+  # The holder is gone, so what remains is a leftover directory. Rename before
+  # removing: only one process can win the rename, so a build racing here
+  # cannot delete the lock the winner has just created.
+  stale="$lock_dir.stale.$$"
+  if mv "$lock_dir" "$stale" 2>/dev/null; then
+    rm -rf "$stale"
+  fi
+done
+if [[ ! -d "$lock_dir" ]]; then
+  echo "mini-ork-build: could not take the build lock" >&2
+  exit 1
+fi
+echo $$ > "$lock_dir/pid"
+lock_taken=1
+
+# The crate is the mini_ork_ui submodule; cargo will not even load the workspace
+# without it, so this must run before every build.
+"$(dirname "$0")/mini-ork-sync-ui"
+
+# The build is heavy, so the default is to run it at the same priority as your
+# apps: that competes with them, but it is the setting that makes progress.
+# Demoting it with taskpolicy instead leaves the build starved for filesystem
+# metadata — the manifest phase and cargo's own fingerprint checks are almost
+# entirely `stat` calls, and a demoted process gets so few of them that a
+# one-crate rebuild sat for minutes before rustc started. Opt into yielding with
+# MINI_ORK_BUILD_QOS=utility (or background) when a responsive machine matters
+# more than a finished build. CI runners have no taskpolicy, and `env` stands in
+# for it so the command is otherwise identical either way.
+priority=(env)
+if [[ -n "${MINI_ORK_BUILD_QOS:-}" ]] && command -v taskpolicy >/dev/null 2>&1; then
+  priority=(taskpolicy -c "$MINI_ORK_BUILD_QOS" env)
+fi
+"${priority[@]}" ZED_RELEASE_CHANNEL=dev \
+  cargo build -p zed --profile release-fast -j "$jobs" "$@"
+"$(dirname "$0")/mini-ork-app"   # refresh "mini-ork IDE.app" on the new binary

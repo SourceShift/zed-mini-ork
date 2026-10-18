@@ -1,12 +1,16 @@
-#[cfg(debug_assertions)]
+// `dev-inspector` exists because `debug_assertions` is off in every optimized
+// profile, including `release-fast` — the one the shipped IDE is built with.
+// Gating on the feature instead of the assertion lets an optimized build carry
+// the inspector without turning on the ~100 other debug assertions in gpui.
+#[cfg(any(debug_assertions, feature = "dev-inspector"))]
 mod div_inspector;
-#[cfg(debug_assertions)]
+#[cfg(any(debug_assertions, feature = "dev-inspector"))]
 mod inspector;
 
-#[cfg(debug_assertions)]
+#[cfg(any(debug_assertions, feature = "dev-inspector"))]
 pub use inspector::init;
 
-#[cfg(not(debug_assertions))]
+#[cfg(not(any(debug_assertions, feature = "dev-inspector")))]
 pub fn init(_app_state: std::sync::Arc<workspace::AppState>, cx: &mut gpui::App) {
     use std::any::TypeId;
     use workspace::notifications::NotifyResultExt as _;
