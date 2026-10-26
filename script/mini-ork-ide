@@ -12,4 +12,15 @@ target_dir="${CARGO_TARGET_DIR:-$root/target}"
 [[ "$target_dir" = /* ]] || target_dir="$root/$target_dir"
 bin="$target_dir/release-fast/zed"
 [[ -x "$bin" ]] || { echo "not built yet: ZED_RELEASE_CHANNEL=dev cargo build -p zed --profile release-fast" >&2; exit 1; }
+# Launch through the bundle when the last build assembled one. TCC (Removable
+# Volumes, Full Disk Access) identifies an ad-hoc signed binary by its cdhash,
+# which a rebuild changes, so exec'ing the bare `release-fast/zed` loses the
+# grants the IDE needs to read a checkout on an external volume — the children
+# it spawns (the mini-ork server, every `board` subprocess) then fail with
+# "Operation not permitted". `script/mini-ork-app` signs the bundle with a
+# designated requirement on its identifier instead, which survives rebuilds.
+app="${MINI_ORK_APP_DIR:-$target_dir}/mini-ork IDE.app"
+if [[ -x "$app/Contents/MacOS/zed" ]]; then
+  exec "$app/Contents/MacOS/zed" "$@"
+fi
 exec "$bin" "$@"
