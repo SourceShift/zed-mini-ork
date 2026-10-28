@@ -44,8 +44,8 @@ use notifications::status_toast::StatusToast;
 use project::ResolvedPath;
 use settings::{update_settings_file, update_settings_file_with_completion};
 use ui::{
-    ButtonLike, CalloutBorderPosition, Checkbox, SpinnerLabel, SpinnerVariant, SplitButton,
-    SplitButtonStyle, Tab, ToggleState,
+    ButtonLike, CalloutBorderPosition, Checkbox, ProgressBar, SpinnerLabel, SpinnerVariant,
+    SplitButton, SplitButtonStyle, Tab, ToggleState,
 };
 use url::Url;
 use util::markdown::source_position_from_fragment;
@@ -4410,16 +4410,47 @@ impl ThreadView {
     ) -> impl IntoElement {
         let plan_expanded = self.plan_expanded;
         let stats = plan.stats();
+        let total = plan.entries.len();
+        let completed = stats.completed as usize;
+        let count_label = format!("{completed}/{total}");
+        let bar_color = if stats.pending == 0 {
+            cx.theme().status().success
+        } else {
+            cx.theme().status().info
+        };
+        // A thin bar beside the label, so progress reads at a glance without
+        // expanding the list. The count is left out when the status label
+        // already is one.
+        let progress = |with_count: bool| {
+            h_flex()
+                .flex_none()
+                .gap_1p5()
+                .items_center()
+                .child(
+                    div().w_16().child(
+                        ProgressBar::new("plan_progress", completed as f32, total.max(1) as f32, cx)
+                            .fg_color(bar_color)
+                            .bg_color(cx.theme().colors().element_background),
+                    ),
+                )
+                .when(with_count, |this| {
+                    this.child(
+                        Label::new(count_label.clone())
+                            .size(LabelSize::Small)
+                            .color(Color::Muted)
+                            .buffer_font(cx),
+                    )
+                })
+        };
 
         let title = if let Some(entry) = stats.in_progress_entry
             && !plan_expanded
         {
             h_flex()
                 .cursor_default()
-                .relative()
                 .w_full()
+                .min_w_0()
                 .gap_1()
-                .truncate()
                 .child(
                     Label::new("Current:")
                         .size(LabelSize::Small)
@@ -4427,6 +4458,8 @@ impl ThreadView {
                 )
                 .child(
                     div()
+                        .flex_1()
+                        .min_w_0()
                         .text_xs()
                         .text_color(cx.theme().colors().text_muted)
                         .line_clamp(1)
@@ -4435,35 +4468,15 @@ impl ThreadView {
                             plan_label_markdown_style(&entry.source.status, window, cx),
                         )),
                 )
-                .when(stats.pending > 0, |this| {
-                    this.child(
-                        h_flex()
-                            .absolute()
-                            .top_0()
-                            .right_0()
-                            .h_full()
-                            .child(div().min_w_8().h_full().bg(linear_gradient(
-                                90.,
-                                linear_color_stop(self.activity_bar_bg(cx), 1.),
-                                linear_color_stop(self.activity_bar_bg(cx).opacity(0.2), 0.),
-                            )))
-                            .child(
-                                div().pr_0p5().bg(self.activity_bar_bg(cx)).child(
-                                    Label::new(format!("{} left", stats.pending))
-                                        .size(LabelSize::Small)
-                                        .color(Color::Muted),
-                                ),
-                            ),
-                    )
-                })
+                .child(progress(true))
         } else {
             let status_label = plan_summary_label(&stats, plan.entries.len());
+            let with_count = status_label != count_label;
 
             h_flex()
                 .debug_selector(|| format!("plan-status-{status_label}"))
                 .w_full()
-                .gap_1()
-                .justify_between()
+                .gap_2()
                 .child(
                     Label::new("Plan")
                         .size(LabelSize::Small)
@@ -4472,9 +4485,10 @@ impl ThreadView {
                 .child(
                     Label::new(status_label)
                         .size(LabelSize::Small)
-                        .color(Color::Muted)
-                        .mr_1(),
+                        .color(Color::Muted),
                 )
+                .child(div().flex_1())
+                .child(progress(with_count))
         };
 
         h_flex()
@@ -8844,12 +8858,24 @@ impl ThreadView {
             layout.id_str()
         )));
 
+        // A run marker's rows live in its flat `node` siblings (suppressed from
+        // the list); hand them to the card so it can fold them in.
+        let siblings = crate::thread_card::ThreadCard::from_meta(tool_call.meta.as_ref())
+            .filter(|card| card.kind == "run")
+            .map(|_| {
+                crate::thread_card::collect_siblings(
+                    tool_call.id.0.as_ref(),
+                    self.thread.read(cx).entries(),
+                )
+            })
+            .unwrap_or_default();
         let card_view = crate::thread_card::ThreadCardView {
             session_id: active_session_id,
             tool_call_id: tool_call.id.0.to_string(),
             entry_ix,
             permission: self.resolved_permission_for(tool_call, active_session_id, cx),
             workspace: self.workspace.upgrade(),
+            siblings,
         };
         if let Some(card) =
             crate::thread_card::render(tool_call.meta.as_ref(), &card_view, window, cx)

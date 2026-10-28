@@ -6,6 +6,15 @@
 //! versions, unknown kinds, unknown block types and malformed JSON all
 //! degrade to the stock body without panicking.
 //!
+//! A run is one `run` card plus flat `node` sibling entries (the engine never
+//! nests tool calls). The node entries are suppressed from the list and folded
+//! into the run card's rows here, so the run reads as one card: header, node
+//! rows with their lane, and the actions the engine offered. Navigation into
+//! the mini-ork pages goes through actions dispatched *by name*
+//! (`mini_ork::OpenRun`, `mini_ork::OpenNode`): `mini_ork_ui` depends on this
+//! crate, so the dependency cannot point the other way. When those actions are
+//! not registered the buttons are simply not drawn.
+//!
 //! The renderer is server-agnostic: any ACP server that emits the envelope
 //! gets the same cards. A later override can register a custom
 //! [`ThreadCardRenderer`] against a different `_meta` key without touching
@@ -14,17 +23,26 @@
 use std::path::PathBuf;
 use std::sync::{Mutex, OnceLock};
 
-use acp_thread::PermissionRequestId;
+use acp_thread::{AgentThreadEntry, PermissionRequestId};
 use agent_client_protocol::schema::{v1 as acp_v1, v2 as acp_v2};
-use gpui::{AnyElement, App, Entity, IntoElement, SharedString, Window, actions, prelude::*};
+use gpui::{
+    AnyElement, App, ElementId, Entity, Hsla, IntoElement, SharedString, Window, actions,
+    prelude::*, rgb,
+};
 use serde::Deserialize;
-use settings::Settings;
-use theme_settings::ThemeSettings;
-use ui::{Button, ButtonStyle, Label, LabelSize, TintColor, Tooltip, prelude::*};
+use ui::{
+    Button, ButtonStyle, Chip, IconButton, Label, LabelSize, TintColor, Tooltip, prelude::*,
+};
 use workspace::Workspace;
 
 pub const CARD_KEY: &str = "mini_ork";
 pub const CARD_VERSION: u32 = 1;
+
+/// Opens a run's page in the editor area. Owned by `mini_ork_ui`; built by
+/// name so this crate needs no dependency on it.
+pub const OPEN_RUN_ACTION: &str = "mini_ork::OpenRun";
+/// Opens one node of a run as its own tab. Owned by `mini_ork_ui`.
+pub const OPEN_NODE_ACTION: &str = "mini_ork::OpenNode";
 
 actions!(
     agent,
@@ -153,7 +171,7 @@ pub struct FileRow {
     pub status: Option<String>,
 }
 
-#[derive(Clone, Debug, Default, Deserialize)]
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Eq)]
 pub struct StepRow {
     #[serde(default)]
     pub id: String,
@@ -171,6 +189,40 @@ pub struct StepRow {
     pub detail: Option<String>,
     #[serde(default)]
     pub stderr: Option<String>,
+}
+
+impl StepRow {
+    /// The identity a node keeps across its start and end cards.
+    fn key(&self) -> &str {
+        if self.id.is_empty() {
+            &self.label
+        } else {
+            &self.id
+        }
+    }
+
+    /// Take every field the newer row states; keep what it leaves out. A
+    /// `node_end` card names the verdict but not always the lane, and the
+    /// `node_start` card is the only one that named it.
+    fn absorb(&mut self, newer: &StepRow) {
+        if !newer.label.is_empty() {
+            self.label = newer.label.clone();
+        }
+        if !newer.status.is_empty() {
+            self.status = newer.status.clone();
+        }
+        for (mine, theirs) in [
+            (&mut self.lane, &newer.lane),
+            (&mut self.model, &newer.model),
+            (&mut self.cost, &newer.cost),
+            (&mut self.detail, &newer.detail),
+            (&mut self.stderr, &newer.stderr),
+        ] {
+            if theirs.as_deref().is_some_and(|value| !value.is_empty()) {
+                *mine = theirs.clone();
+            }
+        }
+    }
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -239,6 +291,164 @@ impl ThreadCard {
     pub fn fallback(&self) -> &str {
         &self.fallback_text
     }
+
+    fn steps(&self) -> impl Iterator<Item = &StepRow> {
+        self.blocks.iter().flat_map(|block| match block {
+            CardBlock::Steps { steps } => steps.as_slice(),
+            _ => &[],
+        })
+    }
+}
+
+/// The run id a run marker's card id names (`<run_id>:parent`).
+pub fn run_id_of(card_id: &str) -> Option<&str> {
+    card_id.strip_suffix(":parent").filter(|id| !id.is_empty())
+}
+
+/// Every sibling card that belongs to the run marker `run_card_id`: an entry
+/// whose id starts with `<run_id>:` (the router's prefix), or whose card
+/// names the marker as its `parent` (the cross-check the design keeps).
+pub fn collect_siblings(run_card_id: &str, entries: &[AgentThreadEntry]) -> Vec<(String, ThreadCard)> {
+    let Some(run_id) = run_id_of(run_card_id) else {
+        return Vec::new();
+    };
+    let prefix = format!("{run_id}:");
+    entries
+        .iter()
+        .filter_map(|entry| match entry {
+            AgentThreadEntry::ToolCall(tool_call) => {
+                let id = tool_call.id.0.to_string();
+                if id == run_card_id {
+                    return None;
+                }
+                let card = ThreadCard::from_meta(tool_call.meta.as_ref())?;
+                let belongs =
+                    id.starts_with(&prefix) || card.parent.as_deref() == Some(run_card_id);
+                belongs.then_some((id, card))
+            }
+            _ => None,
+        })
+        .collect()
+}
+
+/// One row per node: the run card's own rows first, then every `node`
+/// sibling folded in, in thread order. A node seen again updates its row in
+/// place (a later card, or an equal-or-higher revision, wins) so the list
+/// keeps the order nodes started in.
+pub fn fold_steps(card: &ThreadCard, siblings: &[(String, ThreadCard)]) -> Vec<StepRow> {
+    let mut rows: Vec<(StepRow, i64)> = Vec::new();
+    let mut upsert = |step: &StepRow, revision: i64| {
+        if step.key().is_empty() {
+            return;
+        }
+        match rows.iter_mut().find(|(row, _)| row.key() == step.key()) {
+            Some((row, seen)) if revision >= *seen => {
+                row.absorb(step);
+                *seen = revision;
+            }
+            Some(_) => {}
+            None => rows.push((step.clone(), revision)),
+        }
+    };
+    for step in card.steps() {
+        upsert(step, card.revision);
+    }
+    for (_, sibling) in siblings.iter().filter(|(_, card)| card.kind == "node") {
+        for step in sibling.steps() {
+            upsert(step, sibling.revision);
+        }
+    }
+    rows.into_iter().map(|(row, _)| row).collect()
+}
+
+/// How a status string reads, whatever vocabulary produced it: a node
+/// verdict, a run status, or an ACP tool-call status.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum StepState {
+    Done,
+    Failed,
+    Working,
+    Pending,
+    Other,
+}
+
+pub fn step_state(status: &str) -> StepState {
+    let status = status.trim().to_ascii_lowercase();
+    if status.is_empty() {
+        return StepState::Other;
+    }
+    const FAILED: &[&str] = &["fail", "refut", "error", "reject", "cancel", "refus", "kill", "bad"];
+    const WORKING: &[&str] = &["progress", "running", "executing", "working", "reviewing"];
+    const PENDING: &[&str] = &["pending", "queued", "waiting", "not run"];
+    const DONE: &[&str] = &[
+        "pass", "ok", "approv", "done", "complet", "publish", "success", "verified", "kept",
+        "merged",
+    ];
+    let any = |needles: &[&str]| needles.iter().any(|needle| status.contains(needle));
+    if any(FAILED) {
+        StepState::Failed
+    } else if any(WORKING) {
+        StepState::Working
+    } else if any(PENDING) {
+        StepState::Pending
+    } else if any(DONE) {
+        StepState::Done
+    } else {
+        StepState::Other
+    }
+}
+
+/// The colour of a model family, matched loosely on the lane name. The hues
+/// are the design's (`mini-ork IDE.dc.html` `FAM`), the same ones the
+/// mini-ork pages use, so a lane keeps its colour across the IDE. `None` is a
+/// lane with no family (a `shell` node): the caller draws it muted.
+pub fn lane_color(lane: &str) -> Option<Hsla> {
+    const FAMILIES: &[(&str, u32)] = &[
+        ("opus", 0xb477cf),
+        ("sonnet", 0xc0966b),
+        ("haiku", 0xc0966b),
+        ("claude", 0xc0966b),
+        ("anthropic", 0xc0966b),
+        ("glm", 0x6eb4bf),
+        ("zhipu", 0x6eb4bf),
+        ("kimi", 0x74ade8),
+        ("moonshot", 0x74ade8),
+        ("codex", 0xdec184),
+        ("gpt", 0xdec184),
+        ("openai", 0xdec184),
+        ("deepseek", 0x8f9cf0),
+        ("minimax", 0xe08fb0),
+        ("gemini", 0xa1c181),
+        ("qwen", 0x9fd4a3),
+    ];
+    let lane = lane.to_ascii_lowercase();
+    FAMILIES
+        .iter()
+        .find(|(needle, _)| lane.contains(needle))
+        .map(|(_, hex)| Hsla::from(rgb(*hex)))
+}
+
+/// `392123 ms` (what the engine writes) or a bare millisecond count, read as
+/// `6m 32s`. Anything else is shown as it came.
+pub fn humanize_duration(raw: &str) -> String {
+    let digits: String = raw.trim().chars().take_while(|c| c.is_ascii_digit()).collect();
+    let rest = raw.trim()[digits.len()..].trim();
+    let Ok(value) = digits.parse::<u64>() else {
+        return raw.trim().to_string();
+    };
+    let millis = match rest {
+        "" | "ms" => value,
+        "s" => value * 1000,
+        _ => return raw.trim().to_string(),
+    };
+    let seconds = millis / 1000;
+    if seconds >= 3600 {
+        format!("{}h {:02}m", seconds / 3600, (seconds % 3600) / 60)
+    } else if seconds >= 60 {
+        format!("{}m {:02}s", seconds / 60, seconds % 60)
+    } else {
+        format!("{seconds}s")
+    }
 }
 
 /// Resolved permission data for a card's `permission` actions.
@@ -256,6 +466,9 @@ pub struct ThreadCardView<'a> {
     pub entry_ix: usize,
     pub permission: Option<ResolvedPermission>,
     pub workspace: Option<Entity<Workspace>>,
+    /// The cards of this entry's run siblings (see [`collect_siblings`]);
+    /// empty for anything but a run marker.
+    pub siblings: Vec<(String, ThreadCard)>,
 }
 
 /// Trait for an alternative renderer registered against a particular `_meta`
@@ -288,6 +501,13 @@ impl ThreadCardRenderer for EnvelopeRenderer {
         _window: &Window,
         cx: &App,
     ) -> Option<AnyElement> {
+        // The engine's review and lane-repair offers land on the run marker
+        // itself (`<run_id>:parent`) and replace its sticky `_meta`, so the
+        // marker is drawn as the run card whatever kind it carries now: the
+        // folded node rows stay, and the offer's buttons join them.
+        if card.kind == "run" || run_id_of(&card.card_id).is_some() {
+            return Some(render_run_card(card, view, cx).into_any_element());
+        }
         Some(render_envelope(card, view, cx).into_any_element())
     }
 
@@ -354,96 +574,487 @@ pub fn suppresses_entry(meta: Option<&acp_v2::Meta>) -> bool {
     false
 }
 
-/// The monospace family used for paths, code and stderr excerpts — the same
-/// buffer font the rest of the agent panel uses for code content.
-fn mono_font(cx: &App) -> SharedString {
-    ThemeSettings::get_global(cx)
-        .agent_buffer_font_family()
-        .clone()
+/// Whether `mini_ork_ui` (or anything else) registered the named action in
+/// this app. The card never draws a button it cannot answer.
+pub fn action_registered(cx: &App, name: &str) -> bool {
+    cx.all_action_names().contains(&name)
 }
 
-fn render_envelope(card: &ThreadCard, view: &ThreadCardView<'_>, cx: &App) -> Div {
+fn dispatch_named(name: &str, data: serde_json::Value, window: &mut Window, cx: &mut App) {
+    match cx.build_action(name, Some(data)) {
+        Ok(action) => window.dispatch_action(action, cx),
+        Err(error) => log::warn!("thread card: cannot build action {name}: {error}"),
+    }
+}
+
+// ── marks and states ────────────────────────────────────────────────────────
+
+/// The glyph and colour a status reads as, in the design's vocabulary:
+/// `✓` done, `✗` failed, `●` working, `○` pending.
+fn state_mark(state: StepState) -> (&'static str, Color) {
+    match state {
+        StepState::Done => ("✓", Color::Success),
+        StepState::Failed => ("✗", Color::Error),
+        StepState::Working => ("●", Color::Accent),
+        StepState::Pending => ("○", Color::Muted),
+        StepState::Other => ("·", Color::Muted),
+    }
+}
+
+fn state_text(state: StepState, raw: &str) -> String {
+    match state {
+        StepState::Done => "done".to_string(),
+        StepState::Failed => "failed".to_string(),
+        StepState::Working => "working".to_string(),
+        StepState::Pending => "pending".to_string(),
+        StepState::Other => raw.trim().to_string(),
+    }
+}
+
+/// The mark a card's header shows. A `hand` mark means the engine is waiting
+/// on the user and wins over the status; otherwise the status decides, and
+/// the engine's own mark is the fallback for a status we do not classify.
+fn card_mark(card: &ThreadCard) -> Option<(&'static str, Color)> {
+    if card.header.mark == "hand" {
+        return Some(("✋", Color::Warning));
+    }
+    match step_state(&card.status) {
+        StepState::Other => match card.header.mark.as_str() {
+            "check" => Some(("✓", Color::Success)),
+            "cross" => Some(("✗", Color::Error)),
+            "dot" => Some(("·", Color::Muted)),
+            _ => None,
+        },
+        state => Some(state_mark(state)),
+    }
+}
+
+fn mark_label(glyph: &'static str, color: Color) -> Label {
+    Label::new(glyph).size(LabelSize::Small).color(color)
+}
+
+fn tag_chip(tag: &str) -> Chip {
+    Chip::new(tag.to_string())
+        .label_size(LabelSize::XSmall)
+        .label_color(Color::Muted)
+}
+
+fn mono_label(text: impl Into<SharedString>, size: LabelSize, color: Color, cx: &App) -> Label {
+    Label::new(text).size(size).color(color).buffer_font(cx)
+}
+
+// ── run card ────────────────────────────────────────────────────────────────
+
+/// What the run card lifts out of the engine's `kv` rows into its header.
+#[derive(Default, Debug, PartialEq, Eq)]
+struct RunFacts {
+    cost: Option<String>,
+    duration: Option<String>,
+    workspace: Option<String>,
+    branch: Option<String>,
+}
+
+impl RunFacts {
+    /// Pull the header facts out of every `kv` block; the rows left over
+    /// are returned so they still render as a `kv` block.
+    fn extract(card: &ThreadCard) -> (RunFacts, Vec<KvRow>) {
+        let mut facts = RunFacts::default();
+        let mut leftover = Vec::new();
+        for block in &card.blocks {
+            let CardBlock::Kv { rows } = block else {
+                continue;
+            };
+            for row in rows {
+                let slot = match row.k.trim().to_ascii_lowercase().as_str() {
+                    "cost" => &mut facts.cost,
+                    "duration" => &mut facts.duration,
+                    "workspace" => &mut facts.workspace,
+                    "branch" => &mut facts.branch,
+                    _ => {
+                        leftover.push(row.clone());
+                        continue;
+                    }
+                };
+                if !row.v.trim().is_empty() {
+                    *slot = Some(row.v.trim().to_string());
+                }
+            }
+        }
+        (facts, leftover)
+    }
+
+    /// `worktree mo/run-a41c`, `this worktree main`, `in place`, or nothing.
+    fn workspace_text(&self) -> Option<String> {
+        match (&self.workspace, &self.branch) {
+            (Some(mode), Some(branch)) => Some(format!("{mode} {branch}")),
+            (Some(mode), None) => Some(mode.clone()),
+            (None, Some(branch)) => Some(branch.clone()),
+            (None, None) => None,
+        }
+    }
+
+    /// `$0.42 · 6m 32s`, either half alone, or nothing.
+    fn cost_text(&self) -> Option<String> {
+        let parts: Vec<String> = [
+            self.cost.clone(),
+            self.duration.as_deref().map(humanize_duration),
+        ]
+        .into_iter()
+        .flatten()
+        .collect();
+        (!parts.is_empty()).then(|| parts.join(" · "))
+    }
+}
+
+fn render_run_card(card: &ThreadCard, view: &ThreadCardView<'_>, cx: &App) -> Div {
     let colors = cx.theme().colors();
-    let border = colors.border;
+    let run_id = run_id_of(&card.card_id)
+        .map(str::to_string)
+        .unwrap_or_else(|| card.card_id.clone());
+    let run_label = format!("run {run_id}");
+    let (facts, leftover_kv) = RunFacts::extract(card);
+    let steps = fold_steps(card, &view.siblings);
+    let can_open_run = action_registered(cx, OPEN_RUN_ACTION);
+    let can_open_node = action_registered(cx, OPEN_NODE_ACTION);
+    let entry_ix = view.entry_ix;
+
+    // ── header: mark · run id · recipe · worktree · cost · ⤢ ──
+    let mut header = h_flex()
+        .w_full()
+        .px_3()
+        .py_2()
+        .gap_2()
+        .items_center()
+        .flex_wrap()
+        .border_b_1()
+        .border_color(colors.border);
+    if let Some((glyph, color)) = card_mark(card) {
+        header = header.child(mark_label(glyph, color));
+    }
+    header = header.child(mono_label(run_label.clone(), LabelSize::Small, Color::Default, cx));
+    if !card.header.tag.is_empty() {
+        header = header.child(tag_chip(&card.header.tag));
+    }
+    if let Some(workspace) = facts.workspace_text() {
+        header = header.child(
+            Label::new(workspace)
+                .size(LabelSize::XSmall)
+                .color(Color::Muted),
+        );
+    }
+    header = header.child(div().flex_1());
+    if let Some(cost) = facts.cost_text() {
+        header = header.child(mono_label(cost, LabelSize::XSmall, Color::Muted, cx));
+    }
+    if can_open_run {
+        let run_id = run_id.clone();
+        let title = card.header.title.clone();
+        header = header.child(
+            IconButton::new(("thread-card-open-run", entry_ix), IconName::ArrowUpRight)
+                .icon_size(IconSize::XSmall)
+                .icon_color(Color::Muted)
+                .tooltip(Tooltip::text("Open the run graph"))
+                .on_click(move |_event, window, cx| {
+                    dispatch_named(
+                        OPEN_RUN_ACTION,
+                        serde_json::json!({ "run": run_id, "title": title }),
+                        window,
+                        cx,
+                    );
+                }),
+        );
+    }
 
     let mut container = v_flex()
         .w_full()
-        .p_2()
-        .gap_1p5()
         .rounded_md()
         .border_1()
-        .border_color(border)
-        .bg(colors.panel_background);
+        .border_color(colors.border)
+        .bg(colors.panel_background)
+        .overflow_hidden()
+        .child(header);
 
-    container = container.child(render_header(card, cx));
-
-    for block in &card.blocks {
-        container = container.child(render_block(block, cx));
+    // The task title, when the engine knows it, sits under the run line.
+    let title = card.header.title.trim();
+    if !title.is_empty() && title != run_label && title != card.fallback_text {
+        let mut line = h_flex().w_full().px_3().pt_2().gap_2().items_center();
+        line = line.child(Label::new(title.to_string()).size(LabelSize::Small));
+        for extra in [&card.header.meta, &card.header.detail] {
+            if !extra.trim().is_empty() {
+                line = line.child(
+                    Label::new(extra.trim().to_string())
+                        .size(LabelSize::XSmall)
+                        .color(Color::Muted),
+                );
+            }
+        }
+        container = container.child(line);
     }
 
-    if let Some(actions) = render_actions(card, view) {
+    // The node rows come first, folded from every `steps` block and the node
+    // siblings; then the card's other blocks in the engine's order, minus the
+    // `kv` rows the header consumed.
+    let mut body = v_flex().w_full().gap_2().px_3().py_2();
+    let mut body_has_children = false;
+    if !steps.is_empty() {
+        body = body.child(render_node_rows(&steps, &run_id, can_open_node, entry_ix, cx));
+        body_has_children = true;
+    }
+    let mut drew_kv = false;
+    for block in &card.blocks {
+        match block {
+            CardBlock::Steps { .. } => {}
+            CardBlock::Kv { .. } => {
+                if !drew_kv && !leftover_kv.is_empty() {
+                    body = body.child(render_kv(&leftover_kv, cx));
+                    body_has_children = true;
+                }
+                drew_kv = true;
+            }
+            other => {
+                body = body.child(render_block(other, cx));
+                body_has_children = true;
+            }
+        }
+    }
+    if body_has_children {
+        container = container.child(body);
+    }
+
+    // ── actions: the engine's buttons, then "Open run" when the IDE has it ──
+    let mut actions = h_flex()
+        .w_full()
+        .px_3()
+        .py_2()
+        .gap_1()
+        .flex_wrap()
+        .border_t_1()
+        .border_color(colors.border);
+    let mut drew_action = false;
+    for action in &card.actions {
+        if let Some(element) = render_action(action, view) {
+            actions = actions.child(element);
+            drew_action = true;
+        }
+    }
+    if can_open_run {
+        let title = card.header.title.clone();
+        actions = actions.child(
+            Button::new(("thread-card-open-run-button", entry_ix), "Open run")
+                .label_size(LabelSize::Small)
+                .style(ButtonStyle::Outlined)
+                .on_click(move |_event, window, cx| {
+                    dispatch_named(
+                        OPEN_RUN_ACTION,
+                        serde_json::json!({ "run": run_id, "title": title }),
+                        window,
+                        cx,
+                    );
+                }),
+        );
+        drew_action = true;
+    }
+    if drew_action {
         container = container.child(actions);
     }
 
     container
 }
 
+/// The node rows: `mark · label · (lane dot) lane … status · cost`. Each row
+/// opens the node's tab when the IDE registered that action.
+fn render_node_rows(
+    steps: &[StepRow],
+    run_id: &str,
+    can_open_node: bool,
+    entry_ix: usize,
+    cx: &App,
+) -> AnyElement {
+    let colors = cx.theme().colors();
+    let error_background = cx.theme().status().error_background;
+    let show_cost = steps
+        .iter()
+        .any(|step| step.cost.as_deref().is_some_and(|cost| !cost.is_empty()));
+    let mut list = v_flex().w_full();
+    for (index, step) in steps.iter().enumerate() {
+        let state = step_state(&step.status);
+        let (glyph, mark_color) = state_mark(state);
+        let label_color = if state == StepState::Pending {
+            Color::Muted
+        } else {
+            Color::Default
+        };
+        let lane = step.lane.as_deref().unwrap_or("").trim().to_string();
+
+        let mut name = h_flex()
+            .flex_1()
+            .min_w_0()
+            .gap_2()
+            .items_center()
+            .child(Label::new(step.label.clone()).size(LabelSize::Small).color(label_color).truncate());
+        if !lane.is_empty() {
+            let dot_color = lane_color(&lane).unwrap_or(colors.text_muted);
+            name = name.child(
+                h_flex()
+                    .flex_none()
+                    .gap_1()
+                    .items_center()
+                    .child(div().size(px(6.)).rounded_full().bg(dot_color))
+                    .child(Label::new(lane).size(LabelSize::XSmall).color(Color::Muted)),
+            );
+        }
+        if let Some(model) = step.model.as_deref().filter(|m| !m.is_empty()) {
+            name = name.child(
+                Label::new(model.to_string())
+                    .size(LabelSize::XSmall)
+                    .color(Color::Muted),
+            );
+        }
+
+        let mut row = h_flex()
+            .w_full()
+            .px_1()
+            .py_0p5()
+            .gap_2()
+            .items_center()
+            .rounded_sm()
+            .child(div().w_4().flex_none().child(mark_label(glyph, mark_color)))
+            .child(name)
+            .child(
+                Label::new(state_text(state, &step.status))
+                    .size(LabelSize::XSmall)
+                    .color(mark_color),
+            );
+        if show_cost {
+            row = row.child(
+                h_flex().w(px(52.)).flex_none().justify_end().child(mono_label(
+                    step.cost.clone().unwrap_or_default(),
+                    LabelSize::XSmall,
+                    Color::Muted,
+                    cx,
+                )),
+            );
+        }
+        let tooltip_text = step
+            .detail
+            .as_deref()
+            .filter(|detail| !detail.is_empty())
+            .map(str::to_string);
+
+        let row_id = ElementId::Name(format!("thread-card-node-{entry_ix}-{index}").into());
+        let mut row = row.id(row_id);
+        if let Some(tooltip_text) = tooltip_text {
+            row = row.tooltip(Tooltip::text(tooltip_text));
+        }
+        if can_open_node {
+            let run_id = run_id.to_string();
+            let node_id = step.key().to_string();
+            row = row
+                .cursor_pointer()
+                .hover(|style| style.bg(colors.element_hover))
+                .on_click(move |_event, window, cx| {
+                    dispatch_named(
+                        OPEN_NODE_ACTION,
+                        serde_json::json!({ "run": run_id, "node": node_id }),
+                        window,
+                        cx,
+                    );
+                });
+        }
+        list = list.child(row);
+
+        if let Some(stderr) = step.stderr.as_deref().filter(|s| !s.is_empty()) {
+            list = list.child(
+                div()
+                    .ml_6()
+                    .my_1()
+                    .p_1p5()
+                    .rounded_sm()
+                    .bg(error_background)
+                    .child(mono_label(stderr.to_string(), LabelSize::XSmall, Color::Error, cx)),
+            );
+        }
+    }
+    list.into_any_element()
+}
+
+// ── generic envelope ────────────────────────────────────────────────────────
+
+fn render_envelope(card: &ThreadCard, view: &ThreadCardView<'_>, cx: &App) -> Div {
+    let colors = cx.theme().colors();
+
+    let mut container = v_flex()
+        .w_full()
+        .rounded_md()
+        .border_1()
+        .border_color(colors.border)
+        .bg(colors.panel_background)
+        .overflow_hidden()
+        .child(render_header(card, cx));
+
+    if !card.blocks.is_empty() {
+        let mut body = v_flex().w_full().gap_2().px_3().py_2();
+        for block in &card.blocks {
+            body = body.child(render_block(block, cx));
+        }
+        container = container.child(body);
+    }
+
+    if let Some(actions) = render_actions(card, view) {
+        container = container.child(
+            div()
+                .w_full()
+                .px_3()
+                .py_2()
+                .border_t_1()
+                .border_color(colors.border)
+                .child(actions),
+        );
+    }
+
+    container
+}
+
 fn render_header(card: &ThreadCard, cx: &App) -> Div {
-    let mut row = h_flex().gap_2().items_center().w_full();
+    let colors = cx.theme().colors();
+    let mut row = h_flex()
+        .w_full()
+        .px_3()
+        .py_2()
+        .gap_2()
+        .items_center()
+        .border_b_1()
+        .border_color(colors.border);
 
-    let mark_glyph = match card.header.mark.as_str() {
-        "check" => Some("✓"),
-        "cross" => Some("✗"),
-        "hand" => Some("✋"),
-        "dot" => Some("·"),
-        _ => None,
-    };
-    if let Some(glyph) = mark_glyph {
-        row = row.child(
-            Label::new(glyph)
-                .size(LabelSize::Small)
-                .color(Color::Default),
-        );
+    if let Some((glyph, color)) = card_mark(card) {
+        row = row.child(mark_label(glyph, color));
     }
 
+    let mut titles = v_flex().flex_1().min_w_0();
     if !card.header.title.is_empty() {
-        row = row.child(Label::new(card.header.title.clone()).size(LabelSize::Small));
-    }
-
-    if !card.header.meta.is_empty() || !card.header.detail.is_empty() {
-        let mut middle = String::new();
-        if !card.header.meta.is_empty() {
-            middle.push_str(&card.header.meta);
-        }
-        if !card.header.detail.is_empty() {
-            if !middle.is_empty() {
-                middle.push_str(" · ");
-            }
-            middle.push_str(&card.header.detail);
-        }
-        row = row.child(
-            Label::new(middle)
+        titles = titles.child(
+            Label::new(card.header.title.clone())
                 .size(LabelSize::Small)
-                .color(Color::Muted),
+                .weight(gpui::FontWeight::SEMIBOLD)
+                .truncate(),
         );
     }
-
-    row = row.child(div().flex_grow(1.0));
+    let subtitle: Vec<&str> = [card.header.meta.as_str(), card.header.detail.as_str()]
+        .into_iter()
+        .filter(|part| !part.trim().is_empty())
+        .collect();
+    if !subtitle.is_empty() {
+        titles = titles.child(
+            Label::new(subtitle.join(" · "))
+                .size(LabelSize::XSmall)
+                .color(Color::Muted)
+                .truncate(),
+        );
+    }
+    row = row.child(titles);
 
     if !card.header.tag.is_empty() {
-        let colors = cx.theme().colors();
-        row = row.child(
-            div()
-                .px_1p5()
-                .py_0p5()
-                .rounded_sm()
-                .bg(colors.surface_background)
-                .child(
-                    Label::new(card.header.tag.clone())
-                        .size(LabelSize::XSmall)
-                        .color(Color::Muted),
-                ),
-        );
+        row = row.child(tag_chip(&card.header.tag));
     }
 
     row
@@ -473,26 +1084,23 @@ fn render_text(text: &str, tone: Option<&str>, _cx: &App) -> AnyElement {
         .into_any_element()
 }
 
+/// Key over value, wrapped into as many columns as fit — the design's
+/// `kv` grid.
 fn render_kv(rows: &[KvRow], _cx: &App) -> AnyElement {
-    let mut col = v_flex().gap_0p5().w_full();
+    let mut grid = h_flex().w_full().flex_wrap().gap_x_4().gap_y_2();
     for row in rows {
-        col = col.child(
-            h_flex()
-                .gap_1()
-                .w_full()
+        grid = grid.child(
+            v_flex()
+                .min_w(px(120.))
                 .child(
                     Label::new(row.k.clone())
-                        .size(LabelSize::Small)
+                        .size(LabelSize::XSmall)
                         .color(Color::Muted),
                 )
-                .child(
-                    Label::new(row.v.clone())
-                        .size(LabelSize::Small)
-                        .color(Color::Default),
-                ),
+                .child(Label::new(row.v.clone()).size(LabelSize::Small)),
         );
     }
-    col.into_any_element()
+    grid.into_any_element()
 }
 
 fn item_mark_color(status: Option<&str>) -> Color {
@@ -513,152 +1121,65 @@ fn render_items(items: &[ItemRow], _cx: &App) -> AnyElement {
             "check" => "✓",
             "cross" => "✗",
             "hand" => "✋",
-            "dot" => "·",
+            "warn" => "!",
             _ => "·",
         };
         let color = item_mark_color(item.status.as_deref());
         col = col.child(
             h_flex()
-                .gap_1()
+                .gap_2()
                 .w_full()
-                .child(
-                    Label::new(mark_glyph.to_string())
-                        .size(LabelSize::Small)
-                        .color(color),
-                )
-                .child(
-                    Label::new(item.text.clone())
-                        .size(LabelSize::Small)
-                        .color(Color::Default),
-                ),
+                .items_start()
+                .child(div().w_3().flex_none().child(mark_label(mark_glyph, color)))
+                .child(Label::new(item.text.clone()).size(LabelSize::Small)),
         );
     }
     col.into_any_element()
 }
 
 fn render_files(files: &[FileRow], cx: &App) -> AnyElement {
-    let mono = mono_font(cx);
     let mut col = v_flex().gap_0p5().w_full();
     for file in files {
         let label_color = match file.status.as_deref() {
             Some("new") => Color::Success,
+            Some("conflict") => Color::Warning,
             _ => Color::Default,
         };
         col = col.child(
             h_flex()
-                .gap_1()
+                .gap_2()
                 .w_full()
-                .font_family(mono.clone())
-                .child(
-                    Label::new(file.path.clone())
-                        .size(LabelSize::Small)
-                        .color(label_color),
-                )
+                .items_center()
+                .child(mono_label(file.path.clone(), LabelSize::Small, label_color, cx).truncate())
                 .when_some(file.label.clone(), |this, label| {
-                    this.child(Label::new(label).size(LabelSize::Small).color(Color::Muted))
-                }),
+                    this.child(Label::new(label).size(LabelSize::XSmall).color(Color::Muted))
+                })
+                .when_some(
+                    file.status.clone().filter(|status| status != "new"),
+                    |this, status| {
+                        this.child(div().flex_1()).child(
+                            Label::new(status)
+                                .size(LabelSize::XSmall)
+                                .color(label_color),
+                        )
+                    },
+                ),
         );
     }
     col.into_any_element()
 }
 
+/// Steps outside a run card (a failure card quoting the failed node) use the
+/// same rows, without navigation.
 fn render_steps(steps: &[StepRow], cx: &App) -> AnyElement {
-    let mono = mono_font(cx);
-    let error_background = cx.theme().status().error_background;
-    let mut col = v_flex().gap_1().w_full();
-    for step in steps {
-        let status_glyph = match step.status.as_str() {
-            "ok" | "completed" | "done" => "✓",
-            "failed" | "bad" => "✗",
-            "running" | "in_progress" => "▶",
-            _ => "·",
-        };
-        let status_color = match step.status.as_str() {
-            "ok" | "completed" | "done" => Color::Success,
-            "failed" | "bad" => Color::Error,
-            _ => Color::Default,
-        };
-
-        let mut row = h_flex()
-            .gap_1()
-            .w_full()
-            .items_center()
-            .child(
-                Label::new(status_glyph.to_string())
-                    .size(LabelSize::Small)
-                    .color(status_color),
-            )
-            .child(
-                Label::new(step.label.clone())
-                    .size(LabelSize::Small)
-                    .color(Color::Default),
-            );
-
-        if let Some(lane) = step.lane.as_ref().filter(|s| !s.is_empty()) {
-            row = row.child(
-                Label::new("·".to_string())
-                    .size(LabelSize::Small)
-                    .color(Color::Muted),
-            );
-            row = row.child(
-                Label::new(lane.clone())
-                    .size(LabelSize::Small)
-                    .color(Color::Muted),
-            );
-        }
-
-        if let Some(model) = step.model.as_ref().filter(|s| !s.is_empty()) {
-            row = row.child(
-                Label::new(model.clone())
-                    .size(LabelSize::Small)
-                    .color(Color::Muted),
-            );
-        }
-
-        if let Some(detail) = step.detail.as_ref().filter(|s| !s.is_empty()) {
-            row = row.child(
-                Label::new(detail.clone())
-                    .size(LabelSize::Small)
-                    .color(Color::Muted),
-            );
-        }
-
-        row = row.child(div().flex_grow(1.0));
-
-        if let Some(cost) = step.cost.as_ref().filter(|s| !s.is_empty()) {
-            row = row.child(
-                Label::new(cost.clone())
-                    .size(LabelSize::Small)
-                    .color(Color::Muted),
-            );
-        }
-
-        col = col.child(row);
-
-        if let Some(stderr) = step.stderr.as_ref().filter(|s| !s.is_empty()) {
-            col = col.child(
-                div()
-                    .ml_4()
-                    .p_1()
-                    .rounded_sm()
-                    .bg(error_background)
-                    .font_family(mono.clone())
-                    .child(
-                        Label::new(stderr.clone())
-                            .size(LabelSize::XSmall)
-                            .color(Color::Error),
-                    ),
-            );
-        }
-    }
-    col.into_any_element()
+    render_node_rows(steps, "", false, usize::MAX, cx)
 }
 
 fn render_code(lang: Option<&str>, text: &str, cx: &App) -> AnyElement {
-    let mut col = v_flex().w_full();
+    let mut col = v_flex().w_full().gap_0p5();
     if let Some(lang) = lang.filter(|s| !s.is_empty()) {
         col = col.child(
-            Label::new(lang.to_string())
+            Label::new(lang.to_uppercase())
                 .size(LabelSize::XSmall)
                 .color(Color::Muted),
         );
@@ -669,9 +1190,10 @@ fn render_code(lang: Option<&str>, text: &str, cx: &App) -> AnyElement {
             .w_full()
             .p_2()
             .rounded_sm()
-            .bg(colors.surface_background)
-            .font_family(mono_font(cx))
-            .child(Label::new(text.to_string()).size(LabelSize::XSmall)),
+            .border_1()
+            .border_color(colors.border_variant)
+            .bg(colors.editor_background)
+            .child(mono_label(text.to_string(), LabelSize::XSmall, Color::Default, cx)),
     );
     col.into_any_element()
 }
@@ -682,16 +1204,12 @@ fn render_section(title: &str, text: &str, _cx: &App) -> AnyElement {
         .gap_0p5()
         .when(!title.is_empty(), |this| {
             this.child(
-                Label::new(title.to_string())
-                    .size(LabelSize::Small)
-                    .weight(gpui::FontWeight::BOLD),
+                Label::new(title.to_uppercase())
+                    .size(LabelSize::XSmall)
+                    .color(Color::Muted),
             )
         })
-        .child(
-            Label::new(text.to_string())
-                .size(LabelSize::Small)
-                .color(Color::Default),
-        )
+        .child(Label::new(text.to_string()).size(LabelSize::Small))
         .into_any_element()
 }
 
@@ -732,7 +1250,8 @@ fn permission_button_style(style: Option<&str>) -> ButtonStyle {
     match style.unwrap_or("") {
         "primary" => ButtonStyle::Tinted(TintColor::Accent),
         "danger" => ButtonStyle::Tinted(TintColor::Error),
-        _ => ButtonStyle::Subtle,
+        "ghost" => ButtonStyle::Transparent,
+        _ => ButtonStyle::Outlined,
     }
 }
 
@@ -769,7 +1288,7 @@ fn render_permission_action(
     // cannot be answered: skip the button entirely.
     let (resolved_id, resolved_kind) = resolve_permission_option(&permission.options, option_id)?;
 
-    let request_id = permission.request_id.clone();
+    let request_id = permission.request_id;
     let session_id = view.session_id.clone();
     let tool_call_id = view.tool_call_id.clone();
     let option_id = resolved_id.clone();
@@ -780,7 +1299,7 @@ fn render_permission_action(
                 window.dispatch_action(
                     Box::new(crate::AuthorizeToolCall {
                         tool_call_id: tool_call_id.clone(),
-                        request_id: Some(request_id.clone()),
+                        request_id: Some(request_id),
                         session_id: Some(session_id.0.to_string()),
                         option_id: option_id.clone(),
                         option_kind: option_kind.clone(),
@@ -798,7 +1317,7 @@ fn render_prompt_action(entry_ix: usize, action_id: &str, label: &str) -> AnyEle
         label.to_string(),
     )
     .label_size(LabelSize::Small)
-    .style(ButtonStyle::Subtle)
+    .style(ButtonStyle::Outlined)
     .on_click(|_event, window, cx| {
         window.dispatch_action(Box::new(FocusMessageEditor), cx);
     })
@@ -820,7 +1339,7 @@ fn render_link_action(
         label.to_string(),
     )
     .label_size(LabelSize::Small)
-    .style(ButtonStyle::Subtle)
+    .style(ButtonStyle::Outlined)
     .tooltip(Tooltip::text(format!("Open {target}")));
 
     // Fail closed: the target must exist and a workspace must be available
@@ -829,7 +1348,6 @@ fn render_link_action(
         button = button.disabled(true);
     } else if let Some(workspace) = view.workspace.as_ref() {
         let workspace = workspace.clone();
-        let path = path.clone();
         button = button.on_click(move |_event, window, cx| {
             if is_dir {
                 workspace.update(cx, |workspace, cx| {
@@ -863,7 +1381,7 @@ fn render_command_action(
         label.to_string(),
     )
     .label_size(LabelSize::Small)
-    .style(ButtonStyle::Subtle)
+    .style(ButtonStyle::Outlined)
     .tooltip(Tooltip::text(format!("Send /{command}")))
     .disabled(true)
     .into_any_element()
@@ -873,6 +1391,10 @@ fn render_command_action(
 mod tests {
     use super::*;
     use serde_json::json;
+
+    fn card_from(value: serde_json::Value) -> ThreadCard {
+        serde_json::from_value(value).expect("card")
+    }
 
     #[test]
     fn from_meta_returns_none_when_absent() {
@@ -982,6 +1504,150 @@ mod tests {
     }
 
     #[test]
+    fn run_id_of_strips_the_parent_suffix_only() {
+        assert_eq!(run_id_of("run-1791302645-a41c:parent"), Some("run-1791302645-a41c"));
+        assert_eq!(run_id_of("run-1791302645-a41c:failure"), None);
+        assert_eq!(run_id_of(":parent"), None);
+        assert_eq!(run_id_of("implementer"), None);
+    }
+
+    /// The engine's run marker is built before any node runs: no `steps`.
+    /// Every row has to come from the node siblings, in the order they
+    /// started, and a node's end card updates its start row in place.
+    #[test]
+    fn fold_steps_builds_rows_from_node_siblings_in_thread_order() {
+        let run = card_from(json!({
+            "v": 1, "kind": "run", "id": "run-1:parent", "revision": 0,
+            "status": "in_progress", "header": {}, "blocks": [], "actions": []
+        }));
+        let node = |id: &str, status: &str, lane: Option<&str>, detail: Option<&str>| {
+            let mut row = json!({ "id": id, "label": id, "status": status });
+            if let Some(lane) = lane {
+                row["lane"] = json!(lane);
+            }
+            if let Some(detail) = detail {
+                row["detail"] = json!(detail);
+            }
+            card_from(json!({
+                "v": 1, "kind": "node", "id": id, "revision": 0,
+                "parent": "run-1:parent", "status": status, "header": {},
+                "blocks": [{ "type": "steps", "steps": [row] }], "actions": []
+            }))
+        };
+        let siblings = vec![
+            ("run-1:classify".to_string(), node("classify", "in_progress", Some("glm"), None)),
+            ("run-1:plan".to_string(), node("plan", "in_progress", Some("sonnet"), None)),
+            // classify's end card arrives after plan started: it must update
+            // row 0, not append, and must keep the lane only the start named.
+            ("run-1:classify".to_string(), node("classify", "pass", None, Some("done · pass"))),
+        ];
+        let rows = fold_steps(&run, &siblings);
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0].id, "classify");
+        assert_eq!(rows[0].status, "pass");
+        assert_eq!(rows[0].lane.as_deref(), Some("glm"));
+        assert_eq!(rows[0].detail.as_deref(), Some("done · pass"));
+        assert_eq!(rows[1].id, "plan");
+        assert_eq!(rows[1].status, "in_progress");
+    }
+
+    #[test]
+    fn fold_steps_keeps_the_run_cards_own_rows_first_and_ignores_older_revisions() {
+        let run = card_from(json!({
+            "v": 1, "kind": "run", "id": "run-1:parent", "revision": 3,
+            "status": "completed", "header": {},
+            "blocks": [{ "type": "steps", "steps": [
+                { "id": "implementer", "label": "implementer", "status": "completed", "lane": "sonnet" }
+            ] }],
+            "actions": []
+        }));
+        let stale = card_from(json!({
+            "v": 1, "kind": "node", "id": "implementer", "revision": 1,
+            "parent": "run-1:parent", "status": "in_progress", "header": {},
+            "blocks": [{ "type": "steps", "steps": [
+                { "id": "implementer", "label": "implementer", "status": "in_progress" }
+            ] }], "actions": []
+        }));
+        let other_kind = card_from(json!({
+            "v": 1, "kind": "failure", "id": "run-1:failure", "revision": 9,
+            "parent": "run-1:parent", "status": "failed", "header": {},
+            "blocks": [{ "type": "steps", "steps": [
+                { "id": "verifier", "label": "verifier", "status": "failed" }
+            ] }], "actions": []
+        }));
+        let rows = fold_steps(
+            &run,
+            &[
+                ("run-1:implementer".to_string(), stale),
+                ("run-1:failure".to_string(), other_kind),
+            ],
+        );
+        // The stale revision does not downgrade the completed row, and a
+        // failure card's quoted row is not a node of the run.
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].status, "completed");
+        assert_eq!(rows[0].lane.as_deref(), Some("sonnet"));
+    }
+
+    #[test]
+    fn step_state_reads_every_vocabulary_the_engine_uses() {
+        for done in ["completed", "done", "pass", "PASS", "approve", "published", "ok"] {
+            assert_eq!(step_state(done), StepState::Done, "{done}");
+        }
+        for failed in ["failed", "REFUTED", "error", "cancelled", "refused", "killed"] {
+            assert_eq!(step_state(failed), StepState::Failed, "{failed}");
+        }
+        for working in ["in_progress", "running", "executing", "reviewing"] {
+            assert_eq!(step_state(working), StepState::Working, "{working}");
+        }
+        for pending in ["pending", "queued"] {
+            assert_eq!(step_state(pending), StepState::Pending, "{pending}");
+        }
+        assert_eq!(step_state("needs_change"), StepState::Other);
+        assert_eq!(step_state(""), StepState::Other);
+    }
+
+    #[test]
+    fn lane_color_matches_families_loosely_and_leaves_shell_unmapped() {
+        assert_eq!(lane_color("opus"), lane_color("claude-opus-4"));
+        assert_eq!(lane_color("GLM"), lane_color("glm-5.3"));
+        assert_ne!(lane_color("kimi"), lane_color("codex"));
+        assert!(lane_color("shell").is_none());
+        assert!(lane_color("").is_none());
+    }
+
+    #[test]
+    fn humanize_duration_reads_the_engines_millisecond_rows() {
+        assert_eq!(humanize_duration("392123 ms"), "6m 32s");
+        assert_eq!(humanize_duration("392123"), "6m 32s");
+        assert_eq!(humanize_duration("4500 ms"), "4s");
+        assert_eq!(humanize_duration("3725 s"), "1h 02m");
+        assert_eq!(humanize_duration("6m 32s"), "6m 32s");
+        assert_eq!(humanize_duration(""), "");
+    }
+
+    #[test]
+    fn run_facts_lift_header_rows_and_leave_the_rest() {
+        let card = card_from(json!({
+            "v": 1, "kind": "run", "id": "run-1:parent", "revision": 0,
+            "status": "completed", "header": {},
+            "blocks": [{ "type": "kv", "rows": [
+                { "k": "workspace", "v": "worktree" },
+                { "k": "branch", "v": "mo/run-a41c" },
+                { "k": "cost", "v": "$0.42" },
+                { "k": "duration", "v": "392123 ms" },
+                { "k": "Where it landed", "v": "src/theme/tokens.ts" }
+            ] }],
+            "actions": []
+        }));
+        let (facts, leftover) = RunFacts::extract(&card);
+        assert_eq!(facts.workspace_text().as_deref(), Some("worktree mo/run-a41c"));
+        assert_eq!(facts.cost_text().as_deref(), Some("$0.42 · 6m 32s"));
+        assert_eq!(leftover.len(), 1);
+        assert_eq!(leftover[0].k, "Where it landed");
+    }
+
+    #[test]
     fn comp_a_kickoff_fixture_parses() {
         let raw = r#"{
             "v": 1,
@@ -1020,6 +1686,7 @@ mod tests {
         assert_eq!(card.kind, "kickoff");
         assert_eq!(card.blocks.len(), 3);
         assert_eq!(card.actions.len(), 4);
+        assert_eq!(card_mark(&card), Some(("✋", Color::Warning)));
         let mut meta: acp_v2::Meta = acp_v2::Meta::new();
         meta.insert(
             CARD_KEY.to_string(),
@@ -1066,6 +1733,8 @@ mod tests {
         assert_eq!(card.kind, "run");
         assert_eq!(card.header.mark, "check");
         assert_eq!(card.blocks.len(), 2);
+        assert_eq!(card_mark(&card), Some(("✓", Color::Success)));
+        assert_eq!(fold_steps(&card, &[]).len(), 2);
         assert_eq!(
             card.fallback(),
             "Add dark-mode line to CHANGELOG · published"
@@ -1116,6 +1785,7 @@ mod tests {
         assert_eq!(card.parent.as_deref(), Some("run-1792:parent"));
         assert_eq!(card.blocks.len(), 3);
         assert_eq!(card.actions.len(), 3);
+        assert_eq!(card_mark(&card), Some(("✗", Color::Error)));
     }
 
     #[test]

@@ -63,6 +63,7 @@ exists	assets/images/llm/zai.png
 path	crates/agent_ui/src/thread_card.rs	mini_ork
 path	crates/agent_ui/src/agent_ui.rs	mod thread_card;
 path	crates/agent_ui/src/conversation_view/thread_view.rs	thread_card::
+path	crates/agent_ui/src/conversation_view/thread_view.rs	plan_progress
 
 # Fork tooling and release plumbing
 exists	MINI-ORK.md

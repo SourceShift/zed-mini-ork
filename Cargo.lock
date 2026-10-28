@@ -10975,6 +10975,7 @@ dependencies = [
  "markdown",
  "platform_title_bar",
  "project",
+ "schemars 1.0.4",
  "serde",
  "serde_json",
  "settings",
