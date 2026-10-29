@@ -40,6 +40,13 @@ and the IDE suppresses those entries. The card now **folds** the siblings:
   the run page; a node row opens the node's tab.
 - Lane dots use the design's family hues (`lane_color`), the same ones the
   mini-ork pages use; `shell` has no family and draws muted.
+- A **working** node shows the last four non-empty lines of its live text
+  under its row (`tail_lines`, each line clipped at 160 chars). The engine
+  folds a node's stream into the content chunks of its tool call (design
+  §2.7), so the host reads them off the suppressed sibling entry; the node
+  tab has the whole stream.
+- A `command` action puts `/<command>` in the composer and focuses it
+  (`agent::PrefillMessageEditor`); a protected draft is never overwritten.
 
 ### The navigation seam
 
@@ -58,11 +65,14 @@ snapshot** — rows, verdicts, cost — on all three close paths (follower,
 delivered-to-Zed, race). The close is recorded on the thread like the open,
 so a replay shows the finished run without re-deriving it.
 
-## Left for a later pass
+## Decided against, for now
 
-- Inline live lines under a running node row (design: last 4 lines). The
-  live text is in the suppressed node entry's content; drawing it inside the
-  run card means lending the host's content renderer to the card.
-- Grouping consecutive read-only tool calls into one `Explored …` row.
-- `Certify this change` as an engine-offered action on a published run.
-- Per-node cost (needs `llm_calls` to carry a node id — design §2.6).
+- **Grouping consecutive read-only tool calls** into one `Explored …` row.
+  It reshapes stock Zed's thread rendering for every agent (and its tests)
+  for one visual gain; a later pass can gate it on the mini-ork agent.
+- **`Certify this change`** on a published run. The ACP agent advertises no
+  `/certify` command (the `mini_ork.certify` package is CLI-only today), so
+  the button would send a command nothing answers. The `command` action
+  path is ready for it once the engine offers one.
+- **Per-node cost.** `llm_calls` still carries no node column (design §2.6);
+  the row's cost column draws itself as soon as a card supplies `cost`.

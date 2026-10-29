@@ -3283,6 +3283,27 @@ impl ThreadView {
         cx.notify();
     }
 
+    fn handle_prefill_message_editor(
+        &mut self,
+        action: &crate::thread_card::PrefillMessageEditor,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        // A protected draft is never overwritten; the user still lands in
+        // the composer and can discard it first.
+        let editor = self.message_editor.read(cx).editor().clone();
+        if !editor.read(cx).read_only(cx) {
+            editor.update(cx, |editor, cx| {
+                editor.set_text(action.text.as_str(), window, cx);
+            });
+        }
+        self.message_editor
+            .read(cx)
+            .focus_handle(cx)
+            .focus(window, cx);
+        cx.notify();
+    }
+
     fn permission_action_target(
         &self,
         session_id: Option<&str>,
@@ -8866,6 +8887,7 @@ impl ThreadView {
                 crate::thread_card::collect_siblings(
                     tool_call.id.0.as_ref(),
                     self.thread.read(cx).entries(),
+                    cx,
                 )
             })
             .unwrap_or_default();
@@ -13248,6 +13270,7 @@ impl Render for ThreadView {
             .on_action(cx.listener(Self::reject_once))
             .on_action(cx.listener(Self::handle_authorize_tool_call))
             .on_action(cx.listener(Self::handle_focus_message_editor))
+            .on_action(cx.listener(Self::handle_prefill_message_editor))
             .on_action(cx.listener(Self::handle_select_permission_granularity))
             .on_action(cx.listener(Self::handle_toggle_command_pattern))
             .on_action(cx.listener(Self::open_permission_dropdown))

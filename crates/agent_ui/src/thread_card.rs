@@ -23,12 +23,15 @@
 use std::path::PathBuf;
 use std::sync::{Mutex, OnceLock};
 
-use acp_thread::{AgentThreadEntry, PermissionRequestId};
+use std::collections::HashMap;
+
+use acp_thread::{AgentThreadEntry, PermissionRequestId, ToolCall, ToolCallContent};
 use agent_client_protocol::schema::{v1 as acp_v1, v2 as acp_v2};
 use gpui::{
-    AnyElement, App, ElementId, Entity, Hsla, IntoElement, SharedString, Window, actions,
+    Action, AnyElement, App, ElementId, Entity, Hsla, IntoElement, SharedString, Window, actions,
     prelude::*, rgb,
 };
+use schemars::JsonSchema;
 use serde::Deserialize;
 use ui::{
     Button, ButtonStyle, Chip, IconButton, Label, LabelSize, TintColor, Tooltip, prelude::*,
@@ -52,6 +55,15 @@ actions!(
         FocusMessageEditor,
     ]
 );
+
+/// Put `text` in the message editor and focus it, so the user sends it with
+/// one more key. Dispatched by `command` card actions; handled by
+/// `ThreadView`.
+#[derive(Clone, Debug, PartialEq, Deserialize, JsonSchema, Action)]
+#[action(namespace = agent)]
+pub struct PrefillMessageEditor {
+    pub text: String,
+}
 
 #[derive(Clone, Debug, Default, Deserialize)]
 pub struct ThreadCard {
@@ -305,10 +317,59 @@ pub fn run_id_of(card_id: &str) -> Option<&str> {
     card_id.strip_suffix(":parent").filter(|id| !id.is_empty())
 }
 
+/// One run sibling as the host hands it to the card: its card, and the tail
+/// of its live text while the node is still working.
+#[derive(Clone, Debug, Default)]
+pub struct SiblingCard {
+    pub card: ThreadCard,
+    pub live_tail: Vec<String>,
+}
+
+/// How many lines of a working node's live text the run card shows.
+const LIVE_TAIL_LINES: usize = 4;
+/// Where a live line is cut; the node tab has the whole stream.
+const LIVE_LINE_CHARS: usize = 160;
+
+/// The last few non-empty lines of a node's live text, each clipped to one
+/// row. The engine folds a node's stream into the content chunks of its
+/// tool call (design §2.7), so the text is already in the entry.
+pub fn tail_lines<'a>(texts: impl Iterator<Item = &'a str>) -> Vec<String> {
+    let mut lines: Vec<String> = Vec::new();
+    for text in texts {
+        for line in text.lines() {
+            let line = line.trim_end();
+            if line.trim().is_empty() {
+                continue;
+            }
+            let clipped: String = line.chars().take(LIVE_LINE_CHARS).collect();
+            if clipped.len() < line.len() {
+                lines.push(format!("{clipped}…"));
+            } else {
+                lines.push(clipped);
+            }
+        }
+    }
+    let keep_from = lines.len().saturating_sub(LIVE_TAIL_LINES);
+    lines.drain(..keep_from);
+    lines
+}
+
+fn live_tail(tool_call: &ToolCall, cx: &App) -> Vec<String> {
+    tail_lines(tool_call.content().iter().filter_map(|content| match content {
+        ToolCallContent::ContentBlock { block, .. } => Some(block.to_markdown(cx)),
+        _ => None,
+    }))
+}
+
 /// Every sibling card that belongs to the run marker `run_card_id`: an entry
 /// whose id starts with `<run_id>:` (the router's prefix), or whose card
-/// names the marker as its `parent` (the cross-check the design keeps).
-pub fn collect_siblings(run_card_id: &str, entries: &[AgentThreadEntry]) -> Vec<(String, ThreadCard)> {
+/// names the marker as its `parent` (the cross-check the design keeps). A
+/// node that is still working also brings the tail of its live text.
+pub fn collect_siblings(
+    run_card_id: &str,
+    entries: &[AgentThreadEntry],
+    cx: &App,
+) -> Vec<SiblingCard> {
     let Some(run_id) = run_id_of(run_card_id) else {
         return Vec::new();
     };
@@ -324,7 +385,17 @@ pub fn collect_siblings(run_card_id: &str, entries: &[AgentThreadEntry]) -> Vec<
                 let card = ThreadCard::from_meta(tool_call.meta.as_ref())?;
                 let belongs =
                     id.starts_with(&prefix) || card.parent.as_deref() == Some(run_card_id);
-                belongs.then_some((id, card))
+                if !belongs {
+                    return None;
+                }
+                let working =
+                    card.kind == "node" && step_state(&card.status) == StepState::Working;
+                let live_tail = if working {
+                    live_tail(tool_call, cx)
+                } else {
+                    Vec::new()
+                };
+                Some(SiblingCard { card, live_tail })
             }
             _ => None,
         })
@@ -335,7 +406,7 @@ pub fn collect_siblings(run_card_id: &str, entries: &[AgentThreadEntry]) -> Vec<
 /// sibling folded in, in thread order. A node seen again updates its row in
 /// place (a later card, or an equal-or-higher revision, wins) so the list
 /// keeps the order nodes started in.
-pub fn fold_steps(card: &ThreadCard, siblings: &[(String, ThreadCard)]) -> Vec<StepRow> {
+pub fn fold_steps(card: &ThreadCard, siblings: &[SiblingCard]) -> Vec<StepRow> {
     let mut rows: Vec<(StepRow, i64)> = Vec::new();
     let mut upsert = |step: &StepRow, revision: i64| {
         if step.key().is_empty() {
@@ -353,12 +424,23 @@ pub fn fold_steps(card: &ThreadCard, siblings: &[(String, ThreadCard)]) -> Vec<S
     for step in card.steps() {
         upsert(step, card.revision);
     }
-    for (_, sibling) in siblings.iter().filter(|(_, card)| card.kind == "node") {
-        for step in sibling.steps() {
-            upsert(step, sibling.revision);
+    for sibling in siblings.iter().filter(|sibling| sibling.card.kind == "node") {
+        for step in sibling.card.steps() {
+            upsert(step, sibling.card.revision);
         }
     }
     rows.into_iter().map(|(row, _)| row).collect()
+}
+
+/// The live tail of every working node, keyed by the node's row key.
+fn live_tails(siblings: &[SiblingCard]) -> HashMap<String, Vec<String>> {
+    let mut tails = HashMap::new();
+    for sibling in siblings.iter().filter(|sibling| !sibling.live_tail.is_empty()) {
+        for step in sibling.card.steps() {
+            tails.insert(step.key().to_string(), sibling.live_tail.clone());
+        }
+    }
+    tails
 }
 
 /// How a status string reads, whatever vocabulary produced it: a node
@@ -466,9 +548,9 @@ pub struct ThreadCardView<'a> {
     pub entry_ix: usize,
     pub permission: Option<ResolvedPermission>,
     pub workspace: Option<Entity<Workspace>>,
-    /// The cards of this entry's run siblings (see [`collect_siblings`]);
-    /// empty for anything but a run marker.
-    pub siblings: Vec<(String, ThreadCard)>,
+    /// This entry's run siblings (see [`collect_siblings`]); empty for
+    /// anything but a run marker.
+    pub siblings: Vec<SiblingCard>,
 }
 
 /// Trait for an alternative renderer registered against a particular `_meta`
@@ -714,6 +796,7 @@ fn render_run_card(card: &ThreadCard, view: &ThreadCardView<'_>, cx: &App) -> Di
     let run_label = format!("run {run_id}");
     let (facts, leftover_kv) = RunFacts::extract(card);
     let steps = fold_steps(card, &view.siblings);
+    let tails = live_tails(&view.siblings);
     let can_open_run = action_registered(cx, OPEN_RUN_ACTION);
     let can_open_node = action_registered(cx, OPEN_NODE_ACTION);
     let entry_ix = view.entry_ix;
@@ -797,7 +880,14 @@ fn render_run_card(card: &ThreadCard, view: &ThreadCardView<'_>, cx: &App) -> Di
     let mut body = v_flex().w_full().gap_2().px_3().py_2();
     let mut body_has_children = false;
     if !steps.is_empty() {
-        body = body.child(render_node_rows(&steps, &run_id, can_open_node, entry_ix, cx));
+        body = body.child(render_node_rows(
+            &steps,
+            &tails,
+            &run_id,
+            can_open_node,
+            entry_ix,
+            cx,
+        ));
         body_has_children = true;
     }
     let mut drew_kv = false;
@@ -861,10 +951,12 @@ fn render_run_card(card: &ThreadCard, view: &ThreadCardView<'_>, cx: &App) -> Di
     container
 }
 
-/// The node rows: `mark · label · (lane dot) lane … status · cost`. Each row
-/// opens the node's tab when the IDE registered that action.
+/// The node rows: `mark · label · (lane dot) lane … status · cost`. A working
+/// node shows the tail of its live text under its row; each row opens the
+/// node's tab when the IDE registered that action.
 fn render_node_rows(
     steps: &[StepRow],
+    tails: &HashMap<String, Vec<String>>,
     run_id: &str,
     can_open_node: bool,
     entry_ix: usize,
@@ -962,6 +1054,24 @@ fn render_node_rows(
                 });
         }
         list = list.child(row);
+
+        if let Some(tail) = tails.get(step.key()).filter(|tail| !tail.is_empty()) {
+            let mut lines = v_flex()
+                .ml_6()
+                .my_1()
+                .px_2()
+                .py_1()
+                .rounded_sm()
+                .border_1()
+                .border_color(colors.border_variant)
+                .bg(colors.editor_background);
+            for line in tail {
+                lines = lines.child(
+                    mono_label(line.clone(), LabelSize::XSmall, Color::Muted, cx).truncate(),
+                );
+            }
+            list = list.child(lines);
+        }
 
         if let Some(stderr) = step.stderr.as_deref().filter(|s| !s.is_empty()) {
             list = list.child(
@@ -1172,7 +1282,7 @@ fn render_files(files: &[FileRow], cx: &App) -> AnyElement {
 /// Steps outside a run card (a failure card quoting the failed node) use the
 /// same rows, without navigation.
 fn render_steps(steps: &[StepRow], cx: &App) -> AnyElement {
-    render_node_rows(steps, "", false, usize::MAX, cx)
+    render_node_rows(steps, &HashMap::new(), "", false, usize::MAX, cx)
 }
 
 fn render_code(lang: Option<&str>, text: &str, cx: &App) -> AnyElement {
@@ -1370,20 +1480,35 @@ fn render_link_action(
     button.into_any_element()
 }
 
+/// The slash command a `command` action puts in the composer: the engine
+/// may name it with or without the leading slash.
+pub fn command_text(command: &str) -> String {
+    let command = command.trim();
+    if command.starts_with('/') {
+        command.to_string()
+    } else {
+        format!("/{command}")
+    }
+}
+
 fn render_command_action(
     entry_ix: usize,
     action_id: &str,
     label: &str,
     command: &str,
 ) -> AnyElement {
+    let text = command_text(command);
+    let tooltip = format!("Put {text} in the composer");
     Button::new(
         format!("thread-card-cmd-{entry_ix}-{action_id}"),
         label.to_string(),
     )
     .label_size(LabelSize::Small)
     .style(ButtonStyle::Outlined)
-    .tooltip(Tooltip::text(format!("Send /{command}")))
-    .disabled(true)
+    .tooltip(Tooltip::text(tooltip))
+    .on_click(move |_event, window, cx| {
+        window.dispatch_action(Box::new(PrefillMessageEditor { text: text.clone() }), cx);
+    })
     .into_any_element()
 }
 
@@ -1534,12 +1659,16 @@ mod tests {
                 "blocks": [{ "type": "steps", "steps": [row] }], "actions": []
             }))
         };
+        let sibling = |_id: &str, card: ThreadCard| SiblingCard {
+            card,
+            live_tail: Vec::new(),
+        };
         let siblings = vec![
-            ("run-1:classify".to_string(), node("classify", "in_progress", Some("glm"), None)),
-            ("run-1:plan".to_string(), node("plan", "in_progress", Some("sonnet"), None)),
+            sibling("run-1:classify", node("classify", "in_progress", Some("glm"), None)),
+            sibling("run-1:plan", node("plan", "in_progress", Some("sonnet"), None)),
             // classify's end card arrives after plan started: it must update
             // row 0, not append, and must keep the lane only the start named.
-            ("run-1:classify".to_string(), node("classify", "pass", None, Some("done · pass"))),
+            sibling("run-1:classify", node("classify", "pass", None, Some("done · pass"))),
         ];
         let rows = fold_steps(&run, &siblings);
         assert_eq!(rows.len(), 2);
@@ -1575,11 +1704,15 @@ mod tests {
                 { "id": "verifier", "label": "verifier", "status": "failed" }
             ] }], "actions": []
         }));
+        let sibling = |_id: &str, card: ThreadCard| SiblingCard {
+            card,
+            live_tail: Vec::new(),
+        };
         let rows = fold_steps(
             &run,
             &[
-                ("run-1:implementer".to_string(), stale),
-                ("run-1:failure".to_string(), other_kind),
+                sibling("run-1:implementer", stale),
+                sibling("run-1:failure", other_kind),
             ],
         );
         // The stale revision does not downgrade the completed row, and a
@@ -1587,6 +1720,48 @@ mod tests {
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].status, "completed");
         assert_eq!(rows[0].lane.as_deref(), Some("sonnet"));
+    }
+
+    #[test]
+    fn tail_lines_keeps_the_last_four_non_empty_lines_clipped() {
+        let chunks = ["Read src/a.ts\n\n", "Edit src/b.ts  +9 −4\n$ npm test\n", "  ✓ 14 passed\n\n"];
+        assert_eq!(
+            tail_lines(chunks.iter().copied()),
+            vec!["Read src/a.ts", "Edit src/b.ts  +9 −4", "$ npm test", "  ✓ 14 passed"]
+        );
+        let five = "1\n2\n3\n4\n5\n";
+        assert_eq!(tail_lines([five].into_iter()), vec!["2", "3", "4", "5"]);
+        let long = "x".repeat(200);
+        let clipped = tail_lines([long.as_str()].into_iter());
+        assert_eq!(clipped.len(), 1);
+        assert_eq!(clipped[0].chars().count(), 161);
+        assert!(clipped[0].ends_with('…'));
+        assert!(tail_lines(["\n  \n"].into_iter()).is_empty());
+    }
+
+    #[test]
+    fn live_tails_follow_the_working_nodes_row_key() {
+        let node = card_from(json!({
+            "v": 1, "kind": "node", "id": "implementer", "revision": 0,
+            "parent": "run-1:parent", "status": "in_progress", "header": {},
+            "blocks": [{ "type": "steps", "steps": [
+                { "id": "implementer", "label": "implementer", "status": "in_progress" }
+            ] }], "actions": []
+        }));
+        let siblings = vec![SiblingCard {
+            card: node,
+            live_tail: vec!["Edit src/b.ts".to_string()],
+        }];
+        let tails = live_tails(&siblings);
+        assert_eq!(tails.get("implementer").map(Vec::len), Some(1));
+        assert!(tails.get("plan").is_none());
+    }
+
+    #[test]
+    fn command_text_adds_the_slash_once() {
+        assert_eq!(command_text("recover run-1"), "/recover run-1");
+        assert_eq!(command_text("/status run-1"), "/status run-1");
+        assert_eq!(command_text("  certify  "), "/certify");
     }
 
     #[test]
