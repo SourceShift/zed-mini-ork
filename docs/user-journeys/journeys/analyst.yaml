@@ -1,0 +1,43 @@
+# Journeys of the engineer who has to answer for the machine: what it cost,
+# and whether the lanes it runs on are healthy.
+
+journeys:
+  - id: analyst/explain-todays-spend
+    persona: analyst
+    value: "A spend question is answered from recorded rows, not from memory"
+    impact: "Budget conversations point at evidence; the expensive region or lane is named"
+    preconditions:
+      - "The project has run at least once, so state.db has rows"
+    steps:
+      - cap: mcp:cost
+        note: "Cost per day for the last N days, plus a total, from an agent"
+      - cap: cli:lifetime summary
+        note: "The lifetime leaderboard: h24, d7 and lifetime rows"
+      - cap: cli:lifetime show
+        note: "One recipe's detail, optionally split by task class"
+      - cap: cli:usage-report
+        note: "Per-(code region, lane) evidence behind the number"
+    terminal_evidence:
+      kind: db-row
+      anchor: "cost_usd"
+
+  - id: analyst/check-lane-health
+    persona: analyst
+    value: "The lanes and nodes a project depends on are checked before a run needs them"
+    impact: "A dead lane or unauthenticated provider is found at review time, not mid-run"
+    preconditions:
+      - "The project has an agents config"
+    steps:
+      - cap: mcp:lanes
+        note: "lane_name to family map, from the active agents config"
+      - cap: cli:providers status
+        page: setup
+      - cap: cli:nodes ping
+        page: setup
+        note: "Reachability of the docker or host node agents"
+      - cap: cli:verifier list
+        page: verify
+        note: "Which verifiers exist, so a green run can be trusted"
+    terminal_evidence:
+      kind: file
+      anchor: "providers.yaml"

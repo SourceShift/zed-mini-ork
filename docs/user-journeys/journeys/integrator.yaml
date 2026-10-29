@@ -1,0 +1,44 @@
+# Journeys of the engineer who drives mini-ork from somewhere else: an MCP
+# client, another agent, or a second mini-ork run.
+
+journeys:
+  - id: integrator/drive-work-from-an-agent
+    persona: integrator
+    value: "Another MCP client starts, watches and stops mini-ork runs"
+    impact: "mini-ork becomes a tool inside a larger agent instead of a destination"
+    preconditions:
+      - "The client can launch a stdio MCP server"
+    steps:
+      - cap: cli:mcp add
+        page: setup
+        note: "Registers an MCP server with a client"
+      - cap: cli:mcp-context
+        note: "The stdio server the client talks to"
+      - cap: mcp:start_run
+        note: "Launch returns run_id, pid, kickoff and log paths"
+      - cap: mcp:run_status
+        note: "Per-node state derived from lifecycle events"
+      - cap: mcp:wait_for_run
+        note: "Blocks until terminal, then returns verdict and log tail"
+    terminal_evidence:
+      kind: run-row
+      anchor: "mcp-context"
+
+  - id: integrator/coordinate-two-agents
+    persona: integrator
+    value: "Two agents on one problem agree who owns what before either edits"
+    impact: "Duplicate work and conflicting edits are prevented, not merged away"
+    preconditions:
+      - "Both agents can reach the same concord store"
+    steps:
+      - cap: cli:concord run
+        note: "Opens the shared coordination scope for a run"
+      - cap: cli:concord send
+        note: "A typed message to the other agent"
+      - cap: cli:concord inbox
+        note: "The other side's queue, with acks"
+      - cap: cli:threads list
+        note: "The durable thread view of the same exchange"
+    terminal_evidence:
+      kind: db-row
+      anchor: "concord"

@@ -1,0 +1,87 @@
+# Journeys of the engineer who inherits a failure: a parked run, a bad
+# attribution, a refuted verifier, a landing that must be reversed.
+
+journeys:
+  - id: debugger/rescue-a-parked-run
+    persona: debugger
+    value: "A run whose dispatcher died is found, diagnosed and resumed"
+    impact: "Work is not silently lost; the engineer pays for the diagnosis, not the rerun"
+    preconditions:
+      - "The run's row is not terminal, or it is terminal but its verdict says otherwise"
+    steps:
+      - cap: cli:reap
+        page: runs
+        note: "Fails runs whose dispatcher died without a terminal status"
+      - cap: cli:supervise
+        page: runs
+        note: "Revives parked self-driving runs whose fix landed, labels diagnoses"
+      - cap: cli:repair
+        page: run
+        note: "The engine's auto-repair pass over one run"
+      - cap: cli:board retry
+        page: run
+        note: "The clickable retry, which spawns recover for this run"
+    terminal_evidence:
+      kind: run-row
+      anchor: "retry-hint.json"
+
+  - id: debugger/attribute-a-failure
+    persona: debugger
+    value: "A failed run is attributed to mini-ork or to the consumer before anyone edits code"
+    impact: "Fixes land in the right repository; vendor bugs stop being 'fixed' in the consumer"
+    preconditions:
+      - "The run has a verdict and an evidence log"
+    steps:
+      - cap: cli:triage
+        page: runs
+        note: "Attributes the failure; optionally queues a fix"
+      - cap: cli:bug-collector
+        note: "Collects the bug for the framework's own queue"
+      - cap: cli:bugs list
+        page: runs
+      - cap: cli:bugs prioritize
+        note: "Ranks the queue by blast radius"
+    terminal_evidence:
+      kind: db-row
+      anchor: "bug-collector"
+
+  - id: debugger/fix-a-bad-verdict
+    persona: debugger
+    value: "A verifier that was wrong can be corrected without editing the workflow by hand"
+    impact: "False negatives stop burning whole runs; the correction is typed and auditable"
+    preconditions:
+      - "The verifier result is recorded against the run"
+    steps:
+      - cap: cli:verifier list
+        page: verify
+      - cap: cli:verifier annotate
+        page: verify
+        note: "Labels false positives and negatives for the abstain gate"
+      - cap: cli:graph-patch propose
+        page: verify
+        note: "A typed, immutable run-graph edit"
+      - cap: cli:graph-patch apply
+        page: verify
+    terminal_evidence:
+      kind: file
+      anchor: "graph-patch"
+
+  - id: debugger/roll-back-a-bad-landing
+    persona: debugger
+    value: "A commit that should not have landed is reverted as a gated commit"
+    impact: "Default branch returns to a known-good state without rewriting history"
+    preconditions:
+      - "The bad change is a commit or a run id"
+    steps:
+      - cap: cli:undo
+        page: changes
+        note: "Reverts a landed commit as a new, gated commit"
+      - cap: cli:rollback
+        page: changes
+        note: "Rolls a workflow or agent back to its previous stable version"
+      - cap: cli:garden
+        page: setup
+        note: "Drift detection afterwards: collisions, orphans, stale runs"
+    terminal_evidence:
+      kind: git
+      anchor: "rollback"

@@ -1,0 +1,103 @@
+# Journeys of the engineer who runs the machine: starts work, approves it,
+# stops it when it goes wrong, and stands up a new project.
+
+journeys:
+  - id: operator/roadmap-to-running-agents
+    persona: operator
+    value: "A roadmap becomes executing agents without hand-writing kickoffs"
+    impact: "Planning time moves from the engineer to the engine; one roadmap yields N runs"
+    preconditions:
+      - "The roadmap is markdown with epic headings the parser recognises"
+    steps:
+      - cap: cli:epics ingest
+        note: "Parses roadmap markdown into epics plus dependency edges"
+      - cap: cli:epics split
+        page: recipes
+        note: "Writes one kickoff per epic under kickoffs/auto/"
+      - cap: cli:intake once
+        note: "Turns queued tickets into runs in one pass"
+      - cap: cli:scheduler
+        note: "Keeps the queue draining"
+      - cap: cli:approvals list
+        page: inbox
+        note: "The human gate before anything merges"
+    terminal_evidence:
+      kind: runs
+      anchor: "kickoffs/auto"
+
+  - id: operator/nightly-quality-run
+    persona: operator
+    value: "A recipe runs every night and reports to the board"
+    impact: "Regressions surface without anyone remembering to ask"
+    preconditions:
+      - "The project has a recipe that passes once by hand"
+    steps:
+      - cap: cli:automations add
+        page: autos
+      - cap: cli:automations tick
+        note: "The scheduler's tick, reachable from the page or the timer"
+      - cap: cli:board runs
+        page: runs
+      - cap: cli:approvals approve
+        page: inbox
+    terminal_evidence:
+      kind: run-row
+      anchor: "automations"
+
+  - id: operator/approve-before-merge
+    persona: operator
+    value: "Merging a run's work is an explicit, reviewed decision"
+    impact: "Unreviewed agent edits never reach the default branch"
+    preconditions:
+      - "The run carries a review verdict"
+    steps:
+      - cap: cli:board gate
+        page: run
+        note: "The gate that decides merge eligibility"
+      - cap: cli:approvals list
+        page: inbox
+      - cap: cli:board merge
+        page: run
+    terminal_evidence:
+      kind: git
+      anchor: "request-changes"
+
+  - id: operator/stop-a-runaway
+    persona: operator
+    value: "A burning run is stopped or steered before it spends its cap"
+    impact: "Cost and blast radius bounded by a human decision, not a timeout"
+    preconditions:
+      - "The run is live"
+    steps:
+      - cap: cli:board stop
+        page: run
+      - cap: cli:board steer
+        page: run
+        note: "Steering is the softer option; stop is the hard one"
+      - cap: cli:concord send
+        note: "Tell the other agents on the run what changed"
+    terminal_evidence:
+      kind: run-row
+      anchor: "steer"
+
+  - id: operator/onboard-a-new-project
+    persona: operator
+    value: "A checkout becomes a mini-ork project with lanes, keys and an IDE"
+    impact: "Time to first run measured in minutes, not a config archaeology session"
+    preconditions:
+      - "The checkout is a git repository"
+    steps:
+      - cap: cli:onboard
+        page: setup
+      - cap: cli:init
+        page: setup
+      - cap: cli:zed setup
+        page: setup
+      - cap: cli:validate
+        page: setup
+      - cap: cli:board page
+        page: setup
+        note: "The IDE's own read of the project, which fails without a home"
+    terminal_evidence:
+      kind: file
+      anchor: "agents.yaml"

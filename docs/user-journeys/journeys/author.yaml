@@ -1,0 +1,44 @@
+# Journeys of the engineer who writes work for the machine: a ticket becomes a
+# kickoff, and an idea becomes a recipe the scheduler can run.
+
+journeys:
+  - id: author/ticket-to-kickoff
+    persona: author
+    value: "A ticket becomes a reviewable kickoff before any money is spent"
+    impact: "Scope errors are caught in a diff the engineer reads, not in a run they paid for"
+    preconditions:
+      - "The ticket names a repository and an outcome"
+    steps:
+      - cap: cli:kickoff new
+        note: "Scaffolds a kickoff, the run's whole instruction"
+      - cap: mcp:draft_kickoff
+        note: "Shows the kickoff for approval; it does not start a run"
+      - cap: cli:validate
+        page: setup
+        note: "Checks the project wiring before the first run"
+      - cap: mcp:start_run
+        page: runs
+        note: "The approved kickoff starts a run with MO_TARGET_CWD set"
+    terminal_evidence:
+      kind: file
+      anchor: "kickoffs"
+
+  - id: author/teach-the-machine-a-recipe
+    persona: author
+    value: "An idea becomes a graded recipe draft, then a schedule proposal"
+    impact: "New repeatable work ships without hand-editing recipe JSON or touching the engine"
+    preconditions:
+      - "The engineer can describe the work and its checks"
+    steps:
+      - cap: mcp:draft_recipe
+        note: "Renders a spec into recipe-drafts/ without writing recipes/"
+      - cap: cli:recipe-eval
+        note: "Evaluates the draft against its own checks"
+      - cap: mcp:describe_recipe
+        note: "Reads back purpose, steps, model roles and track record"
+      - cap: mcp:propose_automation
+        page: autos
+        note: "A cron proposal the user must approve; nothing is scheduled by the tool"
+    terminal_evidence:
+      kind: dir
+      anchor: "recipe-drafts"

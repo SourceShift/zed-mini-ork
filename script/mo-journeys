@@ -1,0 +1,393 @@
+#!/usr/bin/env python3
+"""Validate the engineer-journey corpus and derive its reach and gaps.
+
+A journey is only evidence if every step names a capability the engine really
+has and the reach verdict is read from the product, not asserted by the author.
+This script therefore:
+
+* loads ``docs/user-journeys/capabilities.json`` (written by ``script/mo-surface``);
+* indexes every CLI action the engine's page builders emit (``S.cli(...)``) —
+  that is the only path from the IDE to a verb, so it decides reach;
+* checks each journey's steps against both;
+* writes ``graph.md`` (Mermaid, one diagram per persona) and ``gaps.md``.
+
+Exit status is non-zero when a journey cites a capability or page that does not
+exist: those are corpus bugs, not product gaps, and must not be published as
+findings.
+"""
+
+from __future__ import annotations
+
+import argparse
+import ast
+import json
+import os
+import re
+import subprocess
+import sys
+import tempfile
+from collections import defaultdict
+from pathlib import Path
+
+REACH_ORDER = {"full": 0, "partial": 1, "none": 2}
+HELP_HAZARDS = {"crash", "usage-only", "executed"}
+
+
+def find_engine(explicit: str | None) -> Path:
+    candidates: list[str | None] = [explicit, os.environ.get("MINI_ORK_ENGINE")]
+    launcher = Path.home() / ".local" / "bin" / "mini-ork"
+    if launcher.is_file():
+        text = launcher.read_text(encoding="utf-8", errors="replace")
+        match = re.search(r"(/[^\s\"']+)/bin/mini-ork", text)
+        if match:
+            candidates.append(match.group(1))
+    for candidate in candidates:
+        if candidate and (Path(candidate) / "mini_ork" / "cli" / "main.py").is_file():
+            return Path(candidate).resolve()
+    raise SystemExit("cannot find the mini-ork engine; pass --engine or set MINI_ORK_ENGINE")
+
+
+def reexec_inside_engine(engine: Path, corpus: Path) -> int:
+    """PyYAML lives in the engine's venv, so the checks run there."""
+    python = engine / ".venv" / "bin" / "python"
+    if not python.is_file():
+        python = Path(sys.executable)
+    environment = dict(os.environ)
+    environment["MO_JOURNEYS_INSIDE"] = "1"
+    return subprocess.run(
+        [
+            str(python),
+            str(Path(__file__).resolve()),
+            "--engine",
+            str(engine),
+            "--corpus",
+            str(corpus),
+        ],
+        env=environment,
+        cwd=tempfile.mkdtemp(prefix="mo-journeys-"),
+    ).returncode
+
+
+def action_index(engine: Path) -> tuple[dict[str, list[str]], list[str]]:
+    """Every verb path the pages hand the renderer, and the ones it cannot know.
+
+    ``S.cli("board", "merge", run_id)`` is a button a user can press: the
+    constant prefix is the verb path and the trailing run id is data, so the
+    walk stops at the first non-constant argument instead of discarding the
+    call. ``S.cli(*argv)`` has no constant prefix at all and is recorded as
+    dynamic rather than guessed at.
+    """
+    actions: dict[str, list[str]] = defaultdict(list)
+    dynamic: list[str] = []
+    for path in sorted((engine / "mini_ork" / "ide_pages").glob("*.py")):
+        try:
+            tree = ast.parse(path.read_text(encoding="utf-8"))
+        except SyntaxError:
+            continue
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute):
+                continue
+            if node.func.attr != "cli":
+                continue
+            words: list[str] = []
+            for argument in node.args:
+                if isinstance(argument, ast.Constant) and isinstance(argument.value, str):
+                    words.append(argument.value)
+                else:
+                    break
+            if not words:
+                dynamic.append(f"{path.name}:{node.lineno}")
+                continue
+            actions[" ".join(words)].append(f"{path.name}:{node.lineno}")
+    return dict(actions), dynamic
+
+
+def page_keys(engine: Path) -> set[str]:
+    text = (engine / "mini_ork" / "ide_pages" / "__init__.py").read_text(encoding="utf-8")
+    match = re.search(r"PAGES: dict\[str, str\] = \{(.*?)\n\}", text, re.S)
+    return set(re.findall(r'"([a-z_]+)":', match.group(1))) if match else set()
+
+
+def reach_for(capability: str, actions: dict[str, list[str]]) -> tuple[str, str | None]:
+    """Whether the IDE can run ``capability``, from the emitted action paths."""
+    verb = capability.split(":", 1)[1]
+    if verb in actions:
+        return "full", actions[verb][0]
+    parent = verb.rsplit(" ", 1)[0] if " " in verb else None
+    if parent and parent in actions:
+        return "partial", actions[parent][0]
+    prefix = verb + " "
+    for path, places in actions.items():
+        if path.startswith(prefix):
+            return "partial", places[0]
+    return "none", None
+
+
+def anchor_exists(engine: Path, anchor: str) -> bool:
+    """Whether a journey's terminal evidence is a literal the engine contains.
+
+    The anchor is the receipt a journey ends on — a file name, a db column, a
+    subcommand. A journey whose receipt the engine never mentions is a claim
+    about a product that does not exist, so the corpus treats it as an error.
+    """
+    roots = [engine / name for name in ("mini_ork", "bin", "config", "docs", "recipes")]
+    roots = [root for root in roots if root.exists()]
+    if not roots:
+        return False
+    finished = subprocess.run(
+        ["rg", "-F", "-l", "--max-count", "1", "--no-messages", "--", anchor, *map(str, roots)],
+        capture_output=True,
+        text=True,
+    )
+    return finished.returncode == 0
+
+
+def load_journeys(directory: Path) -> list[dict]:
+    # PyYAML is part of the engine's venv, not the system interpreter; importing
+    # it inside the engine process keeps the entry point dependency-free.
+    import yaml  # noqa: PLC0415
+
+    journeys: list[dict] = []
+    for path in sorted(directory.glob("*.yaml")):
+        document = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        for journey in document.get("journeys", []):
+            journey["_file"] = path.name
+            journeys.append(journey)
+    return journeys
+
+
+def validate(
+    engine: Path,
+    journeys: list[dict],
+    capabilities: dict[str, dict],
+    actions: dict[str, list[str]],
+    pages: set[str],
+) -> tuple[list[str], list[dict]]:
+    """Corpus errors (exit non-zero) and per-journey findings, in that order."""
+    errors: list[str] = []
+    findings: list[dict] = []
+    seen_ids: set[str] = set()
+    anchors: dict[str, bool] = {}
+    for journey in journeys:
+        identifier = journey.get("id", "")
+        if not identifier:
+            errors.append(f"{journey['_file']}: a journey has no id")
+            continue
+        if identifier in seen_ids:
+            errors.append(f"{identifier}: duplicate id")
+        seen_ids.add(identifier)
+        steps = journey.get("steps") or []
+        distinct = {step.get("cap") for step in steps}
+        if len(distinct) < 2:
+            errors.append(f"{identifier}: needs at least two distinct capabilities")
+        evidence = journey.get("terminal_evidence") or {}
+        anchor = evidence.get("anchor")
+        if not anchor:
+            errors.append(f"{identifier}: terminal_evidence needs an anchor")
+        else:
+            if anchor not in anchors:
+                anchors[anchor] = anchor_exists(engine, anchor)
+            if not anchors[anchor]:
+                errors.append(f"{identifier}: terminal anchor {anchor!r} appears nowhere in the engine")
+        resolved: list[dict] = []
+        for step in steps:
+            capability = step.get("cap")
+            if capability not in capabilities:
+                errors.append(f"{identifier}: unknown capability {capability!r}")
+                continue
+            page = step.get("page")
+            if page and page not in pages:
+                errors.append(f"{identifier}: unknown page {page!r}")
+            reach, place = reach_for(capability, actions)
+            hazard = capabilities[capability].get("help_status")
+            resolved.append(
+                {
+                    "cap": capability,
+                    "reach": reach,
+                    "place": place,
+                    "page": page,
+                    "help_hazard": hazard if hazard in HELP_HAZARDS else None,
+                    "note": step.get("note", ""),
+                }
+            )
+        journey_reach = max((step["reach"] for step in resolved), key=REACH_ORDER.get, default="none")
+        findings.append(
+            {
+                "journey": identifier,
+                "persona": journey.get("persona", "other"),
+                "value": journey.get("value", ""),
+                "reach": journey_reach,
+                "steps": resolved,
+            }
+        )
+    return errors, findings
+
+
+def mermaid(findings: list[dict]) -> str:
+    lines = [
+        "# Journey graph",
+        "",
+        "Generated by `script/mo-journeys`; do not edit by hand.",
+        "",
+        "Solid arrows are the order an engineer performs the steps in. Dashed",
+        "arrows are the page that hosts the step's action; a step with no page",
+        "is CLI- or MCP-only, which is the gap this corpus exists to find.",
+        "",
+    ]
+    by_persona: dict[str, list[dict]] = defaultdict(list)
+    for finding in findings:
+        by_persona[finding["persona"]].append(finding)
+    for persona in sorted(by_persona):
+        lines += [f"## {persona}", "", "```mermaid", "flowchart LR"]
+        pages: set[str] = set()
+        for finding in by_persona[persona]:
+            journey_id = re.sub(r"[^a-z0-9_]", "_", finding["journey"].lower())
+            lines.append(f'  {journey_id}["{finding["journey"]}<br/><i>{finding["reach"]}</i>"]')
+            previous = journey_id
+            for index, step in enumerate(finding["steps"]):
+                step_id = f'{journey_id}_s{index}'
+                capability = step["cap"].split(":", 1)[1]
+                lines.append(f'  {step_id}["{capability}<br/><i>{step["reach"]}</i>"]')
+                lines.append(f"  {previous} --> {step_id}")
+                if step.get("page"):
+                    pages.add(step["page"])
+                    lines.append(f"  page_{step['page']} -.-> {step_id}")
+                previous = step_id
+        for page in sorted(pages):
+            lines.append(f'  page_{page}(["#page {page}"])')
+        lines += ["```", ""]
+    return "\n".join(lines)
+
+
+def gaps(
+    findings: list[dict],
+    capabilities: dict[str, dict],
+    actions: dict[str, list[str]],
+    dynamic: list[str],
+) -> str:
+    covered = {step["cap"] for finding in findings for step in finding["steps"]}
+    hidden_uncovered = sorted(
+        capability
+        for capability, record in capabilities.items()
+        if not record.get("documented") and capability not in covered
+    )
+    unhidden_uncovered = sorted(
+        capability
+        for capability, record in capabilities.items()
+        if record.get("documented") and capability not in covered
+    )
+    lines = [
+        "# Journey gaps",
+        "",
+        "Generated by `script/mo-journeys`; do not edit by hand.",
+        "",
+        "Reach is read from the actions the engine's page builders emit, so it",
+        "describes the IDE only: a step the IDE cannot run may still be fully",
+        "usable from a shell or an MCP client.",
+        "",
+        "## Journeys not runnable end-to-end from the IDE",
+        "",
+    ]
+    for finding in findings:
+        if finding["reach"] == "none":
+            reachable = sum(1 for step in finding["steps"] if step["reach"] != "none")
+            lines.append(
+                f"- `{finding['journey']}` — {reachable}/{len(finding['steps'])} steps reachable"
+                f" — {finding['value'] or 'no value recorded'}"
+            )
+    if not any(finding["reach"] == "none" for finding in findings):
+        lines.append("- none")
+    lines += ["", "## Steps the IDE cannot run", ""]
+    for finding in findings:
+        for step in finding["steps"]:
+            if step["reach"] != "full":
+                place = f" ({step['place']})" if step["place"] else ""
+                lines.append(f"- `{finding['journey']}` → `{step['cap']}`: {step['reach']}{place}")
+    lines += ["", "## Capabilities with no journey", ""]
+    lines.append(f"### Hidden from `--help` and uncovered ({len(hidden_uncovered)})")
+    lines += [f"- `{capability}`" for capability in hidden_uncovered] or ["- none"]
+    lines.append("")
+    lines.append(f"### Documented but uncovered ({len(unhidden_uncovered)})")
+    lines += [f"- `{capability}`" for capability in unhidden_uncovered] or ["- none"]
+    lines += ["", "## Undiscoverable help", ""]
+    # The status is recorded on the command; its subcommands inherit it, and
+    # listing each of them separately would repeat one defect thirty times.
+    hazards = [
+        f"- `{capability}`: {record['help_status']}"
+        for capability, record in capabilities.items()
+        if record.get("kind", "command") == "command"
+        and record.get("help_status") in HELP_HAZARDS
+    ]
+    lines += hazards or ["- none"]
+    lines += ["", "## Reach index", ""]
+    lines.append(f"- Emitted actions: {len(actions)}")
+    lines.append(f"- Dynamic `S.cli(...)` calls (not resolvable): {len(dynamic)}")
+    for place in dynamic[:20]:
+        lines.append(f"  - {place}")
+    return "\n".join(lines) + "\n"
+
+
+def inside(engine: Path, corpus: Path) -> int:
+    capabilities_path = corpus / "capabilities.json"
+    if not capabilities_path.is_file():
+        raise SystemExit(f"{capabilities_path} is missing; run script/mo-surface first")
+    document = json.loads(capabilities_path.read_text(encoding="utf-8"))
+    capabilities: dict[str, dict] = {command["id"]: command for command in document["commands"]}
+    for knob in document.get("knobs", []):
+        capabilities[knob["id"]] = {"help_status": "ok", "documented": False, "kind": "knob"}
+    for tool in document.get("mcp_tools", []):
+        capabilities[tool["id"]] = {"help_status": "ok", "documented": False, "kind": "mcp"}
+    for command in document["commands"]:
+        for sub in command.get("subcommands", []):
+            capabilities[sub["id"]] = {
+                "help_status": command.get("help_status", "ok"),
+                "documented": command.get("documented", False),
+                "kind": "subcommand",
+            }
+
+    actions, dynamic = action_index(engine)
+    pages = page_keys(engine)
+    journeys = load_journeys(corpus / "journeys")
+    errors, findings = validate(engine, journeys, capabilities, actions, pages)
+
+    (corpus / "graph.md").write_text(mermaid(findings), encoding="utf-8")
+    (corpus / "gaps.md").write_text(gaps(findings, capabilities, actions, dynamic), encoding="utf-8")
+
+    for error in errors:
+        print(f"error: {error}")
+    reach_tally = defaultdict(int)
+    for finding in findings:
+        reach_tally[finding["reach"]] += 1
+    print(
+        json.dumps(
+            {
+                "journeys": len(findings),
+                "reach": dict(reach_tally),
+                "actions": len(actions),
+                "dynamic_actions": len(dynamic),
+                "errors": len(errors),
+            },
+            indent=2,
+        )
+    )
+    print(f"wrote {corpus / 'graph.md'} and {corpus / 'gaps.md'}")
+    return 1 if errors else 0
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument("--engine", help="mini-ork checkout")
+    parser.add_argument(
+        "--corpus",
+        default=str(Path(__file__).resolve().parents[1] / "docs/user-journeys"),
+        help="journey corpus directory",
+    )
+    args = parser.parse_args()
+    engine = find_engine(args.engine)
+    if os.environ.get("MO_JOURNEYS_INSIDE") == "1":
+        return inside(engine, Path(args.corpus))
+    return reexec_inside_engine(engine, Path(args.corpus).resolve())
+
+
+if __name__ == "__main__":
+    sys.exit(main())

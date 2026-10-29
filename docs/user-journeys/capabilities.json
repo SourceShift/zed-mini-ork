@@ -1,0 +1,2414 @@
+{
+  "engine": {
+    "root": "/Volumes/docker-ssd/ps/mini-ork",
+    "head": "366cac68",
+    "version": "0.9.0"
+  },
+  "summary": {
+    "commands": 82,
+    "subcommands": 173,
+    "hidden_commands": 50,
+    "hidden_subcommands": 77,
+    "help_failures": 14,
+    "knobs": 9,
+    "mcp_tools": 19
+  },
+  "commands": [
+    {
+      "id": "cli:acp",
+      "kind": "command",
+      "module": "mini_ork.cli.acp_cmd",
+      "documented": false,
+      "parser": "help-text",
+      "help_status": "ok",
+      "help_ok": true,
+      "error": null,
+      "subcommands": []
+    },
+    {
+      "id": "cli:active-eval",
+      "kind": "command",
+      "module": "mini_ork.cli.active_eval",
+      "documented": false,
+      "parser": "help-text",
+      "help_status": "ok",
+      "help_ok": true,
+      "error": null,
+      "subcommands": []
+    },
+    {
+      "id": "cli:apply",
+      "kind": "command",
+      "module": "mini_ork.cli.apply",
+      "documented": true,
+      "parser": "help-text",
+      "help_status": "ok",
+      "help_ok": true,
+      "error": null,
+      "subcommands": [
+        {
+          "id": "cli:apply gepa",
+          "name": "gepa",
+          "options": []
+        },
+        {
+          "id": "cli:apply mock",
+          "name": "mock",
+          "options": []
+        },
+        {
+          "id": "cli:apply probe",
+          "name": "probe",
+          "options": []
+        }
+      ]
+    },
+    {
+      "id": "cli:approvals",
+      "kind": "command",
+      "module": "mini_ork.cli.approvals_cmd",
+      "documented": false,
+      "parser": "argparse",
+      "help_status": "ok",
+      "help_ok": true,
+      "error": null,
+      "subcommands": [
+        {
+          "id": "cli:approvals list",
+          "name": "list",
+          "options": [
+            "--json"
+          ]
+        },
+        {
+          "id": "cli:approvals show",
+          "name": "show",
+          "options": [
+            "--json"
+          ]
+        },
+        {
+          "id": "cli:approvals approve",
+          "name": "approve",
+          "options": [
+            "--base",
+            "--head",
+            "--no-resume",
+            "--node",
+            "--note"
+          ]
+        },
+        {
+          "id": "cli:approvals reject",
+          "name": "reject",
+          "options": [
+            "--no-resume",
+            "--node",
+            "--note"
+          ]
+        },
+        {
+          "id": "cli:approvals request-changes",
+          "name": "request-changes",
+          "options": [
+            "--no-resume",
+            "--node",
+            "--note"
+          ]
+        },
+        {
+          "id": "cli:approvals policy",
+          "name": "policy",
+          "options": [
+            "--json"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cli:automations",
+      "kind": "command",
+      "module": "mini_ork.cli.automations_cmd",
+      "documented": true,
+      "parser": "argparse",
+      "help_status": "ok",
+      "help_ok": true,
+      "error": null,
+      "subcommands": [
+        {
+          "id": "cli:automations list",
+          "name": "list",
+          "options": [
+            "--home",
+            "--json"
+          ]
+        },
+        {
+          "id": "cli:automations add",
+          "name": "add",
+          "options": [
+            "--home",
+            "--id",
+            "--in-place",
+            "--kickoff-file",
+            "--name",
+            "--recipe",
+            "--schedule"
+          ]
+        },
+        {
+          "id": "cli:automations remove",
+          "name": "remove",
+          "options": [
+            "--home"
+          ]
+        },
+        {
+          "id": "cli:automations pause",
+          "name": "pause",
+          "options": [
+            "--home"
+          ]
+        },
+        {
+          "id": "cli:automations resume",
+          "name": "resume",
+          "options": [
+            "--home"
+          ]
+        },
+        {
+          "id": "cli:automations run",
+          "name": "run",
+          "options": [
+            "--home"
+          ]
+        },
+        {
+          "id": "cli:automations tick",
+          "name": "tick",
+          "options": [
+            "--home"
+          ]
+        },
+        {
+          "id": "cli:automations scheduler",
+          "name": "scheduler",
+          "options": [
+            "--home"
+          ]
+        },
+        {
+          "id": "cli:automations scheduler status",
+          "name": "status",
+          "options": [
+            "--home",
+            "--json"
+          ]
+        },
+        {
+          "id": "cli:automations scheduler install",
+          "name": "install",
+          "options": [
+            "--home"
+          ]
+        },
+        {
+          "id": "cli:automations scheduler uninstall",
+          "name": "uninstall",
+          "options": [
+            "--home"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cli:board",
+      "kind": "command",
+      "module": "mini_ork.cli.board_cmd",
+      "documented": true,
+      "parser": "argparse",
+      "help_status": "usage-only",
+      "help_ok": false,
+      "error": "help: --help is not wired (exits non-zero)",
+      "subcommands": [
+        {
+          "id": "cli:board answer",
+          "name": "answer",
+          "options": []
+        },
+        {
+          "id": "cli:board artifacts",
+          "name": "artifacts",
+          "options": []
+        },
+        {
+          "id": "cli:board changes",
+          "name": "changes",
+          "options": []
+        },
+        {
+          "id": "cli:board checkpoints",
+          "name": "checkpoints",
+          "options": []
+        },
+        {
+          "id": "cli:board discard",
+          "name": "discard",
+          "options": []
+        },
+        {
+          "id": "cli:board dismiss",
+          "name": "dismiss",
+          "options": []
+        },
+        {
+          "id": "cli:board gate",
+          "name": "gate",
+          "options": []
+        },
+        {
+          "id": "cli:board harness",
+          "name": "harness",
+          "options": []
+        },
+        {
+          "id": "cli:board in-place",
+          "name": "in-place",
+          "options": []
+        },
+        {
+          "id": "cli:board kill",
+          "name": "kill",
+          "options": []
+        },
+        {
+          "id": "cli:board learning",
+          "name": "learning",
+          "options": []
+        },
+        {
+          "id": "cli:board merge",
+          "name": "merge",
+          "options": []
+        },
+        {
+          "id": "cli:board node",
+          "name": "node",
+          "options": []
+        },
+        {
+          "id": "cli:board not-needed",
+          "name": "not-needed",
+          "options": []
+        },
+        {
+          "id": "cli:board output",
+          "name": "output",
+          "options": []
+        },
+        {
+          "id": "cli:board overview",
+          "name": "overview",
+          "options": []
+        },
+        {
+          "id": "cli:board page",
+          "name": "page",
+          "options": []
+        },
+        {
+          "id": "cli:board prompt",
+          "name": "prompt",
+          "options": []
+        },
+        {
+          "id": "cli:board race-keep",
+          "name": "race-keep",
+          "options": []
+        },
+        {
+          "id": "cli:board restore",
+          "name": "restore",
+          "options": []
+        },
+        {
+          "id": "cli:board resume",
+          "name": "resume",
+          "options": []
+        },
+        {
+          "id": "cli:board retry",
+          "name": "retry",
+          "options": []
+        },
+        {
+          "id": "cli:board run",
+          "name": "run",
+          "options": []
+        },
+        {
+          "id": "cli:board runs",
+          "name": "runs",
+          "options": []
+        },
+        {
+          "id": "cli:board show",
+          "name": "show",
+          "options": []
+        },
+        {
+          "id": "cli:board start",
+          "name": "start",
+          "options": []
+        },
+        {
+          "id": "cli:board steer",
+          "name": "steer",
+          "options": []
+        },
+        {
+          "id": "cli:board stop",
+          "name": "stop",
+          "options": []
+        },
+        {
+          "id": "cli:board stream",
+          "name": "stream",
+          "options": []
+        },
+        {
+          "id": "cli:board telemetry",
+          "name": "telemetry",
+          "options": []
+        },
+        {
+          "id": "cli:board worktree",
+          "name": "worktree",
+          "options": []
+        }
+      ]
+    },
+    {
+      "id": "cli:bug-collector",
+      "kind": "command",
+      "module": "mini_ork.observability.bug_collector",
+      "documented": false,
+      "parser": "help-text",
+      "help_status": "executed",
+      "help_ok": false,
+      "error": null,
+      "subcommands": []
+    },
+    {
+      "id": "cli:bugs",
+      "kind": "command",
+      "module": "mini_ork.cli.bugs",
+      "documented": false,
+      "parser": "help-text",
+      "help_status": "executed",
+      "help_ok": false,
+      "error": null,
+      "subcommands": [
+        {
+          "id": "cli:bugs list",
+          "name": "list",
+          "options": []
+        },
+        {
+          "id": "cli:bugs prioritize",
+          "name": "prioritize",
+          "options": []
+        },
+        {
+          "id": "cli:bugs show",
+          "name": "show",
+          "options": []
+        },
+        {
+          "id": "cli:bugs sweep",
+          "name": "sweep",
+          "options": []
+        }
+      ]
+    },
+    {
+      "id": "cli:calibrate",
+      "kind": "command",
+      "module": "mini_ork.cli.calibrate",
+      "documented": false,
+      "parser": "help-text",
+      "help_status": "ok",
+      "help_ok": true,
+      "error": null,
+      "subcommands": []
+    },
+    {
+      "id": "cli:certify",
+      "kind": "command",
+      "module": "mini_ork.cli.certify",
+      "documented": false,
+      "parser": "argparse",
+      "help_status": "ok",
+      "help_ok": true,
+      "error": null,
+      "subcommands": [
+        {
+          "id": "cli:certify summary",
+          "name": "summary",
+          "options": []
+        }
+      ]
+    },
+    {
+      "id": "cli:classify",
+      "kind": "command",
+      "module": "mini_ork.cli.classify",
+      "documented": true,
+      "parser": "help-text",
+      "help_status": "ok",
+      "help_ok": true,
+      "error": null,
+      "subcommands": []
+    },
+    {
+      "id": "cli:cn",
+      "kind": "command",
+      "module": "mini_ork.cli.cn_cmd",
+      "documented": true,
+      "parser": "argparse",
+      "help_status": "usage-only",
+      "help_ok": false,
+      "error": "help: --help is not wired (exits non-zero)",
+      "subcommands": [
+        {
+          "id": "cli:cn status",
+          "name": "status",
+          "options": [
+            "--help",
+            "--json",
+            "-h"
+          ]
+        },
+        {
+          "id": "cli:cn ack-overlap",
+          "name": "ack-overlap",
+          "options": [
+            "--by",
+            "--help",
+            "--json",
+            "-h"
+          ]
+        },
+        {
+          "id": "cli:cn search",
+          "name": "search",
+          "options": [
+            "--all-projects",
+            "--help",
+            "--json",
+            "--limit",
+            "-h"
+          ]
+        },
+        {
+          "id": "cli:cn seen-before",
+          "name": "seen-before",
+          "options": [
+            "--all-projects",
+            "--help",
+            "--json",
+            "--node",
+            "--top-k",
+            "-h"
+          ]
+        },
+        {
+          "id": "cli:cn outcome",
+          "name": "outcome",
+          "options": [
+            "--evidence",
+            "--help",
+            "--json",
+            "--run",
+            "--yes",
+            "-h"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cli:collapse-check",
+      "kind": "command",
+      "module": "mini_ork.cli.collapse",
+      "documented": false,
+      "parser": "help-text",
+      "help_status": "ok",
+      "help_ok": true,
+      "error": null,
+      "subcommands": []
+    },
+    {
+      "id": "cli:collapse-precursor",
+      "kind": "command",
+      "module": "mini_ork.cli.collapse_precursor",
+      "documented": false,
+      "parser": "help-text",
+      "help_status": "ok",
+      "help_ok": true,
+      "error": null,
+      "subcommands": []
+    },
+    {
+      "id": "cli:concord",
+      "kind": "command",
+      "module": "mini_ork.orchestration.concord",
+      "documented": true,
+      "parser": "argparse",
+      "help_status": "ok",
+      "help_ok": true,
+      "error": null,
+      "subcommands": [
+        {
+          "id": "cli:concord run",
+          "name": "run",
+          "options": [
+            "--heartbeat-secs",
+            "--help",
+            "--kind",
+            "--name",
+            "-h",
+            "-n"
+          ]
+        },
+        {
+          "id": "cli:concord ps",
+          "name": "ps",
+          "options": [
+            "--all",
+            "--help",
+            "--json",
+            "-h"
+          ]
+        },
+        {
+          "id": "cli:concord stop",
+          "name": "stop",
+          "options": [
+            "--help",
+            "--signal",
+            "--yes",
+            "-h",
+            "-y"
+          ]
+        },
+        {
+          "id": "cli:concord send",
+          "name": "send",
+          "options": [
+            "--from",
+            "--help",
+            "-h"
+          ]
+        },
+        {
+          "id": "cli:concord inbox",
+          "name": "inbox",
+          "options": [
+            "--ack",
+            "--format",
+            "--help",
+            "--principal",
+            "-h",
+            "-p"
+          ]
+        },
+        {
+          "id": "cli:concord ack",
+          "name": "ack",
+          "options": [
+            "--help",
+            "-h"
+          ]
+        },
+        {
+          "id": "cli:concord admit",
+          "name": "admit",
+          "options": [
+            "--db",
+            "--help",
+            "-h"
+          ]
+        },
+        {
+          "id": "cli:concord claims",
+          "name": "claims",
+          "options": [
+            "--help",
+            "--json",
+            "-h"
+          ]
+        },
+        {
+          "id": "cli:concord violations",
+          "name": "violations",
+          "options": [
+            "--help",
+            "--json",
+            "--since",
+            "-h"
+          ]
+        },
+        {
+          "id": "cli:concord help",
+          "name": "help",
+          "options": [
+            "--help",
+            "-h"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cli:conductor",
+      "kind": "command",
+      "module": "mini_ork.orchestration.conductor",
+      "documented": false,
+      "parser": "help-text",
+      "help_status": "executed",
+      "help_ok": false,
+      "error": null,
+      "subcommands": []
+    },
+    {
+      "id": "cli:coord",
+      "kind": "command",
+      "module": "mini_ork.orchestration.coord",
+      "documented": false,
+      "parser": "help-text",
+      "help_status": "crash",
+      "help_ok": false,
+      "error": "help: Traceback (most recent call last):",
+      "subcommands": []
+    },
+    {
+      "id": "cli:doctor",
+      "kind": "command",
+      "module": null,
+      "documented": true,
+      "parser": "help-text",
+      "help_status": "executed",
+      "help_ok": false,
+      "error": null,
+      "subcommands": []
+    },
+    {
+      "id": "cli:epics",
+      "kind": "command",
+      "module": "mini_ork.cli.epics",
+      "documented": false,
+      "parser": "help-text",
+      "help_status": "ok",
+      "help_ok": true,
+      "error": null,
+      "subcommands": [
+        {
+          "id": "cli:epics archive",
+          "name": "archive",
+          "options": []
+        },
+        {
+          "id": "cli:epics ingest",
+          "name": "ingest",
+          "options": []
+        },
+        {
+          "id": "cli:epics list",
+          "name": "list",
+          "options": []
+        },
+        {
+          "id": "cli:epics priority",
+          "name": "priority",
+          "options": []
+        },
+        {
+          "id": "cli:epics ready",
+          "name": "ready",
+          "options": []
+        },
+        {
+          "id": "cli:epics retry",
+          "name": "retry",
+          "options": []
+        },
+        {
+          "id": "cli:epics set",
+          "name": "set",
+          "options": []
+        },
+        {
+          "id": "cli:epics show",
+          "name": "show",
+          "options": []
+        },
+        {
+          "id": "cli:epics split",
+          "name": "split",
+          "options": []
+        },
+        {
+          "id": "cli:epics status",
+          "name": "status",
+          "options": []
+        }
+      ]
+    },
+    {
+      "id": "cli:execute",
+      "kind": "command",
+      "module": null,
+      "documented": true,
+      "parser": "help-text",
+      "help_status": "ok",
+      "help_ok": true,
+      "error": null,
+      "subcommands": [
+        {
+          "id": "cli:execute reflector",
+          "name": "reflector",
+          "options": []
+        }
+      ]
+    },
+    {
+      "id": "cli:features",
+      "kind": "command",
+      "module": "mini_ork.cli.features",
+      "documented": false,
+      "parser": "argparse",
+      "help_status": "ok",
+      "help_ok": true,
+      "error": null,
+      "subcommands": [
+        {
+          "id": "cli:features check-skill",
+          "name": "check-skill",
+          "options": []
+        },
+        {
+          "id": "cli:features render-skill",
+          "name": "render-skill",
+          "options": []
+        },
+        {
+          "id": "cli:features set",
+          "name": "set",
+          "options": []
+        },
+        {
+          "id": "cli:features set-env",
+          "name": "set-env",
+          "options": []
+        },
+        {
+          "id": "cli:features unset",
+          "name": "unset",
+          "options": []
+        },
+        {
+          "id": "cli:features unset-env",
+          "name": "unset-env",
+          "options": []
+        }
+      ]
+    },
+    {
+      "id": "cli:garden",
+      "kind": "command",
+      "module": "mini_ork.cli.garden",
+      "documented": true,
+      "parser": "help-text",
+      "help_status": "ok",
+      "help_ok": true,
+      "error": null,
+      "subcommands": []
+    },
+    {
+      "id": "cli:gate-fuzz",
+      "kind": "command",
+      "module": "mini_ork.cli.gate_fuzz",
+      "documented": false,
+      "parser": "help-text",
+      "help_status": "ok",
+      "help_ok": true,
+      "error": null,
+      "subcommands": []
+    },
+    {
+      "id": "cli:graph-patch",
+      "kind": "command",
+      "module": "mini_ork.cli.graph_patch",
+      "documented": true,
+      "parser": "argparse",
+      "help_status": "ok",
+      "help_ok": true,
+      "error": null,
+      "subcommands": [
+        {
+          "id": "cli:graph-patch list",
+          "name": "list",
+          "options": [
+            "--help",
+            "--json",
+            "-h"
+          ]
+        },
+        {
+          "id": "cli:graph-patch propose",
+          "name": "propose",
+          "options": [
+            "--children-json",
+            "--from-node",
+            "--help",
+            "--json",
+            "--kind",
+            "--lane",
+            "--new-node-json",
+            "--node",
+            "--reason",
+            "--source",
+            "-h"
+          ]
+        },
+        {
+          "id": "cli:graph-patch validate",
+          "name": "validate",
+          "options": [
+            "--help",
+            "--json",
+            "-h"
+          ]
+        },
+        {
+          "id": "cli:graph-patch apply",
+          "name": "apply",
+          "options": [
+            "--dry-run",
+            "--help",
+            "--json",
+            "-h"
+          ]
+        },
+        {
+          "id": "cli:graph-patch credit",
+          "name": "credit",
+          "options": [
+            "--help",
+            "--json",
+            "-h"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cli:hack-probe",
+      "kind": "command",
+      "module": "mini_ork.cli.hack_probe",
+      "documented": false,
+      "parser": "help-text",
+      "help_status": "ok",
+      "help_ok": true,
+      "error": null,
+      "subcommands": []
+    },
+    {
+      "id": "cli:harness-audit",
+      "kind": "command",
+      "module": "mini_ork.cli.harness_audit",
+      "documented": false,
+      "parser": "help-text",
+      "help_status": "ok",
+      "help_ok": true,
+      "error": null,
+      "subcommands": []
+    },
+    {
+      "id": "cli:harness-contrast",
+      "kind": "command",
+      "module": "mini_ork.cli.harness_contrast",
+      "documented": false,
+      "parser": "help-text",
+      "help_status": "ok",
+      "help_ok": true,
+      "error": null,
+      "subcommands": []
+    },
+    {
+      "id": "cli:harness-edit",
+      "kind": "command",
+      "module": "mini_ork.cli.harness_edit",
+      "documented": false,
+      "parser": "help-text",
+      "help_status": "ok",
+      "help_ok": true,
+      "error": null,
+      "subcommands": []
+    },
+    {
+      "id": "cli:init",
+      "kind": "command",
+      "module": "mini_ork.cli.init",
+      "documented": true,
+      "parser": "help-text",
+      "help_status": "executed",
+      "help_ok": false,
+      "error": null,
+      "subcommands": []
+    },
+    {
+      "id": "cli:inject",
+      "kind": "command",
+      "module": "mini_ork.cli.inject",
+      "documented": false,
+      "parser": "argparse",
+      "help_status": "ok",
+      "help_ok": true,
+      "error": null,
+      "subcommands": []
+    },
+    {
+      "id": "cli:install",
+      "kind": "command",
+      "module": null,
+      "documented": true,
+      "parser": "help-text",
+      "help_status": "ok",
+      "help_ok": true,
+      "error": null,
+      "subcommands": []
+    },
+    {
+      "id": "cli:intake",
+      "kind": "command",
+      "module": "mini_ork.cli.intake_cmd",
+      "documented": false,
+      "parser": "argparse",
+      "help_status": "ok",
+      "help_ok": true,
+      "error": null,
+      "subcommands": [
+        {
+          "id": "cli:intake once",
+          "name": "once",
+          "options": [
+            "--db",
+            "--dry-run",
+            "--help",
+            "--home",
+            "--json",
+            "--max-runs",
+            "--source",
+            "-h"
+          ]
+        },
+        {
+          "id": "cli:intake poll",
+          "name": "poll",
+          "options": [
+            "--db",
+            "--dry-run",
+            "--help",
+            "--home",
+            "--interval",
+            "--json",
+            "--max-runs",
+            "--passes",
+            "--source",
+            "-h"
+          ]
+        },
+        {
+          "id": "cli:intake report",
+          "name": "report",
+          "options": [
+            "--db",
+            "--dry-run",
+            "--help",
+            "--home",
+            "--json",
+            "-h"
+          ]
+        },
+        {
+          "id": "cli:intake status",
+          "name": "status",
+          "options": [
+            "--db",
+            "--help",
+            "--home",
+            "--json",
+            "-h"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cli:kickoff",
+      "kind": "command",
+      "module": "mini_ork.cli.kickoff_cmd",
+      "documented": false,
+      "parser": "argparse",
+      "help_status": "ok",
+      "help_ok": true,
+      "error": null,
+      "subcommands": [
+        {
+          "id": "cli:kickoff new",
+          "name": "new",
+          "options": [
+            "--help",
+            "--home",
+            "--recipe",
+            "-h"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cli:lessons",
+      "kind": "command",
+      "module": "mini_ork.cli.lessons_cmd",
+      "documented": false,
+      "parser": "help-text",
+      "help_status": "ok",
+      "help_ok": true,
+      "error": null,
+      "subcommands": []
+    },
+    {
+      "id": "cli:lifetime",
+      "kind": "command",
+      "module": "mini_ork.orchestration.lifetime",
+      "documented": false,
+      "parser": "argparse",
+      "help_status": "ok",
+      "help_ok": true,
+      "error": null,
+      "subcommands": [
+        {
+          "id": "cli:lifetime summary",
+          "name": "summary",
+          "options": [
+            "--help",
+            "-h"
+          ]
+        },
+        {
+          "id": "cli:lifetime show",
+          "name": "show",
+          "options": [
+            "--help",
+            "--task-class",
+            "-h"
+          ]
+        },
+        {
+          "id": "cli:lifetime conductor-history",
+          "name": "conductor-history",
+          "options": [
+            "--help",
+            "-h"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cli:mcp",
+      "kind": "command",
+      "module": "mini_ork.cli.mcp_cmd",
+      "documented": true,
+      "parser": "help-text",
+      "help_status": "ok",
+      "help_ok": true,
+      "error": null,
+      "subcommands": [
+        {
+          "id": "cli:mcp add",
+          "name": "add",
+          "options": []
+        },
+        {
+          "id": "cli:mcp check",
+          "name": "check",
+          "options": []
+        },
+        {
+          "id": "cli:mcp launch",
+          "name": "launch",
+          "options": []
+        },
+        {
+          "id": "cli:mcp list",
+          "name": "list",
+          "options": []
+        },
+        {
+          "id": "cli:mcp proxy",
+          "name": "proxy",
+          "options": []
+        },
+        {
+          "id": "cli:mcp rm",
+          "name": "rm",
+          "options": []
+        }
+      ]
+    },
+    {
+      "id": "cli:mcp-context",
+      "kind": "command",
+      "module": "mini_ork.cli.mcp_context_cmd",
+      "documented": true,
+      "parser": "help-text",
+      "help_status": "ok",
+      "help_ok": true,
+      "error": null,
+      "subcommands": []
+    },
+    {
+      "id": "cli:memory-lifecycle",
+      "kind": "command",
+      "module": "mini_ork.cli.memory_lifecycle",
+      "documented": false,
+      "parser": "help-text",
+      "help_status": "ok",
+      "help_ok": true,
+      "error": null,
+      "subcommands": []
+    },
+    {
+      "id": "cli:metric-anchor",
+      "kind": "command",
+      "module": "mini_ork.cli.metric_anchor",
+      "documented": false,
+      "parser": "help-text",
+      "help_status": "ok",
+      "help_ok": true,
+      "error": null,
+      "subcommands": []
+    },
+    {
+      "id": "cli:metrics",
+      "kind": "command",
+      "module": "mini_ork.cli.metrics",
+      "documented": false,
+      "parser": "help-text",
+      "help_status": "ok",
+      "help_ok": true,
+      "error": null,
+      "subcommands": [
+        {
+          "id": "cli:metrics revise",
+          "name": "revise",
+          "options": []
+        }
+      ]
+    },
+    {
+      "id": "cli:node-agent",
+      "kind": "command",
+      "module": "mini_ork.cli.node_agent",
+      "documented": false,
+      "parser": "argparse",
+      "help_status": "ok",
+      "help_ok": true,
+      "error": null,
+      "subcommands": [
+        {
+          "id": "cli:node-agent docker",
+          "name": "docker",
+          "options": []
+        },
+        {
+          "id": "cli:node-agent host",
+          "name": "host",
+          "options": []
+        }
+      ]
+    },
+    {
+      "id": "cli:nodes",
+      "kind": "command",
+      "module": "mini_ork.cli.nodes",
+      "documented": false,
+      "parser": "argparse",
+      "help_status": "ok",
+      "help_ok": true,
+      "error": null,
+      "subcommands": [
+        {
+          "id": "cli:nodes ls",
+          "name": "ls",
+          "options": [
+            "--help",
+            "-h"
+          ]
+        },
+        {
+          "id": "cli:nodes ping",
+          "name": "ping",
+          "options": [
+            "--help",
+            "-h"
+          ]
+        },
+        {
+          "id": "cli:nodes doctor",
+          "name": "doctor",
+          "options": [
+            "--env",
+            "--help",
+            "--lane",
+            "--no-llm",
+            "--recipe",
+            "-h"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cli:onboard",
+      "kind": "command",
+      "module": "mini_ork.cli.onboard",
+      "documented": true,
+      "parser": "argparse",
+      "help_status": "ok",
+      "help_ok": true,
+      "error": null,
+      "subcommands": []
+    },
+    {
+      "id": "cli:orchestrator",
+      "kind": "command",
+      "module": "mini_ork.cli.orchestrator_cmd",
+      "documented": false,
+      "parser": "argparse",
+      "help_status": "ok",
+      "help_ok": true,
+      "error": null,
+      "subcommands": [
+        {
+          "id": "cli:orchestrator watch",
+          "name": "watch",
+          "options": [
+            "--help",
+            "--home",
+            "--once",
+            "-h"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cli:oversight",
+      "kind": "command",
+      "module": "mini_ork.cli.oversight",
+      "documented": false,
+      "parser": "help-text",
+      "help_status": "ok",
+      "help_ok": true,
+      "error": null,
+      "subcommands": []
+    },
+    {
+      "id": "cli:plan",
+      "kind": "command",
+      "module": "mini_ork.cli.plan",
+      "documented": true,
+      "parser": "help-text",
+      "help_status": "ok",
+      "help_ok": true,
+      "error": null,
+      "subcommands": [
+        {
+          "id": "cli:plan stdout",
+          "name": "stdout",
+          "options": []
+        }
+      ]
+    },
+    {
+      "id": "cli:pm",
+      "kind": "command",
+      "module": "mini_ork.cli.pm",
+      "documented": false,
+      "parser": "argparse",
+      "help_status": "usage-only",
+      "help_ok": false,
+      "error": "help: --help is not wired (exits non-zero)",
+      "subcommands": [
+        {
+          "id": "cli:pm sources",
+          "name": "sources",
+          "options": [
+            "--help",
+            "--home",
+            "-h"
+          ]
+        },
+        {
+          "id": "cli:pm add",
+          "name": "add",
+          "options": [
+            "--disable",
+            "--help",
+            "--home",
+            "--reuse-token",
+            "--set",
+            "--token-env",
+            "--token-stdin",
+            "-h"
+          ]
+        },
+        {
+          "id": "cli:pm test",
+          "name": "test",
+          "options": [
+            "--help",
+            "--home",
+            "-h"
+          ]
+        },
+        {
+          "id": "cli:pm remove",
+          "name": "remove",
+          "options": [
+            "--help",
+            "--home",
+            "-h"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cli:prefs",
+      "kind": "command",
+      "module": "mini_ork.cli.prefs_cmd",
+      "documented": false,
+      "parser": "help-text",
+      "help_status": "ok",
+      "help_ok": true,
+      "error": null,
+      "subcommands": []
+    },
+    {
+      "id": "cli:providers",
+      "kind": "command",
+      "module": null,
+      "documented": true,
+      "parser": "help-text",
+      "help_status": "ok",
+      "help_ok": true,
+      "error": null,
+      "subcommands": [
+        {
+          "id": "cli:providers configure",
+          "name": "configure",
+          "options": []
+        },
+        {
+          "id": "cli:providers status",
+          "name": "status",
+          "options": []
+        }
+      ]
+    },
+    {
+      "id": "cli:reap",
+      "kind": "command",
+      "module": "mini_ork.orchestration.run_reaper",
+      "documented": false,
+      "parser": "argparse",
+      "help_status": "ok",
+      "help_ok": true,
+      "error": null,
+      "subcommands": []
+    },
+    {
+      "id": "cli:recipe-eval",
+      "kind": "command",
+      "module": "mini_ork.cli.recipe_eval",
+      "documented": true,
+      "parser": "help-text",
+      "help_status": "ok",
+      "help_ok": true,
+      "error": null,
+      "subcommands": []
+    },
+    {
+      "id": "cli:recover",
+      "kind": "command",
+      "module": "mini_ork.recovery.planner",
+      "documented": false,
+      "parser": "help-text",
+      "help_status": "ok",
+      "help_ok": true,
+      "error": null,
+      "subcommands": []
+    },
+    {
+      "id": "cli:reflect",
+      "kind": "command",
+      "module": "mini_ork.cli.reflect",
+      "documented": true,
+      "parser": "argparse",
+      "help_status": "ok",
+      "help_ok": true,
+      "error": null,
+      "subcommands": []
+    },
+    {
+      "id": "cli:repair",
+      "kind": "command",
+      "module": "mini_ork.cli.repair_cmd",
+      "documented": false,
+      "parser": "argparse",
+      "help_status": "ok",
+      "help_ok": true,
+      "error": null,
+      "subcommands": []
+    },
+    {
+      "id": "cli:resume",
+      "kind": "command",
+      "module": "mini_ork.cli.resume",
+      "documented": false,
+      "parser": "help-text",
+      "help_status": "ok",
+      "help_ok": true,
+      "error": null,
+      "subcommands": []
+    },
+    {
+      "id": "cli:review",
+      "kind": "command",
+      "module": "mini_ork.pre_push_review",
+      "documented": false,
+      "parser": "help-text",
+      "help_status": "ok",
+      "help_ok": true,
+      "error": null,
+      "subcommands": [
+        {
+          "id": "cli:review findings",
+          "name": "findings",
+          "options": []
+        },
+        {
+          "id": "cli:review forward",
+          "name": "forward",
+          "options": []
+        },
+        {
+          "id": "cli:review gate",
+          "name": "gate",
+          "options": []
+        },
+        {
+          "id": "cli:review list",
+          "name": "list",
+          "options": []
+        },
+        {
+          "id": "cli:review resolve",
+          "name": "resolve",
+          "options": []
+        },
+        {
+          "id": "cli:review run",
+          "name": "run",
+          "options": []
+        },
+        {
+          "id": "cli:review show",
+          "name": "show",
+          "options": []
+        },
+        {
+          "id": "cli:review verdict",
+          "name": "verdict",
+          "options": []
+        }
+      ]
+    },
+    {
+      "id": "cli:reviewer-eval",
+      "kind": "command",
+      "module": "mini_ork.cli.reviewer_eval_cmd",
+      "documented": true,
+      "parser": "argparse",
+      "help_status": "ok",
+      "help_ok": true,
+      "error": null,
+      "subcommands": [
+        {
+          "id": "cli:reviewer-eval list",
+          "name": "list",
+          "options": [
+            "--help",
+            "-h"
+          ]
+        },
+        {
+          "id": "cli:reviewer-eval add-case",
+          "name": "add-case",
+          "options": [
+            "--commit",
+            "--defect-file",
+            "--help",
+            "--id",
+            "--keyword",
+            "--kickoff",
+            "--kind",
+            "--notes",
+            "--run",
+            "--summary",
+            "-h"
+          ]
+        },
+        {
+          "id": "cli:reviewer-eval refresh-evidence",
+          "name": "refresh-evidence",
+          "options": [
+            "--case",
+            "--help",
+            "-h"
+          ]
+        },
+        {
+          "id": "cli:reviewer-eval run",
+          "name": "run",
+          "options": [
+            "--case",
+            "--dry-run",
+            "--help",
+            "--lane",
+            "--timeout",
+            "--work-dir",
+            "-h"
+          ]
+        },
+        {
+          "id": "cli:reviewer-eval status",
+          "name": "status",
+          "options": [
+            "--help",
+            "--lane",
+            "-h"
+          ]
+        },
+        {
+          "id": "cli:reviewer-eval score",
+          "name": "score",
+          "options": [
+            "--help",
+            "-h"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cli:rollback",
+      "kind": "command",
+      "module": "mini_ork.cli.rollback",
+      "documented": false,
+      "parser": "help-text",
+      "help_status": "ok",
+      "help_ok": true,
+      "error": null,
+      "subcommands": [
+        {
+          "id": "cli:rollback name",
+          "name": "name",
+          "options": []
+        },
+        {
+          "id": "cli:rollback workflow",
+          "name": "workflow",
+          "options": []
+        }
+      ]
+    },
+    {
+      "id": "cli:rsi-cycle",
+      "kind": "command",
+      "module": "mini_ork.cli.rsi_cycle",
+      "documented": true,
+      "parser": "argparse",
+      "help_status": "ok",
+      "help_ok": true,
+      "error": null,
+      "subcommands": [
+        {
+          "id": "cli:rsi-cycle doctor",
+          "name": "doctor",
+          "options": []
+        },
+        {
+          "id": "cli:rsi-cycle halt",
+          "name": "halt",
+          "options": []
+        },
+        {
+          "id": "cli:rsi-cycle list",
+          "name": "list",
+          "options": []
+        },
+        {
+          "id": "cli:rsi-cycle plan",
+          "name": "plan",
+          "options": []
+        },
+        {
+          "id": "cli:rsi-cycle quarantine",
+          "name": "quarantine",
+          "options": []
+        },
+        {
+          "id": "cli:rsi-cycle revert",
+          "name": "revert",
+          "options": []
+        },
+        {
+          "id": "cli:rsi-cycle show",
+          "name": "show",
+          "options": []
+        }
+      ]
+    },
+    {
+      "id": "cli:run",
+      "kind": "command",
+      "module": null,
+      "documented": true,
+      "parser": "help-text",
+      "help_status": "executed",
+      "help_ok": false,
+      "error": "help: ran the command instead of printing help",
+      "subcommands": []
+    },
+    {
+      "id": "cli:sandbox-gc",
+      "kind": "command",
+      "module": "mini_ork.cli.sandbox_gc",
+      "documented": false,
+      "parser": "argparse",
+      "help_status": "ok",
+      "help_ok": true,
+      "error": null,
+      "subcommands": [
+        {
+          "id": "cli:sandbox-gc all",
+          "name": "all",
+          "options": []
+        },
+        {
+          "id": "cli:sandbox-gc daytona",
+          "name": "daytona",
+          "options": []
+        },
+        {
+          "id": "cli:sandbox-gc docker",
+          "name": "docker",
+          "options": []
+        },
+        {
+          "id": "cli:sandbox-gc e2b",
+          "name": "e2b",
+          "options": []
+        },
+        {
+          "id": "cli:sandbox-gc microvm",
+          "name": "microvm",
+          "options": []
+        },
+        {
+          "id": "cli:sandbox-gc modal",
+          "name": "modal",
+          "options": []
+        },
+        {
+          "id": "cli:sandbox-gc static",
+          "name": "static",
+          "options": []
+        }
+      ]
+    },
+    {
+      "id": "cli:scheduler",
+      "kind": "command",
+      "module": "mini_ork.scheduler",
+      "documented": false,
+      "parser": "help-text",
+      "help_status": "executed",
+      "help_ok": false,
+      "error": null,
+      "subcommands": []
+    },
+    {
+      "id": "cli:self-improve",
+      "kind": "command",
+      "module": "mini_ork.cli.self_improve",
+      "documented": true,
+      "parser": "help-text",
+      "help_status": "ok",
+      "help_ok": true,
+      "error": null,
+      "subcommands": []
+    },
+    {
+      "id": "cli:serve",
+      "kind": "command",
+      "module": "mini_ork.cli.serve",
+      "documented": false,
+      "parser": "help-text",
+      "help_status": "ok",
+      "help_ok": true,
+      "error": null,
+      "subcommands": []
+    },
+    {
+      "id": "cli:skills",
+      "kind": "command",
+      "module": "mini_ork.cli.skills",
+      "documented": false,
+      "parser": "help-text",
+      "help_status": "ok",
+      "help_ok": true,
+      "error": null,
+      "subcommands": [
+        {
+          "id": "cli:skills list",
+          "name": "list",
+          "options": []
+        },
+        {
+          "id": "cli:skills promote",
+          "name": "promote",
+          "options": []
+        },
+        {
+          "id": "cli:skills show",
+          "name": "show",
+          "options": []
+        },
+        {
+          "id": "cli:skills skill",
+          "name": "skill",
+          "options": []
+        },
+        {
+          "id": "cli:skills validate",
+          "name": "validate",
+          "options": []
+        }
+      ]
+    },
+    {
+      "id": "cli:spawn",
+      "kind": "command",
+      "module": "mini_ork.cli.spawn",
+      "documented": false,
+      "parser": "help-text",
+      "help_status": "ok",
+      "help_ok": true,
+      "error": null,
+      "subcommands": []
+    },
+    {
+      "id": "cli:specs",
+      "kind": "command",
+      "module": "mini_ork.cli.specs",
+      "documented": false,
+      "parser": "argparse",
+      "help_status": "ok",
+      "help_ok": true,
+      "error": null,
+      "subcommands": [
+        {
+          "id": "cli:specs ingest",
+          "name": "ingest",
+          "options": [
+            "--out",
+            "--recursive"
+          ]
+        },
+        {
+          "id": "cli:specs list",
+          "name": "list",
+          "options": []
+        },
+        {
+          "id": "cli:specs lint",
+          "name": "lint",
+          "options": [
+            "--json",
+            "--recursive"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cli:supervise",
+      "kind": "command",
+      "module": "mini_ork.cli.supervise",
+      "documented": true,
+      "parser": "argparse",
+      "help_status": "ok",
+      "help_ok": true,
+      "error": null,
+      "subcommands": []
+    },
+    {
+      "id": "cli:threads",
+      "kind": "command",
+      "module": "mini_ork.threads.cli",
+      "documented": false,
+      "parser": "help-text",
+      "help_status": "ok",
+      "help_ok": true,
+      "error": null,
+      "subcommands": [
+        {
+          "id": "cli:threads attach",
+          "name": "attach",
+          "options": []
+        },
+        {
+          "id": "cli:threads continue",
+          "name": "continue",
+          "options": []
+        },
+        {
+          "id": "cli:threads list",
+          "name": "list",
+          "options": []
+        },
+        {
+          "id": "cli:threads send",
+          "name": "send",
+          "options": []
+        },
+        {
+          "id": "cli:threads serve",
+          "name": "serve",
+          "options": []
+        },
+        {
+          "id": "cli:threads show",
+          "name": "show",
+          "options": []
+        }
+      ]
+    },
+    {
+      "id": "cli:topology",
+      "kind": "command",
+      "module": "mini_ork.cli.topology",
+      "documented": false,
+      "parser": "argparse",
+      "help_status": "usage-only",
+      "help_ok": false,
+      "error": "help: --help is not wired (exits non-zero)",
+      "subcommands": []
+    },
+    {
+      "id": "cli:traceotter",
+      "kind": "command",
+      "module": "mini_ork.cli.traceotter",
+      "documented": false,
+      "parser": "help-text",
+      "help_status": "executed",
+      "help_ok": false,
+      "error": "help: ran the command instead of printing help",
+      "subcommands": []
+    },
+    {
+      "id": "cli:triage",
+      "kind": "command",
+      "module": "mini_ork.cli.triage",
+      "documented": false,
+      "parser": "argparse",
+      "help_status": "ok",
+      "help_ok": true,
+      "error": null,
+      "subcommands": []
+    },
+    {
+      "id": "cli:undo",
+      "kind": "command",
+      "module": "mini_ork.cli.undo",
+      "documented": true,
+      "parser": "argparse",
+      "help_status": "ok",
+      "help_ok": true,
+      "error": null,
+      "subcommands": [
+        {
+          "id": "cli:undo ref",
+          "name": "ref",
+          "options": []
+        }
+      ]
+    },
+    {
+      "id": "cli:update",
+      "kind": "command",
+      "module": "mini_ork.cli.update",
+      "documented": true,
+      "parser": "help-text",
+      "help_status": "ok",
+      "help_ok": true,
+      "error": null,
+      "subcommands": []
+    },
+    {
+      "id": "cli:usage-report",
+      "kind": "command",
+      "module": "mini_ork.observability.usage_report",
+      "documented": false,
+      "parser": "help-text",
+      "help_status": "ok",
+      "help_ok": true,
+      "error": null,
+      "subcommands": []
+    },
+    {
+      "id": "cli:validate",
+      "kind": "command",
+      "module": "mini_ork.cli.validate",
+      "documented": true,
+      "parser": "help-text",
+      "help_status": "ok",
+      "help_ok": true,
+      "error": null,
+      "subcommands": []
+    },
+    {
+      "id": "cli:vault",
+      "kind": "command",
+      "module": "mini_ork.cli.vault_cmd",
+      "documented": true,
+      "parser": "help-text",
+      "help_status": "ok",
+      "help_ok": true,
+      "error": null,
+      "subcommands": [
+        {
+          "id": "cli:vault status",
+          "name": "status",
+          "options": []
+        },
+        {
+          "id": "cli:vault which",
+          "name": "which",
+          "options": []
+        }
+      ]
+    },
+    {
+      "id": "cli:verifier",
+      "kind": "command",
+      "module": "mini_ork.cli.verifier",
+      "documented": true,
+      "parser": "argparse",
+      "help_status": "ok",
+      "help_ok": true,
+      "error": null,
+      "subcommands": [
+        {
+          "id": "cli:verifier list",
+          "name": "list",
+          "options": [
+            "--help",
+            "--json",
+            "--limit",
+            "--run",
+            "--unannotated",
+            "-h"
+          ]
+        },
+        {
+          "id": "cli:verifier annotate",
+          "name": "annotate",
+          "options": [
+            "--annotator",
+            "--help",
+            "--kind",
+            "--notes",
+            "--result-id",
+            "-h"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cli:verify",
+      "kind": "command",
+      "module": "mini_ork.cli.verify",
+      "documented": true,
+      "parser": "help-text",
+      "help_status": "ok",
+      "help_ok": true,
+      "error": null,
+      "subcommands": []
+    },
+    {
+      "id": "cli:version",
+      "kind": "command",
+      "module": null,
+      "documented": true,
+      "parser": "help-text",
+      "help_status": "executed",
+      "help_ok": false,
+      "error": null,
+      "subcommands": []
+    },
+    {
+      "id": "cli:watchdog",
+      "kind": "command",
+      "module": "mini_ork.orchestration.watchdog",
+      "documented": false,
+      "parser": "argparse",
+      "help_status": "ok",
+      "help_ok": true,
+      "error": null,
+      "subcommands": []
+    },
+    {
+      "id": "cli:zed",
+      "kind": "command",
+      "module": "mini_ork.cli.zed_cmd",
+      "documented": true,
+      "parser": "argparse",
+      "help_status": "ok",
+      "help_ok": true,
+      "error": null,
+      "subcommands": [
+        {
+          "id": "cli:zed setup",
+          "name": "setup",
+          "options": [
+            "--dry-run",
+            "--home",
+            "--layout",
+            "--no-mcp"
+          ]
+        },
+        {
+          "id": "cli:zed status",
+          "name": "status",
+          "options": []
+        },
+        {
+          "id": "cli:zed uninstall",
+          "name": "uninstall",
+          "options": [
+            "--dry-run"
+          ]
+        }
+      ]
+    }
+  ],
+  "knobs": [
+    {
+      "id": "knob:plan_qa_gate",
+      "label": "Plan Q&A gate",
+      "knobs": {
+        "MINI_ORK_EXECUTE_GATE": "1"
+      },
+      "default": "1",
+      "cost_multiplier": 1.0,
+      "tier": "baseline",
+      "applies_to": []
+    },
+    {
+      "id": "knob:learning_writeback",
+      "label": "GRPO learning writeback",
+      "knobs": {
+        "MO_LEARNING_WRITEBACK": "1"
+      },
+      "default": "1",
+      "cost_multiplier": 1.0,
+      "tier": "baseline",
+      "applies_to": []
+    },
+    {
+      "id": "knob:reward_stamp",
+      "label": "Reward stamp",
+      "knobs": {
+        "MO_REWARD_STAMP": "1"
+      },
+      "default": "1",
+      "cost_multiplier": 1.0,
+      "tier": "baseline",
+      "applies_to": []
+    },
+    {
+      "id": "knob:prm_score",
+      "label": "PRM scoring",
+      "knobs": {
+        "MO_PRM_SCORE": "1"
+      },
+      "default": "1",
+      "cost_multiplier": 1.05,
+      "tier": "baseline",
+      "applies_to": []
+    },
+    {
+      "id": "knob:oracle_gates",
+      "label": "Oracle gates (auto)",
+      "knobs": {
+        "MO_ORACLE_GATES_AUTO": "1"
+      },
+      "default": "1",
+      "cost_multiplier": 1.2,
+      "tier": "baseline",
+      "applies_to": []
+    },
+    {
+      "id": "knob:assay_relations",
+      "label": "Metamorphic relations",
+      "knobs": {
+        "MO_ASSAY_RELATIONS": "1"
+      },
+      "default": "3",
+      "cost_multiplier": 1.21,
+      "tier": "baseline",
+      "applies_to": []
+    },
+    {
+      "id": "knob:assay_differential",
+      "label": "Differential assay",
+      "knobs": {
+        "MO_ASSAY_DIFFERENTIAL": "1"
+      },
+      "default": "6",
+      "cost_multiplier": 1.18,
+      "tier": "baseline",
+      "applies_to": []
+    },
+    {
+      "id": "knob:review_panel",
+      "label": "Review panel",
+      "knobs": {},
+      "default": "codex kimi glm",
+      "cost_multiplier": 3.0,
+      "tier": "premium",
+      "applies_to": []
+    },
+    {
+      "id": "knob:code_arm_scorer",
+      "label": "Code-arm probe scorer",
+      "knobs": {
+        "MO_APPLY_SCORER": "code",
+        "MO_APPLY_CODE_PATCH": ""
+      },
+      "default": "1",
+      "cost_multiplier": 2.0,
+      "tier": "premium",
+      "applies_to": []
+    }
+  ],
+  "mcp_tools": [
+    {
+      "id": "mcp:certify",
+      "name": "certify",
+      "surface": "control",
+      "description": "Spawn `bin/mini-ork certify --json` against base..head in the project root (timeout MO_MCP_CERTIFY_TIMEOUT_S, default 900). Returns the parsed certificate plus exit_code on JSON output; stdout/stderr tails on non-JSON output."
+    },
+    {
+      "id": "mcp:cost",
+      "name": "cost",
+      "surface": "read",
+      "description": "Cost-per-day rows for the last N days plus a total."
+    },
+    {
+      "id": "mcp:describe_recipe",
+      "name": "describe_recipe",
+      "surface": "read",
+      "description": "Everything about one recipe: purpose, request keywords, steps with their model roles, checks, grade with fix hints, track record, files. Returns the card dict; unknown id \u2192 error object."
+    },
+    {
+      "id": "mcp:draft_kickoff",
+      "name": "draft_kickoff",
+      "surface": "control",
+      "description": "Show the user a kickoff before any run starts. It does NOT start a run: the user starts it with a button. Fix every finding of severity error and draft again."
+    },
+    {
+      "id": "mcp:draft_recipe",
+      "name": "draft_recipe",
+      "surface": "control",
+      "description": "Render a recipe spec into <home>/recipe-drafts/<id>/ WITHOUT writing into <home>/recipes/. The user must approve before any commit (no commit tool is exposed via MCP). Returns {ok, draft_id, target, exists, files, warnings, grade} on success; {ok: false, errors} on validation failure. The spec object follows recipe_guide().spec_schema; `base` is optional and, when given, must equal the spec's id (editing an existing project recipe)."
+    },
+    {
+      "id": "mcp:get_recipe_spec",
+      "name": "get_recipe_spec",
+      "surface": "control",
+      "description": "Return the spec a project or engine recipe was authored from (the parsed <recipe>/recipe.spec.json). Returns {error: ...} when the recipe was hand-edited and not authored from a spec; copy it into the project first to edit it via draft_recipe."
+    },
+    {
+      "id": "mcp:lanes",
+      "name": "lanes",
+      "surface": "read",
+      "description": "lane_name \u2192 family map from the active agents config."
+    },
+    {
+      "id": "mcp:learnings",
+      "name": "learnings",
+      "surface": "read",
+      "description": "Failure-mode gradients (per task_class), emergent patterns, and memory (tasks + agents), each filterable by substring."
+    },
+    {
+      "id": "mcp:list_automations",
+      "name": "list_automations",
+      "surface": "read",
+      "description": "List every automation in the project: id, name, recipe, schedule, when (human description), enabled, workspace, next_fire (ISO, null when paused), last_run, runs (audit). Plus the OS scheduler status. Read-only."
+    },
+    {
+      "id": "mcp:list_recipes",
+      "name": "list_recipes",
+      "surface": "control",
+      "description": "List recipes visible to the current project. Each entry covers either an engine recipe (under <engine_root>/recipes/) or a project recipe (under <home>/recipes/); a project recipe with the same id as an engine recipe wins on the name clash and the engine one is omitted. Returns {id, description, source, nodes, overrides_engine?} per recipe."
+    },
+    {
+      "id": "mcp:list_runs",
+      "name": "list_runs",
+      "surface": "read",
+      "description": "List mini-ork runs newest-first (id, status, recipe, cost, created_at, derived title). Read-only. ``total`` is the number of matching runs; ``runs`` holds at most ``limit`` (default 20)."
+    },
+    {
+      "id": "mcp:propose_automation",
+      "name": "propose_automation",
+      "surface": "control",
+      "description": "Propose a scheduled run of a recipe. This does NOT schedule anything: the user sees the proposal and creates it with a button. Schedule is a 5-field cron string in local time (minute hour day-of-month month day-of-week; 0 = Sunday), e.g. `0 9 * * 1-5` = every weekday at 09:00. Calling it again with the same id replaces the proposal."
+    },
+    {
+      "id": "mcp:recipe_guide",
+      "name": "recipe_guide",
+      "surface": "control",
+      "description": "Describe what a recipe spec looks like: JSON schema, step types, the home's lane map, short authoring rules, and an example. Read-only; no project state changes. Returns {spec_schema, step_types, roles, rules, example}."
+    },
+    {
+      "id": "mcp:run_detail",
+      "name": "run_detail",
+      "surface": "read",
+      "description": "Full task_runs row + node lifecycle events + first 2000 chars of the kickoff + verdict.json for a single run_id."
+    },
+    {
+      "id": "mcp:run_status",
+      "name": "run_status",
+      "surface": "control",
+      "description": "Snapshot of a single run: status, recipe, cost_usd, and per-node state derived from node_start/node_end lifecycle events."
+    },
+    {
+      "id": "mcp:start_run",
+      "name": "start_run",
+      "surface": "control",
+      "description": "Launch a new mini-ork run via `bin/mini-ork run <recipe> <kickoff>`. Sets MO_TARGET_CWD to the project root so the spawned run operates on the user's checkout. Returns {ok, run_id, recipe, pid, kickoff_path, log_path} on success or {error} on failure."
+    },
+    {
+      "id": "mcp:stop_run",
+      "name": "stop_run",
+      "surface": "control",
+      "description": "Stop a running task. soft (hard=false) writes a stop-requested flag the dispatcher honours before the next node; hard (hard=true) SIGTERMs then SIGKILLs the dispatcher pid."
+    },
+    {
+      "id": "mcp:wait_for_run",
+      "name": "wait_for_run",
+      "surface": "control",
+      "description": "Poll run_status until the run reaches a terminal state (published, rolled_back, failed, not_needed) or timeout_s passes. timeout_s is clamped to [30, 1800] (default 600). Returns the last status plus {terminal, waited_s}; when terminal, includes verdict.json and the last 30 lines of the launch log."
+    },
+    {
+      "id": "mcp:workspaces",
+      "name": "workspaces",
+      "surface": "control",
+      "description": "List open task-isolation workspaces (Zed S4). Each row carries the workspace's branch / base / path plus a status snapshot (commits_ahead, uncommitted, added, removed, files). Read-only \u2014 Merge / Discard live in a later slice."
+    }
+  ],
+  "hidden_commands": [
+    "cli:acp",
+    "cli:active-eval",
+    "cli:approvals",
+    "cli:bug-collector",
+    "cli:bugs",
+    "cli:calibrate",
+    "cli:certify",
+    "cli:collapse-check",
+    "cli:collapse-precursor",
+    "cli:conductor",
+    "cli:coord",
+    "cli:epics",
+    "cli:features",
+    "cli:gate-fuzz",
+    "cli:hack-probe",
+    "cli:harness-audit",
+    "cli:harness-contrast",
+    "cli:harness-edit",
+    "cli:inject",
+    "cli:intake",
+    "cli:kickoff",
+    "cli:lessons",
+    "cli:lifetime",
+    "cli:memory-lifecycle",
+    "cli:metric-anchor",
+    "cli:metrics",
+    "cli:node-agent",
+    "cli:nodes",
+    "cli:orchestrator",
+    "cli:oversight",
+    "cli:pm",
+    "cli:prefs",
+    "cli:reap",
+    "cli:recover",
+    "cli:repair",
+    "cli:resume",
+    "cli:review",
+    "cli:rollback",
+    "cli:sandbox-gc",
+    "cli:scheduler",
+    "cli:serve",
+    "cli:skills",
+    "cli:spawn",
+    "cli:specs",
+    "cli:threads",
+    "cli:topology",
+    "cli:traceotter",
+    "cli:triage",
+    "cli:usage-report",
+    "cli:watchdog"
+  ],
+  "help_failures": {
+    "crash": [
+      "cli:coord"
+    ],
+    "usage-only": [
+      "cli:board",
+      "cli:cn",
+      "cli:pm",
+      "cli:topology"
+    ],
+    "executed": [
+      "cli:bug-collector",
+      "cli:bugs",
+      "cli:conductor",
+      "cli:doctor",
+      "cli:init",
+      "cli:run",
+      "cli:scheduler",
+      "cli:traceotter",
+      "cli:version"
+    ]
+  }
+}

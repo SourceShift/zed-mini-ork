@@ -1,0 +1,388 @@
+#!/usr/bin/env python3
+"""Inventory what mini-ork can actually do, from the engine itself.
+
+The journey corpus (``docs/user-journeys``) needs capability ids that do not
+drift from the product. This script derives them from the running engine, not
+from docs:
+
+* every command the dispatcher wires (``mini_ork/cli/main.py``), whether or not
+  ``mini-ork --help`` admits it exists;
+* each command's subcommands, from its argparse tree where it has one and from
+  its own ``--help`` text where it does not;
+* the cost-feature registry (``mini_ork.features``);
+* the MCP tools ``mini-ork mcp-context`` serves.
+
+It re-execs itself under the engine's own virtualenv, because only that
+interpreter can import ``mini_ork``. Writes JSON to
+``docs/user-journeys/capabilities.json`` by default.
+"""
+
+from __future__ import annotations
+
+import argparse
+import ast
+import importlib
+import json
+import os
+import re
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+
+# argparse's own types are needed for walking subparsers; importing argparse as
+# a module (above) keeps a single source for both the CLI and the walk.
+import argparse as ap
+
+
+def find_engine(explicit: str | None) -> Path:
+    """The mini-ork checkout whose capabilities are inventoried."""
+    candidates: list[str | None] = [
+        explicit,
+        os.environ.get("MINI_ORK_ENGINE"),
+    ]
+    launcher = Path.home() / ".local" / "bin" / "mini-ork"
+    if launcher.is_file():
+        text = launcher.read_text(encoding="utf-8", errors="replace")
+        match = re.search(r"(/[^\s\"']+)/bin/mini-ork", text)
+        if match:
+            candidates.append(match.group(1))
+    for candidate in candidates:
+        if candidate and (Path(candidate) / "mini_ork" / "cli" / "main.py").is_file():
+            return Path(candidate).resolve()
+    raise SystemExit(
+        "cannot find the mini-ork engine checkout; pass --engine or set MINI_ORK_ENGINE"
+    )
+
+
+def engine_python(engine: Path) -> Path:
+    python = engine / ".venv" / "bin" / "python"
+    return python if python.is_file() else Path(sys.executable)
+
+
+def reexec_inside_engine(engine: Path, out: Path) -> int:
+    """mini_ork imports need the engine's venv; hand the work to it."""
+    environment = dict(os.environ)
+    environment["MO_SURFACE_INSIDE"] = "1"
+    environment.pop("MINI_ORK_VENV_ACTIVE", None)
+    return subprocess.run(
+        [
+            str(engine_python(engine)),
+            str(Path(__file__).resolve()),
+            "--inside",
+            "--engine",
+            str(engine),
+            "--out",
+            str(out),
+        ],
+        env=environment,
+        cwd=tempfile.mkdtemp(prefix="mo-surface-"),
+    ).returncode
+
+
+def walk_parser(parser: ap.ArgumentParser, prefix: str) -> list[dict]:
+    """Every subcommand under ``parser``, depth-first, ids joined by spaces."""
+    found: list[dict] = []
+    for action in parser._actions:  # noqa: SLF001 - argparse keeps no public view
+        if not isinstance(action, ap._SubParsersAction):  # noqa: SLF001
+            continue
+        for name, child in action.choices.items():
+            command = f"{prefix} {name}".strip()
+            found.append(
+                {
+                    "id": f"cli:{command}",
+                    "name": name,
+                    "options": sorted(
+                        option
+                        for option_action in child._actions  # noqa: SLF001
+                        for option in option_action.option_strings
+                    ),
+                }
+            )
+            found.extend(walk_parser(child, command))
+    return found
+
+
+def parser_builder(module) -> object | None:
+    for name in ("build_parser", "_build_parser", "_parser"):
+        builder = getattr(module, name, None)
+        if callable(builder):
+            return builder
+    return None
+
+
+BRACE_SUBCOMMANDS = re.compile(r"\{([a-z][a-z0-9-]*(?:,[a-z][a-z0-9-]*)+)\}")
+# A verb-table row is `  verb <arg>   description` or `  verb   description`:
+# the verb is followed by an aligned gap, an argument placeholder, or a choice
+# bar. Requiring that shape rejects prose, which puts a single space after its
+# first word (`  an unknown hint more must be given`) — those read as verbs
+# otherwise, and the journey corpus would then cite subcommands that never
+# existed.
+LINE_SUBCOMMAND = re.compile(r"^\s{2,}([a-z][a-z0-9-]{1,30})(?=\s{2,}|\s*[<\[|]|\s*$)")
+
+
+def subcommands_from_help(text: str, command: str) -> list[str]:
+    """Subcommands a hand-written ``--help`` lists.
+
+    Two shapes exist in the engine: argparse renders ``{ls,ping,doctor}`` in the
+    usage line, and the hand-written ones print an indented verb table. Both are
+    read, because neither is available from a parser object that does not exist.
+    """
+    names: set[str] = set()
+    for group in BRACE_SUBCOMMANDS.findall(text):
+        names.update(group.split(","))
+    usage_line = re.compile(
+        rf"^\s{{2,}}mini-ork\s+{re.escape(command)}\s+([a-z][a-z0-9-]{{1,30}})(?=\s|$)"
+    )
+    for line in text.splitlines()[:60]:
+        usage_match = usage_line.match(line)
+        if usage_match:
+            names.add(usage_match.group(1))
+            continue
+        match = LINE_SUBCOMMAND.match(line)
+        if match:
+            name = match.group(1)
+            # `usage`, `options`, prose words and flags are not verbs.
+            if name not in {command, "usage", "options", "arguments", "example", "examples"}:
+                names.add(name)
+    return sorted(names)
+
+
+def run_help(engine: Path, command: str) -> tuple[str, str, str | None]:
+    """The command's own ``--help``, classified.
+
+    Four outcomes are distinguishable and mean different things for a user:
+    ``ok`` prints help and exits 0; ``usage-only`` prints a usage line and exits
+    non-zero (the parser was built with ``add_help=False``, so ``--help`` is an
+    error); ``crash`` raises; ``executed`` neither prints help nor usage because
+    the flag was ignored and the command ran.
+    """
+    launcher = engine / "bin" / "mini-ork"
+    environment = dict(os.environ)
+    environment.pop("MINI_ORK_VENV_ACTIVE", None)
+    # A probe must not touch the user's machine: some commands ignore `--help`
+    # and run, and `init`/`install` would then write into the real HOME.
+    sandbox = tempfile.mkdtemp(prefix="mo-surface-help-")
+    environment["HOME"] = sandbox
+    environment["XDG_CONFIG_HOME"] = str(Path(sandbox) / "config")
+    environment["XDG_DATA_HOME"] = str(Path(sandbox) / "data")
+    environment["MINI_ORK_HOME"] = str(Path(sandbox) / ".mini-ork")
+    try:
+        finished = subprocess.run(
+            [str(engine_python(engine)), str(launcher), *command.split(), "--help"],
+            capture_output=True,
+            text=True,
+            timeout=60,
+            env=environment,
+            cwd=sandbox,
+        )
+    except subprocess.TimeoutExpired:
+        return "crash", "", "timeout after 60s"
+    text = (finished.stdout or "") + (finished.stderr or "")
+    if "Traceback (most recent call last)" in text:
+        marker = next(
+            (line.strip() for line in text.splitlines() if line.strip() and not line.startswith(" ")),
+            "traceback",
+        )
+        return "crash", text, marker
+    if finished.returncode == 0:
+        return ("ok" if "usage:" in text.lower() or "usage\n" in text.lower() else "executed"), text, None
+    if "usage:" in text.lower():
+        return "usage-only", text, "--help is not wired (exits non-zero)"
+    return "executed", text, "ran the command instead of printing help"
+
+
+def cli_capabilities(engine: Path) -> tuple[list[dict], str]:
+    sys.path.insert(0, str(engine))
+    from mini_ork.cli import main as cli_main  # noqa: PLC0415 - engine must be importable first
+
+    modules: dict[str, str] = dict(cli_main._NATIVE_MODULE_SUBS)  # noqa: SLF001
+    for native in sorted(cli_main._NATIVE_SUBS):  # noqa: SLF001
+        modules.setdefault(native, f"mini_ork.cli.{native}")
+    # Commands registered in-process at runtime (board, run, doctor, install,
+    # providers, mcp, vault, version, execute) do not appear in the static
+    # tables at all, so the runtime registry is the only complete list.
+    in_process = {
+        "recipe-eval": "mini_ork.cli.recipe_eval",
+        "reviewer-eval": "mini_ork.cli.reviewer_eval_cmd",
+        "sandbox-gc": "mini_ork.cli.sandbox_gc",
+    }
+    aliases = {"help", "--help", "-h"}
+    names = set(cli_main.SUBCOMMAND_REGISTRY) - aliases  # noqa: SLF001
+    documented = set(re.findall(r"^  ([a-z][a-z0-9-]*)", cli_main._HELP, re.MULTILINE))
+
+    commands: list[dict] = []
+    for name in sorted(names):
+        module_path = modules.get(name) or in_process.get(name)
+        record: dict = {
+            "id": f"cli:{name}",
+            "kind": "command",
+            "module": module_path,
+            "documented": name in documented,
+            "parser": "none",
+            "help_status": "unknown",
+            "help_ok": False,
+            "error": None,
+            "subcommands": [],
+        }
+        builder = None
+        if module_path:
+            try:
+                module = importlib.import_module(module_path)
+                builder = parser_builder(module)
+            except Exception as error:  # noqa: BLE001 - an import failure is a finding, not a crash
+                record["error"] = f"import: {error}"
+        help_status, help_text, help_error = run_help(engine, name)
+        record["help_status"] = help_status
+        record["help_ok"] = help_status == "ok"
+        if help_error:
+            record["error"] = (record["error"] + "; " if record["error"] else "") + f"help: {help_error}"
+        if builder is not None:
+            try:
+                parser = builder()
+                record["parser"] = "argparse"
+                record["subcommands"] = walk_parser(parser, name)
+            except Exception as error:  # noqa: BLE001
+                record["error"] = (record["error"] + "; " if record["error"] else "") + f"parser: {error}"
+        if not record["subcommands"] and help_text:
+            record["parser"] = "help-text" if record["parser"] == "none" else record["parser"]
+            subs = subcommands_from_help(help_text, name)
+            record["subcommands"] = [
+                {"id": f"cli:{name} {sub}", "name": sub, "options": []} for sub in subs
+            ]
+        commands.append(record)
+    return commands, cli_main.__version__
+
+
+def knob_capabilities(engine: Path) -> list[dict]:
+    sys.path.insert(0, str(engine))
+    from mini_ork.features import catalogue_json  # noqa: PLC0415
+
+    catalogue = catalogue_json()
+    knobs: list[dict] = []
+    for feature in catalogue.get("features", []):
+        knobs.append(
+            {
+                "id": f"knob:{feature.get('id')}",
+                "label": feature.get("label", ""),
+                "knobs": feature.get("knobs", []),
+                "default": feature.get("default"),
+                "cost_multiplier": feature.get("cost_multiplier"),
+                "tier": feature.get("tier"),
+                "applies_to": feature.get("applies_to", []),
+            }
+        )
+    return knobs
+
+
+def mcp_capabilities(engine: Path) -> list[dict]:
+    """Tool definitions are read from source, so no server has to be started."""
+    server = engine / "mini_ork" / "mcp_context" / "server.py"
+    if not server.is_file():
+        return []
+    tree = ast.parse(server.read_text(encoding="utf-8"))
+    tools: list[dict] = []
+    for node in tree.body:
+        # Both `NAME = [...]` and the annotated `NAME: list[dict] = [...]` are
+        # used in this file, and the annotated form is the one carrying tools.
+        if isinstance(node, ast.AnnAssign):
+            target, value = node.target, node.value
+        elif isinstance(node, ast.Assign) and len(node.targets) == 1:
+            target, value = node.targets[0], node.value
+        else:
+            continue
+        if not isinstance(target, ast.Name) or target.id not in {"TOOL_DEFS", "_CONTROL_TOOL_DEFS"}:
+            continue
+        if not isinstance(value, ast.List):
+            continue
+        for item in value.elts:
+            if not isinstance(item, ast.Dict):
+                continue
+            fields = {}
+            for key, value in zip(item.keys, item.values):
+                if isinstance(key, ast.Constant) and isinstance(value, ast.Constant):
+                    fields[key.value] = value.value
+            name = fields.get("name")
+            if not name:
+                continue
+            description = str(fields.get("description", "")).strip().splitlines()
+            tools.append(
+                {
+                    "id": f"mcp:{name}",
+                    "name": name,
+                    "surface": "control" if target.id == "_CONTROL_TOOL_DEFS" else "read",
+                    "description": description[0] if description else "",
+                }
+            )
+    return sorted(tools, key=lambda tool: tool["id"])
+
+
+def inside(engine: Path, out: Path) -> int:
+    commands, version = cli_capabilities(engine)
+    knobs = knob_capabilities(engine)
+    tools = mcp_capabilities(engine)
+    subcommands = sum(len(command["subcommands"]) for command in commands)
+    hidden = [command["id"] for command in commands if not command["documented"]]
+    sub_hidden = [
+        sub["id"]
+        for command in commands
+        for sub in command["subcommands"]
+        if not command["documented"]
+    ]
+    help_failures = {
+        status: [command["id"] for command in commands if command["help_status"] == status]
+        for status in ("crash", "usage-only", "executed")
+    }
+    head = subprocess.run(
+        ["git", "-C", str(engine), "rev-parse", "--short", "HEAD"],
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+
+    document = {
+        "engine": {
+            "root": str(engine),
+            "head": head,
+            "version": version,
+        },
+        "summary": {
+            "commands": len(commands),
+            "subcommands": subcommands,
+            "hidden_commands": len(hidden),
+            "hidden_subcommands": len(sub_hidden),
+            "help_failures": sum(len(ids) for ids in help_failures.values()),
+            "knobs": len(knobs),
+            "mcp_tools": len(tools),
+        },
+        "commands": commands,
+        "knobs": knobs,
+        "mcp_tools": tools,
+        "hidden_commands": hidden,
+        "help_failures": help_failures,
+    }
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(json.dumps(document, indent=2) + "\n", encoding="utf-8")
+    print(json.dumps(document["summary"], indent=2))
+    print(f"wrote {out}")
+    return 0
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument("--engine", help="mini-ork checkout (default: from the managed launcher)")
+    parser.add_argument(
+        "--out",
+        default=str(Path(__file__).resolve().parents[1] / "docs/user-journeys/capabilities.json"),
+        help="where to write the capability table",
+    )
+    parser.add_argument("--inside", action="store_true", help=argparse.SUPPRESS)
+    args = parser.parse_args()
+    engine = find_engine(args.engine)
+    out = Path(args.out)
+    if args.inside or os.environ.get("MO_SURFACE_INSIDE") == "1":
+        return inside(engine, out)
+    return reexec_inside_engine(engine, out)
+
+
+if __name__ == "__main__":
+    sys.exit(main())
