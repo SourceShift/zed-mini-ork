@@ -90,7 +90,7 @@ inventory of the same checkout (`AGENTS.md`, the `orca` verb surface); rows
 
 | # | Orca capability | Orca evidence | mini-ork | Status |
 |---|---|---|---|---|
-| 40 | Tasks page over GitHub / GitLab / Linear / Jira, start workspace from item | `task-page/TaskPage.tsx`, `settings/TasksPane.tsx` | `kanban` sources pane emits `pm add|test|remove` for github/linear/jira and shows mirror state; `orch` emits `intake once`; `pm sources` has no button, and there is no "start a run from this item" row; GitLab has no provider | partial (GitLab: missing) |
+| 40 | Tasks page over GitHub / GitLab / Linear / Jira, start workspace from item | `task-page/TaskPage.tsx`, `settings/TasksPane.tsx` | `kanban` sources pane emits `pm add\|test\|remove` for github/linear/jira and shows each source's declared/enabled/skipped/errored state, which is what `pm sources` prints — the pane supersedes the verb, so no button is owed; `orch` emits `intake once`; no row starts a run from an item; GitLab has no provider | partial (GitLab: missing) |
 | 41 | Automations page and editor (prompt, project, agent, schedule, precheck) | `automations/AutomationEditorDialog.tsx` | `autos` page emits run/pause/resume/remove/scheduler; `mini_ork/automations.py` has `update` but the CLI has no `automations edit` | partial — no editor, one verb short |
 | 42 | Automation runs dashboard with host filter | `automations/AutomationRunsDashboard.tsx` | `automations list` + `autos` page rows; no run history view | partial |
 | 43 | Artifacts page: preview, publish public link, copy/open, delete | `artifacts/ArtifactsPage.tsx`, `ArtifactPublishButton.tsx` | Run/node artifacts (`ide_pages/node_artifacts.py`, `board artifacts`); no share link (would need an account and a host) | partial |
@@ -151,9 +151,9 @@ missing. What is left, in order of value per line changed:
    `update`), and a review surface for the drafts the agent produces
    (`mcp:draft_kickoff`, `mcp:draft_recipe`). Row 9's composer now drafts and
    starts; it cannot show a draft produced elsewhere.
-2. **Tasks, row 40** — `pm sources|add|test` on a tasks surface; the `inbox`
-   page is the natural host. No row starts a run from a task item, and GitLab
-   has no provider.
+2. **Tasks, row 40** — no row starts a run from a task item; GitLab has no
+   provider. (`pm sources` needs no button: the `kanban` sources pane renders
+   the same declared/enabled/skipped/errored state.)
 3. **Worktrees, rows 10/11/17** — rename, pin, sleep and unread are states
    mini-ork does not model; the `runs` list is the closest surface and has no
    context menu. These need a decision before a button.
