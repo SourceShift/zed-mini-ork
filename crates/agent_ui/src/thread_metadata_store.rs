@@ -597,6 +597,15 @@ impl ThreadMetadataStore {
         self.threads.get(thread_id)
     }
 
+    /// The same lookup, for a caller holding the session id as a string.
+    ///
+    /// The mini-ork engine names a thread by the session id it minted
+    /// (`orch-…`), not by the `ThreadId` this IDE assigned it, so a page action
+    /// pointing at a thread only ever has the session id to offer.
+    pub fn entry_by_session_id(&self, session_id: &str) -> Option<&ThreadMetadata> {
+        self.entry_by_session(&acp::SessionId::new(session_id))
+    }
+
     /// Returns all threads.
     pub fn entries(&self) -> impl Iterator<Item = &ThreadMetadata> + '_ {
         self.threads.values()
@@ -4269,6 +4278,39 @@ mod tests {
                 &[std::path::PathBuf::from("/project-a")],
                 "retained thread A's stored path must not be updated while the project is via collab"
             );
+        });
+    }
+
+    #[gpui::test]
+    async fn test_entry_by_session_id_accepts_the_engines_session_string(
+        cx: &mut TestAppContext,
+    ) {
+        // The mini-ork engine names a thread by the session id it minted
+        // (`orch-…`) and hands that string to a page action; the lookup has to
+        // cross from that string back to the thread this IDE stored.
+        init_test(cx);
+        let metadata = make_metadata(
+            "orch-1793828578-b0897e",
+            "Run narration",
+            Utc::now(),
+            PathList::default(),
+        );
+        cx.update(|cx| {
+            let store = ThreadMetadataStore::global(cx);
+            store.update(cx, |store, cx| store.save(metadata, cx));
+        });
+        cx.run_until_parked();
+
+        cx.update(|cx| {
+            let store = ThreadMetadataStore::global(cx);
+            let store = store.read(cx);
+            assert!(
+                store
+                    .entry_by_session_id("orch-1793828578-b0897e")
+                    .is_some(),
+                "a known session id must resolve to its thread"
+            );
+            assert!(store.entry_by_session_id("orch-not-a-thread").is_none());
         });
     }
 }
