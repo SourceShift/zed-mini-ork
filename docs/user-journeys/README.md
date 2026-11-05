@@ -102,41 +102,54 @@ Known limits, all of which understate reach rather than overstate it:
 | undiscoverable help | `--help` crashes, prints usage-only, or runs the command | 14 commands (1 crash, 4 usage-only, 9 executed) |
 | agent-only | reachable only from an MCP client | all 19 MCP tools |
 
-## Pilot results (15 journeys)
+## Full corpus results (200 journeys)
 
-Engine `mini_ork` 0.9.0 at `8d792bcc`:
+Engine `mini_ork` 0.10.0 at `0b0cbe28`:
 
-- 82 commands, 173 subcommands, 9 knobs, 19 MCP tools.
-- Pages emit 46 distinct action paths.
-- 29 CLI capabilities reachable exactly, 32 partially, 194 not at all.
-- 0 MCP tools exposed in the IDE.
-- The 15 journeys cite 55 of 283 capabilities; none is runnable end-to-end from
-  the IDE.
+- 86 commands, 183 subcommands, 9 knobs, 19 MCP tools — 297 capabilities.
+- Pages emit 64 distinct action paths.
+- 41 capabilities reachable exactly, 43 partially, 213 not at all.
+- 0 of 19 MCP tools exposed in the IDE.
+- 200 journeys across five personas, 656 steps: 85 reachable, 75 partial,
+  496 unreachable.
+- Every one of the 297 capabilities is cited by at least one journey, so the
+  "capabilities with no journey" lists are empty.
+- 192 journeys are not runnable end-to-end from the IDE and 8 are partially
+  runnable; none is fully runnable.
 
-The four most valuable missing surfaces the pilot already names:
+The four most valuable missing surfaces the corpus names:
 
-1. Onboarding (`onboard`, `init`, `zed setup`, `validate`) has no page action at
-   all, while `setup` is a page key.
-2. Spend and lifetime reporting (`lifetime summary|show`, `usage-report`) is
-   shell-only; only `usage-report` has a button, from the lanes page.
-3. Failure forensics (`reap`, `supervise`, `repair`, `verifier annotate`,
-   `graph-patch propose|apply`) is invisible to the IDE even though the `run`
-   and `verify` pages exist to show failures.
-4. Authoring (`kickoff new`, `mcp:draft_kickoff`, `mcp:draft_recipe`,
-   `mcp:propose_automation`) is agent-only: a human cannot see or approve a
-   draft the agent produced from inside the IDE.
+1. Quality measurement — the entire analyst loop is shell-only:
+   `reviewer-eval` (6 subcommands), `collapse-check`, `collapse-precursor`,
+   `hack-probe`, `gate-fuzz`, `instruments oracle-integrity`,
+   `memory-lifecycle`, `metric-anchor` and `rsi-cycle`'s read half have no page
+   action, even though the `learn` page exists to show them.
+2. Authoring — `kickoff new`, `specs ingest|lint|ratify`, `harness-edit`,
+   `harness-card`, `harness-audit`, `apply` and every `mcp:draft_*` tool are
+   agent- or shell-only: a human cannot see or approve a draft from the IDE.
+3. Failure forensics — `triage` is partial while `bugs*`, `bug-collector`,
+   `graph-patch*`, `verifier annotate`, `undo|rollback`, `certify` and
+   `why` have no button, even though the `run` and `verify` pages exist to
+   show failures.
+4. Setup and onboarding — `onboard` is partial; `init`, `validate`,
+   `zed setup|status|uninstall`, `providers configure|conform`, `vault*`,
+   `sandbox-gc*` and `node-agent*` are unreachable, while `setup` is a page
+   key.
 
-## Scaling to the full corpus
+## Keeping the corpus honest
 
-The 200-journey floor is a coverage requirement, not a count of ideas. Grow it
-persona by persona, each iteration:
+Coverage is a requirement, not a count of ideas. The loop that keeps it true:
 
-1. pick the persona with the most uncovered capabilities in `gaps.md`;
-2. group uncovered capabilities into goals that already have a caller in
-   `mini_ork/` (a page, a scheduled entry point, or a documented workflow);
-3. add journeys, re-run `./script/mo-journeys`, and stop when the
-   "capabilities with no journey" lists are empty or every remaining entry has
-   a written reason for being unjourneyable (pure internals, eval harnesses).
+1. re-run `./script/mo-surface` whenever the engine HEAD moves, so
+   `capabilities.json` describes today's product;
+2. run `./script/mo-journeys`; the "capabilities with no journey" lists name
+   what the last engine change added and the corpus has not yet explained;
+3. pick the persona with the most uncovered capabilities in `gaps.md`, group
+   them into goals that already have a caller in `mini_ork/` (a page, a
+   scheduled entry point, or a documented workflow), and add journeys;
+4. stop when the uncovered lists are empty, or every remaining entry has a
+   written reason for being unjourneyable (pure internals, eval harnesses).
 
-Re-run `./script/mo-surface` whenever the engine HEAD moves; a stale
-`capabilities.json` silently pins the corpus to an old product.
+A stale `capabilities.json` silently pins the corpus to an old product, and a
+corpus that cites a capability the engine no longer has fails validation —
+both failure modes are visible in one command.

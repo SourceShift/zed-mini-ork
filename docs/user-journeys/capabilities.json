@@ -1,14 +1,14 @@
 {
   "engine": {
     "root": "/Volumes/docker-ssd/ps/mini-ork",
-    "head": "366cac68",
-    "version": "0.9.0"
+    "head": "0b0cbe28",
+    "version": "0.10.0"
   },
   "summary": {
-    "commands": 82,
-    "subcommands": 173,
-    "hidden_commands": 50,
-    "hidden_subcommands": 77,
+    "commands": 86,
+    "subcommands": 183,
+    "hidden_commands": 51,
+    "hidden_subcommands": 78,
     "help_failures": 14,
     "knobs": 9,
     "mcp_tools": 19
@@ -154,6 +154,51 @@
             "--name",
             "--recipe",
             "--schedule"
+          ]
+        },
+        {
+          "id": "cli:automations edit",
+          "name": "edit",
+          "options": [
+            "--disable",
+            "--enable",
+            "--home",
+            "--in-place",
+            "--kickoff-file",
+            "--name",
+            "--recipe",
+            "--schedule",
+            "--worktree"
+          ]
+        },
+        {
+          "id": "cli:automations runs",
+          "name": "runs",
+          "options": [
+            "--home",
+            "--json",
+            "--limit"
+          ]
+        },
+        {
+          "id": "cli:automations draft",
+          "name": "draft",
+          "options": [
+            "--home"
+          ]
+        },
+        {
+          "id": "cli:automations draft commit",
+          "name": "commit",
+          "options": [
+            "--home"
+          ]
+        },
+        {
+          "id": "cli:automations draft discard",
+          "name": "discard",
+          "options": [
+            "--home"
           ]
         },
         {
@@ -697,8 +742,8 @@
       "module": null,
       "documented": true,
       "parser": "help-text",
-      "help_status": "executed",
-      "help_ok": false,
+      "help_status": "ok",
+      "help_ok": true,
       "error": null,
       "subcommands": []
     },
@@ -934,6 +979,17 @@
       "subcommands": []
     },
     {
+      "id": "cli:harness-card",
+      "kind": "command",
+      "module": "mini_ork.cli.harness_card",
+      "documented": false,
+      "parser": "help-text",
+      "help_status": "ok",
+      "help_ok": true,
+      "error": null,
+      "subcommands": []
+    },
+    {
       "id": "cli:harness-contrast",
       "kind": "command",
       "module": "mini_ork.cli.harness_contrast",
@@ -952,6 +1008,17 @@
       "parser": "help-text",
       "help_status": "ok",
       "help_ok": true,
+      "error": null,
+      "subcommands": []
+    },
+    {
+      "id": "cli:inbox",
+      "kind": "command",
+      "module": null,
+      "documented": true,
+      "parser": "help-text",
+      "help_status": "executed",
+      "help_ok": false,
       "error": null,
       "subcommands": []
     },
@@ -989,6 +1056,23 @@
       "subcommands": []
     },
     {
+      "id": "cli:instruments",
+      "kind": "command",
+      "module": "mini_ork.cli.instruments",
+      "documented": true,
+      "parser": "help-text",
+      "help_status": "ok",
+      "help_ok": true,
+      "error": null,
+      "subcommands": [
+        {
+          "id": "cli:instruments oracle-integrity",
+          "name": "oracle-integrity",
+          "options": []
+        }
+      ]
+    },
+    {
       "id": "cli:intake",
       "kind": "command",
       "module": "mini_ork.cli.intake_cmd",
@@ -1024,6 +1108,20 @@
             "--json",
             "--max-runs",
             "--passes",
+            "--source",
+            "-h"
+          ]
+        },
+        {
+          "id": "cli:intake dispatch",
+          "name": "dispatch",
+          "options": [
+            "--db",
+            "--dry-run",
+            "--help",
+            "--home",
+            "--json",
+            "--recipe",
             "--source",
             "-h"
           ]
@@ -1418,6 +1516,11 @@
           "options": []
         },
         {
+          "id": "cli:providers conform",
+          "name": "conform",
+          "options": []
+        },
+        {
           "id": "cli:providers status",
           "name": "status",
           "options": []
@@ -1661,6 +1764,11 @@
           "options": []
         },
         {
+          "id": "cli:rsi-cycle impact",
+          "name": "impact",
+          "options": []
+        },
+        {
           "id": "cli:rsi-cycle list",
           "name": "list",
           "options": []
@@ -1673,6 +1781,11 @@
         {
           "id": "cli:rsi-cycle quarantine",
           "name": "quarantine",
+          "options": []
+        },
+        {
+          "id": "cli:rsi-cycle research",
+          "name": "research",
           "options": []
         },
         {
@@ -1783,7 +1896,7 @@
       "kind": "command",
       "module": "mini_ork.cli.skills",
       "documented": false,
-      "parser": "help-text",
+      "parser": "argparse",
       "help_status": "ok",
       "help_ok": true,
       "error": null,
@@ -1791,27 +1904,37 @@
         {
           "id": "cli:skills list",
           "name": "list",
-          "options": []
-        },
-        {
-          "id": "cli:skills promote",
-          "name": "promote",
-          "options": []
+          "options": [
+            "--help",
+            "--json",
+            "-h"
+          ]
         },
         {
           "id": "cli:skills show",
           "name": "show",
-          "options": []
-        },
-        {
-          "id": "cli:skills skill",
-          "name": "skill",
-          "options": []
+          "options": [
+            "--help",
+            "-h"
+          ]
         },
         {
           "id": "cli:skills validate",
           "name": "validate",
-          "options": []
+          "options": [
+            "--help",
+            "-h"
+          ]
+        },
+        {
+          "id": "cli:skills promote",
+          "name": "promote",
+          "options": [
+            "--force",
+            "--help",
+            "--to",
+            "-h"
+          ]
         }
       ]
     },
@@ -1855,6 +1978,19 @@
           "options": [
             "--json",
             "--recursive"
+          ]
+        },
+        {
+          "id": "cli:specs ratify",
+          "name": "ratify",
+          "options": [
+            "--all",
+            "--entry",
+            "--json",
+            "--list",
+            "--note",
+            "--run-dir",
+            "--spec"
           ]
         }
       ]
@@ -2081,6 +2217,17 @@
       "module": "mini_ork.orchestration.watchdog",
       "documented": false,
       "parser": "argparse",
+      "help_status": "ok",
+      "help_ok": true,
+      "error": null,
+      "subcommands": []
+    },
+    {
+      "id": "cli:why",
+      "kind": "command",
+      "module": "mini_ork.cli.why",
+      "documented": true,
+      "parser": "help-text",
       "help_status": "ok",
       "help_ok": true,
       "error": null,
@@ -2354,6 +2501,7 @@
     "cli:gate-fuzz",
     "cli:hack-probe",
     "cli:harness-audit",
+    "cli:harness-card",
     "cli:harness-contrast",
     "cli:harness-edit",
     "cli:inject",
@@ -2403,7 +2551,7 @@
       "cli:bug-collector",
       "cli:bugs",
       "cli:conductor",
-      "cli:doctor",
+      "cli:inbox",
       "cli:init",
       "cli:run",
       "cli:scheduler",

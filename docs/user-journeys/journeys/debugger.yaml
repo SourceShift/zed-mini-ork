@@ -85,3 +85,661 @@ journeys:
     terminal_evidence:
       kind: git
       anchor: "rollback"
+
+  - id: debugger/inspect-then-reproduce-a-bug
+    persona: debugger
+    value: "A reported bug is read and swept before anyone reruns the work"
+    impact: "Reproduction starts from the recorded symptom, not from a vague memory"
+    preconditions:
+      - "A bug report exists"
+    steps:
+      - cap: cli:bugs show
+        page: runs
+      - cap: cli:bugs sweep
+        page: runs
+        note: "Finds sibling occurrences of the same signature"
+      - cap: cli:triage
+        page: runs
+    terminal_evidence:
+      kind: db-row
+      anchor: "bugs"
+
+  - id: debugger/queue-a-framework-bug
+    persona: debugger
+    value: "A framework defect is queued with its evidence instead of living in chat"
+    impact: "The bug has an owner and a receipt before the session ends"
+    preconditions:
+      - "The failure was attributed to mini-ork"
+    steps:
+      - cap: cli:bug-collector
+        page: runs
+      - cap: cli:bugs list
+        page: runs
+      - cap: cli:bugs prioritize
+        page: runs
+    terminal_evidence:
+      kind: db-row
+      anchor: "bug-collector"
+
+  - id: debugger/sweep-the-bug-queue
+    persona: debugger
+    value: "Open bugs are swept for duplicates and re-ranked after a fix lands"
+    impact: "The queue does not rot into a list nobody trusts"
+    preconditions:
+      - "More than one bug is open"
+    steps:
+      - cap: cli:bugs sweep
+        page: runs
+      - cap: cli:bugs prioritize
+        page: runs
+      - cap: cli:bugs show
+        page: runs
+      - cap: cli:bugs
+        note: "The bug channel the sweep reads"
+    terminal_evidence:
+      kind: db-row
+      anchor: "prioritize"
+
+  - id: debugger/verify-a-runs-gates
+    persona: debugger
+    value: "Every gate a run passed is re-read before its verdict is trusted"
+    impact: "A green verdict is checked against the gates that produced it"
+    preconditions:
+      - "The run finished with a verdict"
+    steps:
+      - cap: cli:verify
+        page: verify
+      - cap: cli:verifier list
+        page: verify
+      - cap: cli:board gate
+        page: run
+    terminal_evidence:
+      kind: file
+      anchor: "verdict.json"
+
+  - id: debugger/annotate-a-false-negative
+    persona: debugger
+    value: "A verifier that rejected good work is labelled so the gate learns"
+    impact: "The same false negative does not consume the next run's budget"
+    preconditions:
+      - "A verifier rejected work a reviewer accepted"
+    steps:
+      - cap: cli:verifier annotate
+        page: verify
+      - cap: cli:verifier list
+        page: verify
+      - cap: cli:board learning
+        page: run
+    terminal_evidence:
+      kind: db-row
+      anchor: "annotate"
+
+  - id: debugger/patch-the-run-graph
+    persona: debugger
+    value: "A run's DAG is repaired with a typed patch instead of restarting it"
+    impact: "A wrong edge costs one patch, not the whole run"
+    preconditions:
+      - "The run's graph is the problem, not its code"
+    steps:
+      - cap: cli:graph-patch propose
+        page: verify
+      - cap: cli:graph-patch validate
+        page: verify
+      - cap: cli:graph-patch apply
+        page: verify
+    terminal_evidence:
+      kind: file
+      anchor: "graph-patch"
+
+  - id: debugger/audit-the-graph-patches
+    persona: debugger
+    value: "Every patch applied to a run's graph is listed and re-validated"
+    impact: "Hand-repaired graphs stay explainable after the fact"
+    preconditions:
+      - "At least one patch exists"
+    steps:
+      - cap: cli:graph-patch list
+        page: verify
+      - cap: cli:graph-patch validate
+        page: verify
+      - cap: cli:graph-patch credit
+        page: verify
+      - cap: cli:graph-patch
+        note: "The patch store the list reads"
+    terminal_evidence:
+      kind: file
+      anchor: "graph-patch"
+
+  - id: debugger/roll-back-a-workflow-version
+    persona: debugger
+    value: "A workflow returns to its last stable version without a git revert"
+    impact: "A recipe edit that broke runs is undone without touching the code repo"
+    preconditions:
+      - "The workflow has a previous stable version"
+    steps:
+      - cap: cli:rollback workflow
+        page: recipes
+      - cap: cli:rollback name
+        page: recipes
+        note: "The same rollback addressed by recorded name"
+      - cap: cli:rollback
+        page: recipes
+    terminal_evidence:
+      kind: db-row
+      anchor: "rollback"
+
+  - id: debugger/revert-a-landed-commit
+    persona: debugger
+    value: "One landed commit is reverted by ref, leaving neighbours intact"
+    impact: "A single bad landing does not force a range revert"
+    preconditions:
+      - "The commit hash is known"
+    steps:
+      - cap: cli:undo ref
+        page: changes
+      - cap: cli:undo
+        page: changes
+      - cap: cli:board changes
+        page: changes
+    terminal_evidence:
+      kind: git
+      anchor: "undo"
+
+  - id: debugger/find-drift-after-a-fix
+    persona: debugger
+    value: "Drift introduced by a fix is found before it becomes the next failure"
+    impact: "A fix that creates an orphan or a collision is caught in the same session"
+    preconditions:
+      - "A change has landed"
+    steps:
+      - cap: cli:garden
+        page: setup
+      - cap: cli:validate
+        page: setup
+      - cap: cli:doctor
+        page: setup
+    terminal_evidence:
+      kind: file
+      anchor: "garden"
+
+  - id: debugger/keep-the-better-race-attempt
+    persona: debugger
+    value: "Two competing attempts are compared and the better one is kept"
+    impact: "A race does not end by coin flip or by whichever finished first"
+    preconditions:
+      - "The run raced two attempts"
+    steps:
+      - cap: cli:board race-keep
+        page: run
+      - cap: cli:board changes
+        page: changes
+      - cap: cli:board checkpoints
+        page: run
+    terminal_evidence:
+      kind: file
+      anchor: "race-keep"
+
+  - id: debugger/resume-from-a-checkpoint
+    persona: debugger
+    value: "A run restarts at its last checkpoint instead of its first node"
+    impact: "The spend before the failure is preserved"
+    preconditions:
+      - "The run wrote checkpoints"
+    steps:
+      - cap: cli:board checkpoints
+        page: run
+      - cap: cli:board resume
+        page: run
+      - cap: cli:resume
+        page: run
+    terminal_evidence:
+      kind: file
+      anchor: "checkpoint"
+
+  - id: debugger/retry-one-node
+    persona: debugger
+    value: "A single bad node is retried without rerunning its successful siblings"
+    impact: "A cheap failure stays cheap"
+    preconditions:
+      - "Only one node failed"
+    steps:
+      - cap: cli:board node
+        page: run
+      - cap: cli:board retry
+        page: run
+      - cap: cli:board prompt
+        page: run
+        note: "The prompt that node actually received"
+    terminal_evidence:
+      kind: run-row
+      anchor: "retry"
+
+  - id: debugger/read-one-node
+    persona: debugger
+    value: "One node's output, artifacts and status are read as a unit"
+    impact: "Debugging starts at the failing node, not at the run's start"
+    preconditions:
+      - "The node id is known"
+    steps:
+      - cap: cli:board node
+        page: run
+      - cap: cli:board output
+        page: run
+      - cap: cli:board artifacts
+        page: run
+    terminal_evidence:
+      kind: file
+      anchor: "output"
+
+  - id: debugger/compare-two-attempts
+    persona: debugger
+    value: "Two attempts of the same node are diffed before one is chosen"
+    impact: "Regressions inside a retry are visible"
+    preconditions:
+      - "The node ran more than once"
+    steps:
+      - cap: cli:board changes
+        page: changes
+      - cap: cli:board checkpoints
+        page: run
+      - cap: cli:board show
+        page: run
+    terminal_evidence:
+      kind: file
+      anchor: "changes"
+
+  - id: debugger/follow-the-stream
+    persona: debugger
+    value: "A run's event stream is followed to the event that changed its state"
+    impact: "Timeline questions are answered without opening the database"
+    preconditions:
+      - "The run is live or finished"
+    steps:
+      - cap: cli:board stream
+        page: run
+      - cap: cli:board node
+        page: run
+      - cap: cli:board telemetry
+        page: run
+    terminal_evidence:
+      kind: run-row
+      anchor: "stream"
+
+  - id: debugger/answer-a-blocking-question
+    persona: debugger
+    value: "A run waiting on a human question is unblocked in place"
+    impact: "A parked question does not become a failed run"
+    preconditions:
+      - "The run is waiting on an answer"
+    steps:
+      - cap: cli:board answer
+        page: run
+      - cap: cli:inbox
+        page: inbox
+      - cap: cli:board resume
+        page: run
+    terminal_evidence:
+      kind: run-row
+      anchor: "answer"
+
+  - id: debugger/kill-a-hung-node
+    persona: debugger
+    value: "A hung node is killed without killing the work that already succeeded"
+    impact: "Deadlock does not cost the run's earlier spend"
+    preconditions:
+      - "The node is hung but the run is not"
+    steps:
+      - cap: cli:board kill
+        page: run
+      - cap: cli:board stop
+        page: run
+      - cap: cli:board stream
+        page: run
+    terminal_evidence:
+      kind: run-row
+      anchor: "kill"
+
+  - id: debugger/discard-a-bad-worktree
+    persona: debugger
+    value: "A worktree full of bad edits is discarded while its row is kept"
+    impact: "The record survives the cleanup"
+    preconditions:
+      - "The run's edits must not land"
+    steps:
+      - cap: cli:board discard
+        page: run
+      - cap: cli:board worktree
+        page: run
+      - cap: cli:board changes
+        page: changes
+    terminal_evidence:
+      kind: dir
+      anchor: "discard"
+
+  - id: debugger/close-a-stale-row
+    persona: debugger
+    value: "A row that no longer represents work is dismissed rather than failed"
+    impact: "The failure count means something"
+    preconditions:
+      - "The row is stale"
+    steps:
+      - cap: cli:board dismiss
+        page: run
+      - cap: cli:board not-needed
+        page: run
+      - cap: cli:board runs
+        page: runs
+    terminal_evidence:
+      kind: run-row
+      anchor: "dismiss"
+
+  - id: debugger/restore-a-mistaken-close
+    persona: debugger
+    value: "A run closed by mistake is restored with its history intact"
+    impact: "A cleanup mistake is reversible"
+    preconditions:
+      - "The row was closed recently"
+    steps:
+      - cap: cli:board restore
+        page: run
+      - cap: cli:board show
+        page: run
+      - cap: cli:board runs
+        page: runs
+    terminal_evidence:
+      kind: run-row
+      anchor: "restore"
+
+  - id: debugger/run-the-review-panel
+    persona: debugger
+    value: "A change is reviewed by a panel whose verdict the engineer can cite"
+    impact: "Review quality is a configured panel, not one reviewer's mood"
+    preconditions:
+      - "A diff exists"
+    steps:
+      - cap: cli:review run
+        page: changes
+      - cap: cli:review findings
+        page: changes
+      - cap: cli:review verdict
+        page: changes
+      - cap: cli:review
+        note: "The review runtime the panel runs through"
+    terminal_evidence:
+      kind: file
+      anchor: "review"
+
+  - id: debugger/read-review-findings
+    persona: debugger
+    value: "Review findings are read one by one with their evidence"
+    impact: "A review is actionable, not a verdict to argue with"
+    preconditions:
+      - "A review ran"
+    steps:
+      - cap: cli:review list
+        page: changes
+      - cap: cli:review show
+        page: changes
+      - cap: cli:review findings
+        page: changes
+    terminal_evidence:
+      kind: file
+      anchor: "findings"
+
+  - id: debugger/resolve-a-finding
+    persona: debugger
+    value: "A finding is resolved with a reason instead of being ignored"
+    impact: "Suppressions are recorded decisions"
+    preconditions:
+      - "A finding is open"
+    steps:
+      - cap: cli:review resolve
+        page: changes
+      - cap: cli:review list
+        page: changes
+      - cap: cli:review verdict
+        page: changes
+    terminal_evidence:
+      kind: file
+      anchor: "resolve"
+
+  - id: debugger/gate-before-push
+    persona: debugger
+    value: "A push is gated on the review verdict, not on the author's confidence"
+    impact: "The pre-push gate cannot be skipped by habit"
+    preconditions:
+      - "The branch is ready to push"
+    steps:
+      - cap: cli:review gate
+        page: changes
+      - cap: cli:review verdict
+        page: changes
+      - cap: cli:review run
+        page: changes
+    terminal_evidence:
+      kind: git
+      anchor: "gate"
+
+  - id: debugger/forward-a-finding
+    persona: debugger
+    value: "A finding in one change is forwarded to the change that owns it"
+    impact: "Fixes land where the defect lives, not where it was noticed"
+    preconditions:
+      - "The finding belongs to another branch"
+    steps:
+      - cap: cli:review forward
+        page: changes
+      - cap: cli:review findings
+        page: changes
+      - cap: cli:review list
+        page: changes
+    terminal_evidence:
+      kind: file
+      anchor: "forward"
+
+  - id: debugger/repair-a-dead-target
+    persona: debugger
+    value: "A run whose target checkout disappeared is diagnosed before revival"
+    impact: "Recovery is not attempted against a path that no longer exists"
+    preconditions:
+      - "The run's target may have moved"
+    steps:
+      - cap: cli:repair
+        page: run
+      - cap: cli:recover
+        page: run
+      - cap: cli:triage
+        page: runs
+    terminal_evidence:
+      kind: file
+      anchor: "repair"
+
+  - id: debugger/supervise-a-parked-batch
+    persona: debugger
+    value: "A batch of parked runs is swept and each one labelled once"
+    impact: "Ten stalled runs are handled in one pass"
+    preconditions:
+      - "More than one run is parked"
+    steps:
+      - cap: cli:supervise
+        page: runs
+      - cap: cli:reap
+        page: runs
+      - cap: cli:board runs
+        page: runs
+    terminal_evidence:
+      kind: db-row
+      anchor: "supervise"
+
+  - id: debugger/side-issue-collector
+    persona: debugger
+    value: "Side issues noticed mid-run are collected rather than dropped"
+    impact: "Small defects found during work survive the session"
+    preconditions:
+      - "The collector is wired into a workflow"
+    steps:
+      - cap: cli:bug-collector
+        page: runs
+      - cap: cli:bugs sweep
+        page: runs
+      - cap: cli:bugs show
+        page: runs
+    terminal_evidence:
+      kind: db-row
+      anchor: "bug-collector"
+
+  - id: debugger/explain-a-node-outcome
+    persona: debugger
+    value: "Why a node produced this artifact is answered from routing evidence"
+    impact: "Model choice is never blamed or credited from memory"
+    preconditions:
+      - "The node produced an artifact"
+    steps:
+      - cap: cli:why
+        page: run
+      - cap: cli:board node
+        page: run
+      - cap: cli:board telemetry
+        page: run
+    terminal_evidence:
+      kind: run-row
+      anchor: "why"
+
+  - id: debugger/triage-without-touching-code
+    persona: debugger
+    value: "A failure is classified before a fix is attempted"
+    impact: "The engineer does not fix the wrong repository"
+    preconditions:
+      - "The failure has an evidence log"
+    steps:
+      - cap: cli:triage
+        page: runs
+      - cap: cli:bug-collector
+        page: runs
+      - cap: cli:bugs list
+        page: runs
+    terminal_evidence:
+      kind: file
+      anchor: "triage"
+
+  - id: debugger/validate-after-a-fix
+    persona: debugger
+    value: "A repair is proven against the project's own checks"
+    impact: "A fix that breaks the wiring is caught before the next run"
+    preconditions:
+      - "A fix has landed"
+    steps:
+      - cap: cli:validate
+        page: setup
+      - cap: cli:garden
+        page: setup
+      - cap: cli:doctor
+        page: setup
+    terminal_evidence:
+      kind: file
+      anchor: "validate"
+
+  - id: debugger/compare-harness-variants
+    persona: debugger
+    value: "Two harness variants are contrasted on the failure they were meant to fix"
+    impact: "Prompt changes are judged on outcomes, not on plausibility"
+    preconditions:
+      - "Both variants ran"
+    steps:
+      - cap: cli:harness-contrast
+        page: learn
+      - cap: cli:harness-audit
+        page: learn
+      - cap: cli:harness-card
+        page: learn
+    terminal_evidence:
+      kind: file
+      anchor: "harness-contrast"
+
+  - id: debugger/replay-a-run-from-its-events
+    persona: debugger
+    value: "A finished run is replayed from recorded events to find the divergence point"
+    impact: "A heisenbug is diagnosed without reproducing the original conditions"
+    preconditions:
+      - "The run's event stream was recorded"
+    steps:
+      - cap: cli:board show
+        page: run
+      - cap: cli:board stream
+        page: run
+      - cap: cli:execute
+        page: run
+        note: "The single node, re-executed once the divergence is located"
+    terminal_evidence:
+      kind: run-row
+      anchor: "events"
+
+  - id: debugger/unblock-an-approval
+    persona: debugger
+    value: "A run stalled on a merge approval is traced to the decision it waits on"
+    impact: "The stall is resolved at the ledger, not by rerunning the work"
+    preconditions:
+      - "The run is waiting for approval"
+    steps:
+      - cap: cli:approvals show
+        page: inbox
+      - cap: cli:approvals list
+        page: inbox
+      - cap: cli:board gate
+        page: run
+    terminal_evidence:
+      kind: db-row
+      anchor: "approvals"
+
+  - id: debugger/annotate-node-evidence
+    persona: debugger
+    value: "A node's bad outcome is annotated for the verifier that graded it"
+    impact: "The annotation survives the session and informs the gate"
+    preconditions:
+      - "The node has a verdict"
+    steps:
+      - cap: cli:board node
+        page: run
+      - cap: cli:verifier annotate
+        page: verify
+      - cap: cli:board learning
+        page: run
+    terminal_evidence:
+      kind: file
+      anchor: "annotate"
+
+  - id: debugger/compare-two-verdicts
+    persona: debugger
+    value: "The run verdict and the verifier verdict are compared before a merge"
+    impact: "A verdict that disagrees with its evidence is caught at the gate"
+    preconditions:
+      - "Both verdicts were written"
+    steps:
+      - cap: cli:verify
+        page: verify
+      - cap: cli:verifier list
+        page: verify
+      - cap: cli:board gate
+        page: run
+      - cap: cli:verifier
+        note: "The verifier registry the list reads"
+    terminal_evidence:
+      kind: file
+      anchor: "verdict"
+
+  - id: debugger/read-the-changes-page
+    persona: debugger
+    value: "The changes a run proposes are read with their review state"
+    impact: "Review starts from the diff that will land, not from the plan"
+    preconditions:
+      - "The run produced changes"
+    steps:
+      - cap: cli:board changes
+        page: changes
+      - cap: cli:board show
+        page: run
+      - cap: cli:review list
+        page: changes
+    terminal_evidence:
+      kind: file
+      anchor: "changes"

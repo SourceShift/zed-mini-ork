@@ -101,3 +101,802 @@ journeys:
     terminal_evidence:
       kind: file
       anchor: "agents.yaml"
+
+  - id: operator/health-check-the-install
+    persona: operator
+    value: "The install is checked before it is trusted with a run"
+    impact: "A broken wiring is found in one pass instead of halfway through a paid run"
+    preconditions:
+      - "mini-ork is on PATH"
+    steps:
+      - cap: cli:doctor
+        page: setup
+        note: "One pass over the whole local setup"
+      - cap: cli:garden
+        page: setup
+        note: "Drift, collisions and orphans with concrete Fix hints"
+      - cap: cli:version
+      - cap: cli:validate
+        page: setup
+    terminal_evidence:
+      kind: file
+      anchor: "doctor"
+
+  - id: operator/upgrade-without-losing-runs
+    persona: operator
+    value: "A new engine version lands while live runs keep their state"
+    impact: "Upgrades stop being an event that requires draining the queue first"
+    preconditions:
+      - "The project has at least one finished run"
+    steps:
+      - cap: cli:update
+        note: "Fetches and installs the newer engine"
+      - cap: cli:install
+        note: "Repairs the managed launcher and its shims"
+      - cap: cli:version
+      - cap: cli:doctor
+        page: setup
+        note: "Confirms the upgrade left state.db readable"
+    terminal_evidence:
+      kind: db-row
+      anchor: "state.db"
+
+  - id: operator/install-the-ide-entry
+    persona: operator
+    value: "The IDE opens the project with the mini-ork panes wired in"
+    impact: "The engineer never edits Zed settings by hand to use the product"
+    preconditions:
+      - "Zed is installed with its settings directory"
+    steps:
+      - cap: cli:zed setup
+        page: setup
+        note: "Writes the mini-ork entries into settings.json"
+      - cap: cli:zed status
+        page: setup
+      - cap: cli:acp
+        note: "The stdio agent thread the IDE opens pages through"
+      - cap: cli:zed
+        note: "The editor integration the setup writes into"
+    terminal_evidence:
+      kind: file
+      anchor: "settings.json"
+
+  - id: operator/remove-the-ide-entry
+    persona: operator
+    value: "mini-ork entries are removed from the editor without hand-editing JSON"
+    impact: "A clean uninstall leaves no stale actions pointing at a missing binary"
+    preconditions:
+      - "mini-ork was installed into Zed"
+    steps:
+      - cap: cli:zed uninstall
+        page: setup
+      - cap: cli:zed status
+        page: setup
+        note: "Confirms the entries are gone and nothing else was touched"
+      - cap: cli:version
+    terminal_evidence:
+      kind: file
+      anchor: "zed"
+
+  - id: operator/split-a-roadmap-into-epics
+    persona: operator
+    value: "A roadmap document becomes epics with dependencies the scheduler understands"
+    impact: "Parallel work is planned once, not re-derived per kickoff"
+    preconditions:
+      - "The roadmap names epics and their order"
+    steps:
+      - cap: cli:epics ingest
+      - cap: cli:epics split
+        page: recipes
+      - cap: cli:epics list
+        page: recipes
+      - cap: cli:epics show
+        page: recipes
+        note: "One epic's dependency edges before anything is dispatched"
+      - cap: cli:epics
+        note: "The epic store over the parsed roadmap"
+    terminal_evidence:
+      kind: dir
+      anchor: "epics"
+
+  - id: operator/prioritise-the-backlog
+    persona: operator
+    value: "Epic order reflects the release the engineer is actually shipping"
+    impact: "The scheduler picks the right epic instead of the oldest one"
+    preconditions:
+      - "More than one epic is ready"
+    steps:
+      - cap: cli:epics priority
+        page: recipes
+      - cap: cli:epics set
+        page: recipes
+      - cap: cli:epics ready
+        page: recipes
+        note: "What the scheduler would pick next, after the reorder"
+    terminal_evidence:
+      kind: db-row
+      anchor: "epics"
+
+  - id: operator/inspect-epic-progress
+    persona: operator
+    value: "An epic's progress and blockers are read without opening every child run"
+    impact: "Status meetings cost one command, not a tour of the board"
+    preconditions:
+      - "The epic has at least one child run"
+    steps:
+      - cap: cli:epics status
+        page: recipes
+      - cap: cli:epics list
+        page: recipes
+      - cap: cli:board runs
+        page: runs
+        note: "The same rows the board shows, filtered to this epic's runs"
+    terminal_evidence:
+      kind: run-row
+      anchor: "epic"
+
+  - id: operator/archive-finished-epics
+    persona: operator
+    value: "Delivered epics leave the ready queue without losing their history"
+    impact: "The backlog stays legible; archived work is still queryable"
+    preconditions:
+      - "The epic's children are terminal"
+    steps:
+      - cap: cli:epics archive
+        page: recipes
+      - cap: cli:epics list
+        page: recipes
+      - cap: cli:epics show
+        page: recipes
+    terminal_evidence:
+      kind: db-row
+      anchor: "archive"
+
+  - id: operator/retry-a-stuck-epic
+    persona: operator
+    value: "An epic whose child died is re-queued instead of rebuilt by hand"
+    impact: "One failed child does not require re-planning the whole roadmap"
+    preconditions:
+      - "The epic has a failed or parked child"
+    steps:
+      - cap: cli:epics retry
+        page: recipes
+      - cap: cli:epics ready
+        page: recipes
+      - cap: cli:board runs
+        page: runs
+    terminal_evidence:
+      kind: run-row
+      anchor: "retry"
+
+  - id: operator/run-a-backlog-overnight
+    persona: operator
+    value: "The queue drains unattended within a cost and concurrency budget"
+    impact: "The engineer reviews outcomes in the morning instead of babysitting"
+    preconditions:
+      - "Epics are ready and a concurrency cap is set"
+    steps:
+      - cap: cli:scheduler
+        page: runs
+        note: "The concurrent pool; MO_SCHED_MAX_PARALLEL bounds it"
+      - cap: cli:spawn
+        note: "Bounded child orchestrator when one scheduler is not enough"
+      - cap: cli:supervise
+        page: runs
+        note: "The self-driving sweep under one lease"
+      - cap: cli:conductor
+        note: "Meta-orchestrator view over the whole fleet"
+      - cap: cli:coord
+        note: "The coordination CLI behind a multi-epic fleet"
+    terminal_evidence:
+      kind: run-row
+      anchor: "scheduler"
+
+  - id: operator/watch-the-queue-drain
+    persona: operator
+    value: "Live queue state is visible without tailing a log file"
+    impact: "A stalled queue is seen in seconds, not after an hour of silence"
+    preconditions:
+      - "Runs are executing"
+    steps:
+      - cap: cli:board overview
+        page: kanban
+      - cap: cli:board runs
+        page: runs
+      - cap: cli:board stream
+        page: run
+        note: "The event stream the panels render"
+    terminal_evidence:
+      kind: run-row
+      anchor: "stream"
+
+  - id: operator/schedule-a-recurring-recipe
+    persona: operator
+    value: "A recipe runs on a cron without a server or a webhook"
+    impact: "Repeatable work stops depending on someone remembering a command"
+    preconditions:
+      - "The recipe exists and passes when run by hand"
+    steps:
+      - cap: cli:automations add
+        page: autos
+      - cap: cli:automations tick
+        page: autos
+      - cap: cli:automations scheduler install
+        note: "Installs the platform timer that calls tick"
+      - cap: cli:automations scheduler status
+        page: autos
+      - cap: cli:automations scheduler
+        note: "The platform timer that drives tick"
+    terminal_evidence:
+      kind: file
+      anchor: "automations"
+
+  - id: operator/pause-and-resume-schedules
+    persona: operator
+    value: "Schedules can be held during a freeze and resumed without losing their definition"
+    impact: "A release freeze does not require deleting and recreating automations"
+    preconditions:
+      - "At least one automation is active"
+    steps:
+      - cap: cli:automations pause
+        page: autos
+      - cap: cli:automations list
+        page: autos
+      - cap: cli:automations resume
+        page: autos
+      - cap: cli:automations remove
+        page: autos
+        note: "The permanent option, kept distinct from pause"
+      - cap: cli:automations
+        note: "The schedule registry"
+      - cap: cli:automations scheduler uninstall
+        note: "Removing the platform timer when the project moves off this machine"
+    terminal_evidence:
+      kind: file
+      anchor: "pause"
+
+  - id: operator/inspect-why-a-schedule-failed
+    persona: operator
+    value: "A failed scheduled run is traced to its firing, not to the recipe by guesswork"
+    impact: "The fix lands on the schedule or the recipe, with evidence"
+    preconditions:
+      - "An automation has fired at least once"
+    steps:
+      - cap: cli:automations runs
+        page: autos
+        note: "The per-firing history behind Recent firings"
+      - cap: cli:automations edit
+        page: autos
+        note: "Change the schedule or args without recreating it"
+      - cap: cli:automations run
+        page: autos
+        note: "Fire once now, out of band, to test the fix"
+    terminal_evidence:
+      kind: run-row
+      anchor: "automations"
+
+  - id: operator/draft-a-schedule-from-an-agent
+    persona: operator
+    value: "An agent's proposed schedule is reviewed before anything is installed"
+    impact: "Automation changes stay human-approved even when an agent proposes them"
+    preconditions:
+      - "An agent proposed an automation"
+    steps:
+      - cap: mcp:propose_automation
+        page: autos
+      - cap: cli:automations draft
+        page: autos
+        note: "The pending draft, with its diff"
+      - cap: cli:automations draft commit
+        page: autos
+      - cap: cli:automations draft discard
+        page: autos
+        note: "The reject path, which leaves the installed schedule untouched"
+    terminal_evidence:
+      kind: file
+      anchor: "draft"
+
+  - id: operator/poll-a-ticket-tracker
+    persona: operator
+    value: "A tracker is polled on a timer and reports what it found"
+    impact: "Tickets start work without a webhook or a hosted service"
+    preconditions:
+      - "A pm source is configured"
+    steps:
+      - cap: cli:intake poll
+        page: inbox
+      - cap: cli:intake status
+        page: inbox
+      - cap: cli:intake report
+        page: inbox
+      - cap: cli:intake
+        note: "The intake dispatcher behind the poll"
+    terminal_evidence:
+      kind: file
+      anchor: "intake"
+
+  - id: operator/push-a-ticket-into-a-run
+    persona: operator
+    value: "A single ticket is turned into a run on demand"
+    impact: "Urgent work bypasses the poll interval without a second pipeline"
+    preconditions:
+      - "The ticket names a repository and an outcome"
+    steps:
+      - cap: cli:intake dispatch
+        page: inbox
+        note: "Dispatch one ticket now; the start action the inbox offers"
+      - cap: cli:intake once
+        page: inbox
+      - cap: cli:board runs
+        page: runs
+    terminal_evidence:
+      kind: run-row
+      anchor: "dispatch"
+
+  - id: operator/connect-a-pm-source
+    persona: operator
+    value: "A tracker becomes a first-class source of work, testable before it is trusted"
+    impact: "Connecting a tracker is a config change with a test, not a code change"
+    preconditions:
+      - "The tracker exposes a CLI or API the adapter understands"
+    steps:
+      - cap: cli:pm sources
+        page: setup
+      - cap: cli:pm add
+        page: setup
+      - cap: cli:pm test
+        page: setup
+        note: "Proves the source answers before any ticket is dispatched"
+      - cap: cli:pm remove
+        page: setup
+      - cap: cli:pm
+        note: "The pm registry the source is added to"
+    terminal_evidence:
+      kind: file
+      anchor: "pm"
+
+  - id: operator/handle-an-approval-request
+    persona: operator
+    value: "A pending approval is decided with its evidence in view"
+    impact: "The merge gate is a decision, not a rubber stamp"
+    preconditions:
+      - "A run requested approval"
+    steps:
+      - cap: cli:approvals list
+        page: inbox
+      - cap: cli:approvals show
+        page: inbox
+      - cap: cli:approvals approve
+        page: inbox
+      - cap: cli:approvals policy
+        page: setup
+        note: "Who may approve what, and whether a second pair of eyes is required"
+      - cap: cli:approvals
+        note: "The ledger itself, which owns every decision below"
+    terminal_evidence:
+      kind: db-row
+      anchor: "approvals"
+
+  - id: operator/reject-and-request-changes
+    persona: operator
+    value: "A run that is not ready is sent back with a reason the engine records"
+    impact: "Rejection becomes a typed signal, not a chat message that is lost"
+    preconditions:
+      - "The run's verdict is not yet merged"
+    steps:
+      - cap: cli:approvals reject
+        page: inbox
+      - cap: cli:approvals request-changes
+        page: inbox
+        note: "The softer outcome: the run continues with the note attached"
+      - cap: cli:inbox
+        page: inbox
+        note: "The queue view over the same decisions"
+      - cap: cli:oversight
+        note: "Inbox gates: the queue that holds a decision until it is made"
+    terminal_evidence:
+      kind: db-row
+      anchor: "request-changes"
+
+  - id: operator/answer-a-question-the-run-asks
+    persona: operator
+    value: "A run blocked on a question is unblocked from the IDE"
+    impact: "A parked run does not sit idle until a timeout it will never get"
+    preconditions:
+      - "The run's row is waiting on an answer"
+    steps:
+      - cap: cli:inbox
+        page: inbox
+      - cap: cli:board answer
+        page: run
+        note: "The answer itself, recorded against the run"
+      - cap: cli:board overview
+        page: kanban
+    terminal_evidence:
+      kind: run-row
+      anchor: "answer"
+
+  - id: operator/dismiss-a-run-that-is-not-needed
+    persona: operator
+    value: "A run that turned out to be unnecessary is closed without merging"
+    impact: "The board reflects intent; abandoned work stops looking like a failure"
+    preconditions:
+      - "The run is not going to be merged"
+    steps:
+      - cap: cli:board not-needed
+        page: run
+      - cap: cli:board dismiss
+        page: run
+      - cap: cli:board runs
+        page: runs
+    terminal_evidence:
+      kind: run-row
+      anchor: "not-needed"
+
+  - id: operator/kill-and-clean-a-run
+    persona: operator
+    value: "A run and its worktree are removed without leaving processes behind"
+    impact: "Disk and pid leaks stop accumulating after a bad batch"
+    preconditions:
+      - "The run is the engineer's own, not a teammate's"
+    steps:
+      - cap: cli:board kill
+        page: run
+      - cap: cli:board discard
+        page: run
+        note: "Drops the worktree's changes, which is why it is separate from kill"
+      - cap: cli:board worktree
+        page: run
+        note: "Shows the path that was cleaned, so the receipt is checkable"
+    terminal_evidence:
+      kind: dir
+      anchor: "worktree"
+
+  - id: operator/restore-a-closed-run
+    persona: operator
+    value: "A run closed by accident is reopened with its artifacts intact"
+    impact: "A misclick does not cost a rerun"
+    preconditions:
+      - "The run row still exists"
+    steps:
+      - cap: cli:board restore
+        page: run
+      - cap: cli:board show
+        page: run
+      - cap: cli:board runs
+        page: runs
+    terminal_evidence:
+      kind: run-row
+      anchor: "restore"
+
+  - id: operator/inspect-a-run-row
+    persona: operator
+    value: "One run's state is read from the record, not from a log scroll"
+    impact: "Handoff between engineers carries facts instead of screenshots"
+    preconditions:
+      - "The run id is known"
+    steps:
+      - cap: cli:board show
+        page: run
+      - cap: cli:board overview
+        page: kanban
+      - cap: cli:board telemetry
+        page: run
+        note: "Timing and token evidence behind the row"
+      - cap: cli:board
+        note: "The board JSON every panel reads"
+    terminal_evidence:
+      kind: run-row
+      anchor: "telemetry"
+
+  - id: operator/read-a-runs-artifacts
+    persona: operator
+    value: "The files a run produced are listed and opened from one place"
+    impact: "Review starts from outputs, not from a filesystem hunt"
+    preconditions:
+      - "The run produced artifacts"
+    steps:
+      - cap: cli:board artifacts
+        page: run
+      - cap: cli:board output
+        page: run
+      - cap: cli:board checkpoints
+        page: run
+        note: "The resumable points, which decide whether a rerun is cheap"
+    terminal_evidence:
+      kind: dir
+      anchor: "artifacts"
+
+  - id: operator/see-what-a-run-carried
+    persona: operator
+    value: "The kickoff, harness and learned rules a run used are visible after the fact"
+    impact: "A surprising outcome is explained by the inputs, not by speculation"
+    preconditions:
+      - "The run is finished"
+    steps:
+      - cap: cli:board prompt
+        page: run
+      - cap: cli:board harness
+        page: run
+      - cap: cli:board learning
+        page: run
+    terminal_evidence:
+      kind: file
+      anchor: "harness"
+
+  - id: operator/take-over-a-dead-run
+    persona: operator
+    value: "A run whose dispatcher died is taken over at its last good node"
+    impact: "Paid work before the death is not thrown away"
+    preconditions:
+      - "The run row is live but its process is gone"
+    steps:
+      - cap: cli:recover
+        page: run
+        note: "Enters at the failed node with the run's own lanes"
+      - cap: cli:repair
+        page: run
+      - cap: cli:resume
+        page: run
+        note: "The older resume path, kept for runs the recover planner declines"
+    terminal_evidence:
+      kind: run-row
+      anchor: "recover"
+
+  - id: operator/sweep-and-label-drift
+    persona: operator
+    value: "Dead dispatchers are failed and their diagnoses labelled in one sweep"
+    impact: "The board stops showing work that is not running"
+    preconditions:
+      - "The machine has run more than one batch"
+    steps:
+      - cap: cli:reap
+        page: runs
+      - cap: cli:supervise
+        page: runs
+      - cap: cli:watchdog
+        note: "Per-pass scoring before the sweep decides to abort"
+      - cap: cli:garden
+        page: setup
+    terminal_evidence:
+      kind: db-row
+      anchor: "reaped"
+
+  - id: operator/check-the-fleet
+    persona: operator
+    value: "Every remote node is listed and proven reachable before a run targets it"
+    impact: "A run is not dispatched to a node that has been offline for a week"
+    preconditions:
+      - "At least one node is configured"
+    steps:
+      - cap: cli:nodes ls
+        page: nodes
+      - cap: cli:nodes ping
+        page: nodes
+      - cap: cli:nodes doctor
+        page: nodes
+      - cap: cli:nodes
+        note: "The node registry the three checks read"
+    terminal_evidence:
+      kind: file
+      anchor: "nodes"
+
+  - id: operator/start-a-remote-node
+    persona: operator
+    value: "A data-plane node is started on a host or in docker"
+    impact: "Compute is added without changing where the control plane lives"
+    preconditions:
+      - "The host has credentials for the target"
+    steps:
+      - cap: cli:node-agent
+        page: nodes
+      - cap: cli:node-agent docker
+        page: nodes
+      - cap: cli:node-agent host
+        page: nodes
+        note: "The same server as a host process when docker is unavailable"
+    terminal_evidence:
+      kind: file
+      anchor: "node-agent"
+
+  - id: operator/reclaim-leaked-sandboxes
+    persona: operator
+    value: "Sandbox instances left behind by crashed runs are swept"
+    impact: "Cloud spend does not continue after the run that opened it has died"
+    preconditions:
+      - "The project uses sandboxed execution"
+    steps:
+      - cap: cli:sandbox-gc
+        page: setup
+      - cap: cli:sandbox-gc all
+        page: setup
+      - cap: cli:sandbox-gc docker
+        page: setup
+    terminal_evidence:
+      kind: file
+      anchor: "sandbox-gc"
+
+  - id: operator/sweep-cloud-sandboxes
+    persona: operator
+    value: "Remote sandbox providers are swept one by one when a global sweep is too blunt"
+    impact: "One provider's leak does not require guessing at the others"
+    preconditions:
+      - "More than one provider is configured"
+    steps:
+      - cap: cli:sandbox-gc e2b
+      - cap: cli:sandbox-gc modal
+      - cap: cli:sandbox-gc daytona
+      - cap: cli:sandbox-gc microvm
+      - cap: cli:sandbox-gc static
+    terminal_evidence:
+      kind: file
+      anchor: "sandbox-gc"
+
+  - id: operator/rotate-a-provider-key
+    persona: operator
+    value: "A key is rotated in the real store and the lane is proven to use it"
+    impact: "Secrets never land in a shell history or a config file"
+    preconditions:
+      - "The vault backend is reachable"
+    steps:
+      - cap: cli:vault
+        page: setup
+      - cap: cli:vault status
+        page: setup
+      - cap: cli:vault which
+        page: setup
+        note: "Where that one key actually lives, per provider"
+      - cap: cli:providers configure
+        page: setup
+    terminal_evidence:
+      kind: file
+      anchor: "vault"
+
+  - id: operator/verify-provider-conformance
+    persona: operator
+    value: "A provider is proven to answer the calls its lane will make"
+    impact: "A lane fails at onboarding rather than mid-run with a confusing 400"
+    preconditions:
+      - "The provider has a configured key"
+    steps:
+      - cap: cli:providers status
+        page: setup
+      - cap: cli:providers conform
+        page: setup
+      - cap: cli:doctor
+        page: setup
+    terminal_evidence:
+      kind: file
+      anchor: "providers.yaml"
+
+  - id: operator/register-an-mcp-server
+    persona: operator
+    value: "An external MCP server is registered, checked and removed from one registry"
+    impact: "Agents gain tools without every project editing its own config"
+    preconditions:
+      - "The server can be launched over stdio or a URL"
+    steps:
+      - cap: cli:mcp add
+        page: setup
+      - cap: cli:mcp list
+        page: setup
+      - cap: cli:mcp check
+        page: setup
+        note: "Proves the registration is launchable"
+      - cap: cli:mcp launch
+      - cap: cli:mcp proxy
+      - cap: cli:mcp
+        note: "The registry the add writes to"
+    terminal_evidence:
+      kind: file
+      anchor: "mcp"
+
+  - id: operator/set-operator-preferences
+    persona: operator
+    value: "Standing constraints are recorded once and honoured by later runs"
+    impact: "The engineer stops repeating 'do not commit' and 'use the fast lane'"
+    preconditions:
+      - "The engineer knows the constraint they want"
+    steps:
+      - cap: cli:prefs
+        page: setup
+      - cap: cli:board in-place
+        page: run
+        note: "The per-run workspace choice a preference can pin"
+      - cap: cli:board page
+        page: kanban
+    terminal_evidence:
+      kind: file
+      anchor: "prefs"
+
+  - id: operator/remove-an-mcp-registration
+    persona: operator
+    value: "A stale tool server is removed before it is called by a run"
+    impact: "A dead MCP server cannot fail a run that never needed it"
+    preconditions:
+      - "The registration exists"
+    steps:
+      - cap: cli:mcp rm
+        page: setup
+      - cap: cli:mcp list
+        page: setup
+      - cap: cli:doctor
+        page: setup
+    terminal_evidence:
+      kind: file
+      anchor: "mcp"
+
+  - id: operator/run-the-self-improvement-loop
+    persona: operator
+    value: "The engine's own improvement loop is started, watched and halted deliberately"
+    impact: "Self-edits are a governed process, not an ambient one"
+    preconditions:
+      - "The engineer is on the engine checkout"
+    steps:
+      - cap: cli:rsi-cycle
+        page: learn
+      - cap: cli:rsi-cycle plan
+        page: learn
+      - cap: cli:rsi-cycle doctor
+        page: learn
+      - cap: cli:rsi-cycle halt
+        page: learn
+        note: "The stop switch, exercised before the loop is trusted"
+    terminal_evidence:
+      kind: db-row
+      anchor: "rsi-cycle"
+
+  - id: operator/quarantine-a-bad-self-edit
+    persona: operator
+    value: "A self-edit that regressed the engine is quarantined and reverted"
+    impact: "The improvement loop cannot leave the engine worse than it found it"
+    preconditions:
+      - "A cycle produced a landed change"
+    steps:
+      - cap: cli:rsi-cycle list
+        page: learn
+      - cap: cli:rsi-cycle show
+        page: learn
+      - cap: cli:rsi-cycle quarantine
+        page: learn
+      - cap: cli:rsi-cycle revert
+        page: learn
+    terminal_evidence:
+      kind: db-row
+      anchor: "quarantine"
+
+  - id: operator/serve-the-local-api
+    persona: operator
+    value: "The local observability API answers while the IDE and scripts read it"
+    impact: "One process serves every panel instead of each panel booting its own"
+    preconditions:
+      - "The serve port is free"
+    steps:
+      - cap: cli:serve
+        page: kanban
+      - cap: cli:board page
+        page: kanban
+      - cap: cli:topology
+        page: orch
+        note: "Panel topology telemetry, read from the same server"
+    terminal_evidence:
+      kind: file
+      anchor: "serve"
+
+  - id: operator/step-a-run-by-hand
+    persona: operator
+    value: "A single node is executed in isolation to test a change cheaply"
+    impact: "Fixing a node stops requiring a full run"
+    preconditions:
+      - "The recipe's workflow exists"
+    steps:
+      - cap: cli:execute
+        page: run
+      - cap: cli:execute reflector
+        page: run
+      - cap: cli:run
+        page: runs
+        note: "The full run, used only once the single node behaves"
+    terminal_evidence:
+      kind: run-row
+      anchor: "execute"

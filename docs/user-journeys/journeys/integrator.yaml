@@ -42,3 +42,544 @@ journeys:
     terminal_evidence:
       kind: db-row
       anchor: "concord"
+
+  - id: integrator/browse-runs-from-an-agent
+    persona: integrator
+    value: "An agent lists and reads runs without shelling out"
+    impact: "The client can summarise work it never started"
+    preconditions:
+      - "At least one run exists"
+    steps:
+      - cap: mcp:list_runs
+      - cap: mcp:run_detail
+      - cap: mcp:workspaces
+    terminal_evidence:
+      kind: run-row
+      anchor: "list_runs"
+
+  - id: integrator/watch-a-run-from-an-agent
+    persona: integrator
+    value: "An agent polls a run to terminal and returns its verdict"
+    impact: "Long jobs fit into a request/response client without a webhook"
+    preconditions:
+      - "A run id is known"
+    steps:
+      - cap: mcp:run_status
+      - cap: mcp:run_detail
+      - cap: mcp:wait_for_run
+    terminal_evidence:
+      kind: run-row
+      anchor: "wait_for_run"
+
+  - id: integrator/stop-a-run-from-an-agent
+    persona: integrator
+    value: "An agent cancels its own run before the budget is exhausted"
+    impact: "The client owns its spend, not the human watching the board"
+    preconditions:
+      - "The run is live"
+    steps:
+      - cap: mcp:stop_run
+      - cap: mcp:run_status
+      - cap: mcp:list_runs
+    terminal_evidence:
+      kind: run-row
+      anchor: "stop_run"
+
+  - id: integrator/start-a-run-from-an-agent
+    persona: integrator
+    value: "An agent starts work from a kickoff it composed"
+    impact: "Work generation and execution live in one conversation"
+    preconditions:
+      - "A kickoff file exists"
+    steps:
+      - cap: mcp:start_run
+      - cap: mcp:run_status
+      - cap: mcp:wait_for_run
+    terminal_evidence:
+      kind: run-row
+      anchor: "start_run"
+
+  - id: integrator/discover-recipes-from-an-agent
+    persona: integrator
+    value: "An agent finds the recipe that fits a request before proposing work"
+    impact: "The client reuses the catalogue instead of inventing recipes"
+    preconditions:
+      - "The project has recipes"
+    steps:
+      - cap: mcp:list_recipes
+      - cap: mcp:recipe_guide
+      - cap: mcp:get_recipe_spec
+    terminal_evidence:
+      kind: dir
+      anchor: "list_recipes"
+
+  - id: integrator/inspect-recipes-from-an-agent
+    persona: integrator
+    value: "An agent reads a recipe's purpose and track record"
+    impact: "The client can justify the recipe it chose"
+    preconditions:
+      - "The recipe exists"
+    steps:
+      - cap: mcp:describe_recipe
+      - cap: mcp:list_recipes
+      - cap: mcp:get_recipe_spec
+    terminal_evidence:
+      kind: dir
+      anchor: "describe_recipe"
+
+  - id: integrator/inspect-automations-from-an-agent
+    persona: integrator
+    value: "An agent sees which schedules exist before proposing a new one"
+    impact: "Automation proposals do not duplicate a live schedule"
+    preconditions:
+      - "The project has automations"
+    steps:
+      - cap: mcp:list_automations
+      - cap: mcp:describe_recipe
+      - cap: mcp:list_recipes
+    terminal_evidence:
+      kind: file
+      anchor: "list_automations"
+
+  - id: integrator/ask-cost-from-an-agent
+    persona: integrator
+    value: "An agent answers a spend question with recorded numbers"
+    impact: "The client can budget its next action from evidence"
+    preconditions:
+      - "Runs have recorded spend"
+    steps:
+      - cap: mcp:cost
+      - cap: mcp:lanes
+      - cap: mcp:run_detail
+    terminal_evidence:
+      kind: db-row
+      anchor: "cost_usd"
+
+  - id: integrator/ask-lanes-from-an-agent
+    persona: integrator
+    value: "An agent learns which lanes a workspace can run on"
+    impact: "The client picks a lane that exists instead of one it assumed"
+    preconditions:
+      - "An agents config exists"
+    steps:
+      - cap: mcp:lanes
+      - cap: mcp:cost
+      - cap: mcp:workspaces
+    terminal_evidence:
+      kind: file
+      anchor: "lanes"
+
+  - id: integrator/recall-learnings-from-an-agent
+    persona: integrator
+    value: "An agent retrieves prior lessons before repeating a known mistake"
+    impact: "Institutional memory reaches the client, not just the UI"
+    preconditions:
+      - "Learnings have been written"
+    steps:
+      - cap: mcp:learnings
+      - cap: mcp:run_detail
+      - cap: mcp:certify
+    terminal_evidence:
+      kind: db-row
+      anchor: "learnings"
+
+  - id: integrator/certify-from-an-agent
+    persona: integrator
+    value: "An agent checks that its fix is certified before reporting success"
+    impact: "The client cannot claim a fix it never proved"
+    preconditions:
+      - "A bug and a fix exist"
+    steps:
+      - cap: mcp:certify
+      - cap: mcp:run_detail
+      - cap: cli:certify
+        page: verify
+    terminal_evidence:
+      kind: file
+      anchor: "certify"
+
+  - id: integrator/host-the-agent-interface
+    persona: integrator
+    value: "The ACP and MCP servers are hosted so an IDE or client can connect"
+    impact: "One product serves both a human IDE and a machine client"
+    preconditions:
+      - "The ports and stdio transport are free"
+    steps:
+      - cap: cli:acp
+      - cap: cli:mcp-context
+      - cap: cli:serve
+        page: kanban
+    terminal_evidence:
+      kind: file
+      anchor: "acp"
+
+  - id: integrator/keep-a-thread-alive
+    persona: integrator
+    value: "A thread of work is listed and read after the session that opened it ended"
+    impact: "Conversation state survives a restart"
+    preconditions:
+      - "A thread exists"
+    steps:
+      - cap: cli:threads
+        page: thread
+      - cap: cli:threads list
+        page: thread
+      - cap: cli:threads show
+        page: thread
+    terminal_evidence:
+      kind: db-row
+      anchor: "threads"
+
+  - id: integrator/attach-to-a-thread
+    persona: integrator
+    value: "A second client attaches to an existing thread instead of forking it"
+    impact: "Handoff between surfaces does not lose context"
+    preconditions:
+      - "The thread id is known"
+    steps:
+      - cap: cli:threads attach
+        page: thread
+      - cap: cli:threads show
+        page: thread
+      - cap: cli:threads send
+        page: thread
+    terminal_evidence:
+      kind: db-row
+      anchor: "attach"
+
+  - id: integrator/continue-a-thread
+    persona: integrator
+    value: "A paused thread continues from its last turn"
+    impact: "Long work resumes without replaying the whole conversation"
+    preconditions:
+      - "The thread has history"
+    steps:
+      - cap: cli:threads continue
+        page: thread
+      - cap: cli:threads send
+        page: thread
+      - cap: cli:threads show
+        page: thread
+    terminal_evidence:
+      kind: db-row
+      anchor: "continue"
+
+  - id: integrator/serve-threads
+    persona: integrator
+    value: "Threads are served over a transport rather than read from the database"
+    impact: "A remote client can drive the same threads the IDE shows"
+    preconditions:
+      - "The serve port is free"
+    steps:
+      - cap: cli:threads serve
+      - cap: cli:threads list
+      - cap: cli:threads attach
+    terminal_evidence:
+      kind: db-row
+      anchor: "serve"
+
+  - id: integrator/send-into-a-thread
+    persona: integrator
+    value: "A message is delivered into a thread another surface is watching"
+    impact: "Two surfaces can collaborate on one conversation"
+    preconditions:
+      - "The thread is open somewhere"
+    steps:
+      - cap: cli:threads send
+        page: thread
+      - cap: cli:threads continue
+        page: thread
+      - cap: cli:threads list
+        page: thread
+    terminal_evidence:
+      kind: db-row
+      anchor: "send"
+
+  - id: integrator/open-a-concord-scope
+    persona: integrator
+    value: "A coordination scope is opened once and visible to every participant"
+    impact: "Agents share an address space instead of inventing file locks"
+    preconditions:
+      - "The concord store is reachable"
+    steps:
+      - cap: cli:concord
+      - cap: cli:concord run
+      - cap: cli:concord ps
+    terminal_evidence:
+      kind: db-row
+      anchor: "concord"
+
+  - id: integrator/broadcast-a-decision
+    persona: integrator
+    value: "A decision reaches every participant with an acknowledgement trail"
+    impact: "Silence is distinguishable from agreement"
+    preconditions:
+      - "A scope is open"
+    steps:
+      - cap: cli:concord send
+      - cap: cli:concord inbox
+      - cap: cli:concord ack
+    terminal_evidence:
+      kind: db-row
+      anchor: "ack"
+
+  - id: integrator/claim-a-file
+    persona: integrator
+    value: "A participant claims the files it will edit before editing them"
+    impact: "Two agents cannot silently overwrite each other"
+    preconditions:
+      - "A scope is open"
+    steps:
+      - cap: cli:concord admit
+      - cap: cli:concord claims
+      - cap: cli:concord violations
+    terminal_evidence:
+      kind: db-row
+      anchor: "claims"
+
+  - id: integrator/stop-a-concord-scope
+    persona: integrator
+    value: "A finished scope is closed and proven empty"
+    impact: "Stale coordination state does not outlive the work"
+    preconditions:
+      - "The scope's work is done"
+    steps:
+      - cap: cli:concord stop
+      - cap: cli:concord ps
+      - cap: cli:concord violations
+    terminal_evidence:
+      kind: db-row
+      anchor: "ps"
+
+  - id: integrator/check-concord-health
+    persona: integrator
+    value: "Violations and open claims are reviewed before the next round"
+    impact: "Discipline is measured, not assumed"
+    preconditions:
+      - "A scope has run"
+    steps:
+      - cap: cli:concord violations
+      - cap: cli:concord claims
+      - cap: cli:concord help
+    terminal_evidence:
+      kind: db-row
+      anchor: "violations"
+
+  - id: integrator/read-the-orchestrator-thread
+    persona: integrator
+    value: "The watching thread behind a run is found and read"
+    impact: "The run page's button reaches a real conversation, not a dead link"
+    preconditions:
+      - "The run has an orchestrator thread"
+    steps:
+      - cap: cli:orchestrator
+        page: orch
+      - cap: cli:orchestrator watch
+        page: orch
+      - cap: cli:board stream
+        page: run
+    terminal_evidence:
+      kind: file
+      anchor: "orchestrator.json"
+
+  - id: integrator/drive-the-board-over-http
+    persona: integrator
+    value: "A client reads the board payload over HTTP instead of importing Python"
+    impact: "Non-Python clients can render the same board"
+    preconditions:
+      - "The serve process is running"
+    steps:
+      - cap: cli:serve
+      - cap: cli:board page
+        page: kanban
+      - cap: cli:board overview
+        page: kanban
+    terminal_evidence:
+      kind: file
+      anchor: "7090"
+
+  - id: integrator/poll-the-board-programmatically
+    persona: integrator
+    value: "A client polls runs and events without a shell wrapper"
+    impact: "The integration is a protocol, not a subprocess habit"
+    preconditions:
+      - "Runs exist"
+    steps:
+      - cap: cli:board runs
+      - cap: cli:board show
+      - cap: cli:board stream
+    terminal_evidence:
+      kind: run-row
+      anchor: "runs"
+
+  - id: integrator/start-work-programmatically
+    persona: integrator
+    value: "A client starts a run through the same path the IDE uses"
+    impact: "Two front ends cannot disagree about how work begins"
+    preconditions:
+      - "A kickoff is ready"
+    steps:
+      - cap: cli:board start
+        page: runs
+      - cap: cli:board runs
+        page: runs
+      - cap: cli:board show
+        page: run
+    terminal_evidence:
+      kind: run-row
+      anchor: "start"
+
+  - id: integrator/read-the-run-page-payload
+    persona: integrator
+    value: "The run page's own JSON is read by an external client"
+    impact: "An alternative UI can be built on the stable payload"
+    preconditions:
+      - "A run id is known"
+    steps:
+      - cap: cli:board page
+        page: run
+      - cap: cli:board run
+        page: run
+      - cap: cli:board overview
+        page: kanban
+    terminal_evidence:
+      kind: run-row
+      anchor: "page"
+
+  - id: integrator/register-tools-for-a-workflow
+    persona: integrator
+    value: "The tools a workflow may call are registered and proven launchable"
+    impact: "A workflow's tool grant is explicit, not ambient"
+    preconditions:
+      - "A workflow declares tool use"
+    steps:
+      - cap: cli:mcp add
+        page: setup
+      - cap: cli:mcp check
+        page: setup
+      - cap: cli:mcp proxy
+    terminal_evidence:
+      kind: file
+      anchor: "mcp"
+
+  - id: integrator/remove-a-tools-registration
+    persona: integrator
+    value: "A tool server is unregistered before it can fail a run"
+    impact: "A retired integration stops being callable"
+    preconditions:
+      - "The registration exists"
+    steps:
+      - cap: cli:mcp rm
+        page: setup
+      - cap: cli:mcp list
+        page: setup
+      - cap: cli:mcp check
+        page: setup
+    terminal_evidence:
+      kind: file
+      anchor: "mcp"
+
+  - id: integrator/launch-an-mcp-server
+    persona: integrator
+    value: "A registered server is launched for a client that expects it"
+    impact: "The registry and the launch path agree about how the server starts"
+    preconditions:
+      - "The server is registered"
+    steps:
+      - cap: cli:mcp launch
+      - cap: cli:mcp list
+        page: setup
+      - cap: cli:mcp proxy
+    terminal_evidence:
+      kind: file
+      anchor: "launch"
+
+  - id: integrator/run-a-bounded-child-orchestrator
+    persona: integrator
+    value: "A parent process runs a bounded child orchestrator with its own budget"
+    impact: "Parallel work is capped without a second scheduler"
+    preconditions:
+      - "A parent run exists"
+    steps:
+      - cap: cli:spawn
+      - cap: cli:board runs
+        page: runs
+      - cap: cli:scheduler
+    terminal_evidence:
+      kind: run-row
+      anchor: "spawn"
+
+  - id: integrator/certify-an-integration
+    persona: integrator
+    value: "An integration's claim is certified before it is handed to another team"
+    impact: "A partner consumes a proven surface, not a demo"
+    preconditions:
+      - "The integration has a claim to prove"
+    steps:
+      - cap: mcp:certify
+      - cap: cli:certify summary
+        page: verify
+      - cap: cli:board gate
+        page: run
+    terminal_evidence:
+      kind: file
+      anchor: "certify"
+
+  - id: integrator/stream-events-to-a-client
+    persona: integrator
+    value: "Live events reach a remote client without polling the database"
+    impact: "Dashboards update in place"
+    preconditions:
+      - "The serve process is running"
+    steps:
+      - cap: cli:board stream
+        page: run
+      - cap: cli:serve
+      - cap: mcp:run_status
+    terminal_evidence:
+      kind: run-row
+      anchor: "stream"
+
+  - id: integrator/share-a-workspace-view
+    persona: integrator
+    value: "A client learns which workspaces a home serves before asking for runs"
+    impact: "Queries are scoped correctly the first time"
+    preconditions:
+      - "More than one workspace ran under the home"
+    steps:
+      - cap: mcp:workspaces
+      - cap: mcp:list_runs
+      - cap: cli:board page
+        page: kanban
+    terminal_evidence:
+      kind: file
+      anchor: "workspaces"
+
+  - id: integrator/read-a-run-detail
+    persona: integrator
+    value: "A client reads one run's nodes, verdict and spend from one call"
+    impact: "Summaries are built from a single authoritative response"
+    preconditions:
+      - "The run id is known"
+    steps:
+      - cap: mcp:run_detail
+      - cap: mcp:run_status
+      - cap: cli:why
+        page: run
+    terminal_evidence:
+      kind: run-row
+      anchor: "run_detail"
+
+  - id: integrator/ask-the-engine-to-draft
+    persona: integrator
+    value: "A client asks the engine for a draft instead of writing prompts itself"
+    impact: "Prompt quality comes from the product's own templates"
+    preconditions:
+      - "The client is connected over MCP"
+    steps:
+      - cap: mcp:draft_kickoff
+      - cap: mcp:start_run
+      - cap: mcp:list_runs
+    terminal_evidence:
+      kind: file
+      anchor: "draft_kickoff"

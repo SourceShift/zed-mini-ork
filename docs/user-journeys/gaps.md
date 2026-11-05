@@ -9,19 +9,197 @@ usable from a shell or an MCP client.
 ## Journeys not runnable end-to-end from the IDE
 
 - `analyst/explain-todays-spend` — 2/4 steps reachable — A spend question is answered from recorded rows, not from memory
-- `analyst/check-lane-health` — 2/4 steps reachable — The lanes and nodes a project depends on are checked before a run needs them
+- `analyst/check-lane-health` — 2/5 steps reachable — The lanes and nodes a project depends on are checked before a run needs them
+- `analyst/read-the-lifetime-board` — 2/3 steps reachable — The leaderboard shows which recipes earn their keep over a day, a week and a lifetime
+- `analyst/dig-into-one-recipe-cost` — 2/3 steps reachable — One recipe's cost is broken down before it is nominated for a budget cut
+- `analyst/compare-conductor-generations` — 2/3 steps reachable — Two conductor generations are compared on cost and outcome
+- `analyst/find-the-expensive-region` — 1/3 steps reachable — The code region that burns the budget is named from recorded usage
+- `analyst/revise-a-metric` — 1/3 steps reachable — A metric definition is revised with its history preserved
+- `analyst/calibrate-the-router` — 1/3 steps reachable — Router calibration error and the gate's blind spot are measured
+- `analyst/score-the-reviewer` — 0/3 steps reachable — The review panel's verdicts are scored against the outcomes they predicted
+- `analyst/add-a-reviewer-case` — 0/3 steps reachable — A known-hard change becomes a permanent reviewer case
+- `analyst/score-a-reviewer-run` — 0/3 steps reachable — One reviewer eval run is scored and compared with the previous one
+- `analyst/refresh-reviewer-evidence` — 0/3 steps reachable — Stale reviewer evidence is refreshed before a scoring round
+- `analyst/pick-the-next-eval` — 0/3 steps reachable — The next eval to probe is chosen from what the record says is weakest
+- `analyst/audit-panel-topology` — 0/3 steps reachable — Panel topology telemetry is read to explain a slow or missing panel
+- `analyst/retire-stale-memory` — 0/3 steps reachable — Memory that is past its usefulness is retired with a record
+- `analyst/check-for-silent-collapse` — 0/3 steps reachable — A promotion history that is collapsing is detected before quality drops
+- `analyst/report-collapse-precursors` — 0/3 steps reachable — Silent-collapse precursors are reported alongside the collapse verdict
+- `analyst/probe-for-reward-hacking` — 0/3 steps reachable — A generation history is checked for reward hacking before it is trusted
+- `analyst/fuzz-the-gates` — 0/3 steps reachable — The gates are fuzzed and their false-rate is reported
+- `analyst/watch-a-harness-contrast` — 0/3 steps reachable — An A-vs-B harness contrast is attributed to a cause, not just a delta
+- `analyst/anchor-a-metric` — 0/3 steps reachable — A metric is tied to the anchor that proves it measures what it claims
+- `analyst/check-oracle-integrity` — 0/3 steps reachable — The oracle's integrity is checked before its verdicts are used as ground truth
+- `analyst/review-an-rsi-cycle` — 0/3 steps reachable — One self-improvement cycle is read before the next is planned
+- `analyst/plan-an-rsi-cycle` — 0/3 steps reachable — The next improvement cycle is planned from research and expected impact
+- `analyst/measure-self-improvement` — 1/3 steps reachable — A budgeted self-improvement pass is measured against the leaderboard
+- `analyst/read-run-telemetry` — 0/3 steps reachable — One run's telemetry explains where its time and tokens went
+- `analyst/ask-cost-over-mcp` — 1/3 steps reachable — An assistant answers a cost question without shell access
+- `analyst/ask-lanes-over-mcp` — 1/3 steps reachable — The lane inventory is answered from the active config, not from a stale doc
+- `analyst/read-learnings` — 1/3 steps reachable — The lessons the engine wrote back are read and triaged
+- `analyst/budget-a-batch` — 2/3 steps reachable — A batch is budgeted from recorded per-run spend before it is queued
+- `analyst/compare-two-recipes` — 1/3 steps reachable — Two recipes are compared on cost, success and track record
+- `analyst/track-spend-over-time` — 2/3 steps reachable — Spend over a day, a week and a lifetime is read from the same record
+- `analyst/attribute-cost-to-a-node` — 1/3 steps reachable — Spend is attributed to the node and lane that spent it
+- `analyst/certify-a-fix-regression` — 0/3 steps reachable — A fix is certified rather than assumed from a passing test suite
+- `analyst/review-the-learning-writeback` — 0/3 steps reachable — Learned rules are audited against the outcomes that produced them
 - `author/ticket-to-kickoff` — 0/4 steps reachable — A ticket becomes a reviewable kickoff before any money is spent
 - `author/teach-the-machine-a-recipe` — 0/4 steps reachable — An idea becomes a graded recipe draft, then a schedule proposal
+- `author/spec-to-kickoff` — 0/3 steps reachable — A markdown spec becomes ingestible work with a kickoff per unit
+- `author/ratify-a-spec` — 0/3 steps reachable — A spec that passed lint is ratified so it can drive dispatch
+- `author/lint-a-spec-set` — 0/4 steps reachable — Every pending spec is checked in one pass before a batch dispatch
+- `author/classify-a-request` — 0/3 steps reachable — A free-text request is routed to the task class that should own it
+- `author/plan-before-implementing` — 0/3 steps reachable — A plan is produced and inspected before any implementer edits a file
+- `author/reflect-on-a-run` — 0/3 steps reachable — What the run learned is written back instead of discarded with the session
+- `author/find-a-recipe-that-fits` — 0/4 steps reachable — An existing recipe is found and read before a new one is written
+- `author/draft-a-recipe-with-an-agent` — 0/3 steps reachable — An agent drafts a recipe and the engineer grades it before it is adopted
+- `author/turn-a-failure-into-a-harness-edit` — 0/3 steps reachable — A failure receipt becomes a typed harness edit instead of a prompt tweak
+- `author/gate-a-harness-edit` — 0/3 steps reachable — An applied harness edit is audited for tampering before it is kept
+- `author/apply-a-change-behind-a-mock` — 0/4 steps reachable — A change is rehearsed against a mock and a probe before it is applied for real
+- `author/steer-a-live-run` — 0/3 steps reachable — A running agent is steered with a typed injection rather than a stop and restart
+- `author/learn-a-rule-from-a-failure` — 1/3 steps reachable — A repeated failure becomes a learned rule with provenance
+- `author/set-a-feature-flag` — 2/3 steps reachable — A cost or behaviour feature is switched on for one project, deliberately
+- `author/render-the-feature-skill` — 1/3 steps reachable — The feature catalogue is rendered into the skill an agent reads
+- `author/turn-a-knob-on` — 1/3 steps reachable — A single quality knob is enabled and its cost is accepted knowingly
+- `author/compare-judging-knobs` — 1/4 steps reachable — The oracle and relation gates are chosen with their trade-off in view
+- `author/choose-the-scoring-arm` — 0/3 steps reachable — The scoring arm is picked once and stays comparable across runs
+- `author/turn-on-learning-writeback` — 1/3 steps reachable — Learned rules are written back without also minting reward stamps
+- `author/assay-a-differential` — 0/3 steps reachable — A differential assay is run as a declared comparison, not a one-off script
+- `author/write-a-skill` — 1/3 steps reachable — A procedure is packaged as a skill an agent can be granted
+- `author/promote-a-mined-skill` — 2/3 steps reachable — A procedure mined from traces is promoted only after it validates
+- `author/reuse-prior-work` — 2/4 steps reachable — A new task is checked against prior work before a run is spent on it
+- `author/acknowledge-an-overlap` — 2/3 steps reachable — A known overlap is acknowledged so it stops resurfacing as a warning
+- `author/record-what-happened` — 1/3 steps reachable — The outcome of a task is recorded against the work it reused
+- `author/ask-the-memory-a-question` — 1/3 steps reachable — A question about prior decisions is answered from stored memory
+- `author/draft-a-kickoff-from-a-line` — 0/4 steps reachable — One sentence becomes a kickoff skeleton the engineer edits
+- `author/review-a-draft-before-approval` — 0/3 steps reachable — An agent's kickoff draft is reviewed and approved, never auto-started
+- `author/distill-the-trajectories` — 1/3 steps reachable — Recorded trajectories are distilled into grounded lessons
+- `author/explain-a-model-choice` — 0/3 steps reachable — The model behind an artifact is justified from recorded routing, not memory
+- `author/score-a-certification` — 0/3 steps reachable — A change is certified as actually fixing the bug it claims
+- `author/lint-the-skill-registry` — 1/3 steps reachable — Every registered skill is validated before a workflow grants it
+- `author/plan-a-change-from-a-ticket` — 0/3 steps reachable — A ticket is planned into steps that a reviewer can argue with
 - `debugger/attribute-a-failure` — 1/4 steps reachable — A failed run is attributed to mini-ork or to the consumer before anyone edits code
 - `debugger/fix-a-bad-verdict` — 3/4 steps reachable — A verifier that was wrong can be corrected without editing the workflow by hand
 - `debugger/roll-back-a-bad-landing` — 0/3 steps reachable — A commit that should not have landed is reverted as a gated commit
+- `debugger/inspect-then-reproduce-a-bug` — 2/3 steps reachable — A reported bug is read and swept before anyone reruns the work
+- `debugger/queue-a-framework-bug` — 0/3 steps reachable — A framework defect is queued with its evidence instead of living in chat
+- `debugger/sweep-the-bug-queue` — 2/4 steps reachable — Open bugs are swept for duplicates and re-ranked after a fix lands
+- `debugger/verify-a-runs-gates` — 2/3 steps reachable — Every gate a run passed is re-read before its verdict is trusted
+- `debugger/annotate-a-false-negative` — 2/3 steps reachable — A verifier that rejected good work is labelled so the gate learns
+- `debugger/patch-the-run-graph` — 2/3 steps reachable — A run's DAG is repaired with a typed patch instead of restarting it
+- `debugger/audit-the-graph-patches` — 2/4 steps reachable — Every patch applied to a run's graph is listed and re-validated
+- `debugger/roll-back-a-workflow-version` — 0/3 steps reachable — A workflow returns to its last stable version without a git revert
+- `debugger/revert-a-landed-commit` — 0/3 steps reachable — One landed commit is reverted by ref, leaving neighbours intact
+- `debugger/find-drift-after-a-fix` — 1/3 steps reachable — Drift introduced by a fix is found before it becomes the next failure
+- `debugger/keep-the-better-race-attempt` — 0/3 steps reachable — Two competing attempts are compared and the better one is kept
+- `debugger/resume-from-a-checkpoint` — 1/3 steps reachable — A run restarts at its last checkpoint instead of its first node
+- `debugger/retry-one-node` — 1/3 steps reachable — A single bad node is retried without rerunning its successful siblings
+- `debugger/read-one-node` — 0/3 steps reachable — One node's output, artifacts and status are read as a unit
+- `debugger/compare-two-attempts` — 0/3 steps reachable — Two attempts of the same node are diffed before one is chosen
+- `debugger/follow-the-stream` — 0/3 steps reachable — A run's event stream is followed to the event that changed its state
+- `debugger/answer-a-blocking-question` — 1/3 steps reachable — A run waiting on a human question is unblocked in place
+- `debugger/kill-a-hung-node` — 2/3 steps reachable — A hung node is killed without killing the work that already succeeded
+- `debugger/discard-a-bad-worktree` — 1/3 steps reachable — A worktree full of bad edits is discarded while its row is kept
+- `debugger/close-a-stale-row` — 1/3 steps reachable — A row that no longer represents work is dismissed rather than failed
+- `debugger/restore-a-mistaken-close` — 1/3 steps reachable — A run closed by mistake is restored with its history intact
+- `debugger/run-the-review-panel` — 0/4 steps reachable — A change is reviewed by a panel whose verdict the engineer can cite
+- `debugger/read-review-findings` — 0/3 steps reachable — Review findings are read one by one with their evidence
+- `debugger/resolve-a-finding` — 0/3 steps reachable — A finding is resolved with a reason instead of being ignored
+- `debugger/gate-before-push` — 0/3 steps reachable — A push is gated on the review verdict, not on the author's confidence
+- `debugger/forward-a-finding` — 0/3 steps reachable — A finding in one change is forwarded to the change that owns it
+- `debugger/repair-a-dead-target` — 2/3 steps reachable — A run whose target checkout disappeared is diagnosed before revival
+- `debugger/supervise-a-parked-batch` — 2/3 steps reachable — A batch of parked runs is swept and each one labelled once
+- `debugger/side-issue-collector` — 1/3 steps reachable — Side issues noticed mid-run are collected rather than dropped
+- `debugger/explain-a-node-outcome` — 0/3 steps reachable — Why a node produced this artifact is answered from routing evidence
+- `debugger/triage-without-touching-code` — 1/3 steps reachable — A failure is classified before a fix is attempted
+- `debugger/validate-after-a-fix` — 1/3 steps reachable — A repair is proven against the project's own checks
+- `debugger/compare-harness-variants` — 0/3 steps reachable — Two harness variants are contrasted on the failure they were meant to fix
+- `debugger/replay-a-run-from-its-events` — 0/3 steps reachable — A finished run is replayed from recorded events to find the divergence point
+- `debugger/unblock-an-approval` — 1/3 steps reachable — A run stalled on a merge approval is traced to the decision it waits on
+- `debugger/annotate-node-evidence` — 1/3 steps reachable — A node's bad outcome is annotated for the verifier that graded it
+- `debugger/compare-two-verdicts` — 3/4 steps reachable — The run verdict and the verifier verdict are compared before a merge
+- `debugger/read-the-changes-page` — 0/3 steps reachable — The changes a run proposes are read with their review state
 - `integrator/drive-work-from-an-agent` — 0/5 steps reachable — Another MCP client starts, watches and stops mini-ork runs
 - `integrator/coordinate-two-agents` — 1/4 steps reachable — Two agents on one problem agree who owns what before either edits
+- `integrator/browse-runs-from-an-agent` — 0/3 steps reachable — An agent lists and reads runs without shelling out
+- `integrator/watch-a-run-from-an-agent` — 0/3 steps reachable — An agent polls a run to terminal and returns its verdict
+- `integrator/stop-a-run-from-an-agent` — 0/3 steps reachable — An agent cancels its own run before the budget is exhausted
+- `integrator/start-a-run-from-an-agent` — 0/3 steps reachable — An agent starts work from a kickoff it composed
+- `integrator/discover-recipes-from-an-agent` — 0/3 steps reachable — An agent finds the recipe that fits a request before proposing work
+- `integrator/inspect-recipes-from-an-agent` — 0/3 steps reachable — An agent reads a recipe's purpose and track record
+- `integrator/inspect-automations-from-an-agent` — 0/3 steps reachable — An agent sees which schedules exist before proposing a new one
+- `integrator/ask-cost-from-an-agent` — 0/3 steps reachable — An agent answers a spend question with recorded numbers
+- `integrator/ask-lanes-from-an-agent` — 0/3 steps reachable — An agent learns which lanes a workspace can run on
+- `integrator/recall-learnings-from-an-agent` — 0/3 steps reachable — An agent retrieves prior lessons before repeating a known mistake
+- `integrator/certify-from-an-agent` — 0/3 steps reachable — An agent checks that its fix is certified before reporting success
+- `integrator/host-the-agent-interface` — 0/3 steps reachable — The ACP and MCP servers are hosted so an IDE or client can connect
+- `integrator/keep-a-thread-alive` — 0/3 steps reachable — A thread of work is listed and read after the session that opened it ended
+- `integrator/attach-to-a-thread` — 0/3 steps reachable — A second client attaches to an existing thread instead of forking it
+- `integrator/continue-a-thread` — 0/3 steps reachable — A paused thread continues from its last turn
+- `integrator/serve-threads` — 0/3 steps reachable — Threads are served over a transport rather than read from the database
+- `integrator/send-into-a-thread` — 0/3 steps reachable — A message is delivered into a thread another surface is watching
+- `integrator/open-a-concord-scope` — 1/3 steps reachable — A coordination scope is opened once and visible to every participant
+- `integrator/broadcast-a-decision` — 2/3 steps reachable — A decision reaches every participant with an acknowledgement trail
+- `integrator/claim-a-file` — 0/3 steps reachable — A participant claims the files it will edit before editing them
+- `integrator/stop-a-concord-scope` — 1/3 steps reachable — A finished scope is closed and proven empty
+- `integrator/check-concord-health` — 0/3 steps reachable — Violations and open claims are reviewed before the next round
+- `integrator/read-the-orchestrator-thread` — 0/3 steps reachable — The watching thread behind a run is found and read
+- `integrator/drive-the-board-over-http` — 0/3 steps reachable — A client reads the board payload over HTTP instead of importing Python
+- `integrator/poll-the-board-programmatically` — 0/3 steps reachable — A client polls runs and events without a shell wrapper
+- `integrator/start-work-programmatically` — 1/3 steps reachable — A client starts a run through the same path the IDE uses
+- `integrator/read-the-run-page-payload` — 0/3 steps reachable — The run page's own JSON is read by an external client
+- `integrator/register-tools-for-a-workflow` — 0/3 steps reachable — The tools a workflow may call are registered and proven launchable
+- `integrator/remove-a-tools-registration` — 0/3 steps reachable — A tool server is unregistered before it can fail a run
+- `integrator/launch-an-mcp-server` — 0/3 steps reachable — A registered server is launched for a client that expects it
+- `integrator/run-a-bounded-child-orchestrator` — 1/3 steps reachable — A parent process runs a bounded child orchestrator with its own budget
+- `integrator/certify-an-integration` — 1/3 steps reachable — An integration's claim is certified before it is handed to another team
+- `integrator/stream-events-to-a-client` — 0/3 steps reachable — Live events reach a remote client without polling the database
+- `integrator/share-a-workspace-view` — 0/3 steps reachable — A client learns which workspaces a home serves before asking for runs
+- `integrator/read-a-run-detail` — 0/3 steps reachable — A client reads one run's nodes, verdict and spend from one call
+- `integrator/ask-the-engine-to-draft` — 0/3 steps reachable — A client asks the engine for a draft instead of writing prompts itself
 - `operator/roadmap-to-running-agents` — 2/5 steps reachable — A roadmap becomes executing agents without hand-writing kickoffs
 - `operator/nightly-quality-run` — 3/4 steps reachable — A recipe runs every night and reports to the board
 - `operator/approve-before-merge` — 2/3 steps reachable — Merging a run's work is an explicit, reviewed decision
 - `operator/stop-a-runaway` — 1/3 steps reachable — A burning run is stopped or steered before it spends its cap
 - `operator/onboard-a-new-project` — 1/5 steps reachable — A checkout becomes a mini-ork project with lanes, keys and an IDE
+- `operator/health-check-the-install` — 1/4 steps reachable — The install is checked before it is trusted with a run
+- `operator/upgrade-without-losing-runs` — 1/4 steps reachable — A new engine version lands while live runs keep their state
+- `operator/install-the-ide-entry` — 0/4 steps reachable — The IDE opens the project with the mini-ork panes wired in
+- `operator/remove-the-ide-entry` — 0/3 steps reachable — mini-ork entries are removed from the editor without hand-editing JSON
+- `operator/split-a-roadmap-into-epics` — 1/5 steps reachable — A roadmap document becomes epics with dependencies the scheduler understands
+- `operator/prioritise-the-backlog` — 0/3 steps reachable — Epic order reflects the release the engineer is actually shipping
+- `operator/inspect-epic-progress` — 0/3 steps reachable — An epic's progress and blockers are read without opening every child run
+- `operator/archive-finished-epics` — 0/3 steps reachable — Delivered epics leave the ready queue without losing their history
+- `operator/retry-a-stuck-epic` — 1/3 steps reachable — An epic whose child died is re-queued instead of rebuilt by hand
+- `operator/run-a-backlog-overnight` — 2/5 steps reachable — The queue drains unattended within a cost and concurrency budget
+- `operator/watch-the-queue-drain` — 0/3 steps reachable — Live queue state is visible without tailing a log file
+- `operator/schedule-a-recurring-recipe` — 4/5 steps reachable — A recipe runs on a cron without a server or a webhook
+- `operator/draft-a-schedule-from-an-agent` — 3/4 steps reachable — An agent's proposed schedule is reviewed before anything is installed
+- `operator/poll-a-ticket-tracker` — 1/4 steps reachable — A tracker is polled on a timer and reports what it found
+- `operator/push-a-ticket-into-a-run` — 2/3 steps reachable — A single ticket is turned into a run on demand
+- `operator/connect-a-pm-source` — 4/5 steps reachable — A tracker becomes a first-class source of work, testable before it is trusted
+- `operator/handle-an-approval-request` — 2/5 steps reachable — A pending approval is decided with its evidence in view
+- `operator/reject-and-request-changes` — 0/4 steps reachable — A run that is not ready is sent back with a reason the engine records
+- `operator/answer-a-question-the-run-asks` — 0/3 steps reachable — A run blocked on a question is unblocked from the IDE
+- `operator/dismiss-a-run-that-is-not-needed` — 1/3 steps reachable — A run that turned out to be unnecessary is closed without merging
+- `operator/kill-and-clean-a-run` — 2/3 steps reachable — A run and its worktree are removed without leaving processes behind
+- `operator/restore-a-closed-run` — 1/3 steps reachable — A run closed by accident is reopened with its artifacts intact
+- `operator/inspect-a-run-row` — 1/4 steps reachable — One run's state is read from the record, not from a log scroll
+- `operator/read-a-runs-artifacts` — 0/3 steps reachable — The files a run produced are listed and opened from one place
+- `operator/see-what-a-run-carried` — 0/3 steps reachable — The kickoff, harness and learned rules a run used are visible after the fact
+- `operator/take-over-a-dead-run` — 1/3 steps reachable — A run whose dispatcher died is taken over at its last good node
+- `operator/sweep-and-label-drift` — 2/4 steps reachable — Dead dispatchers are failed and their diagnoses labelled in one sweep
+- `operator/check-the-fleet` — 3/4 steps reachable — Every remote node is listed and proven reachable before a run targets it
+- `operator/start-a-remote-node` — 0/3 steps reachable — A data-plane node is started on a host or in docker
+- `operator/rotate-a-provider-key` — 0/4 steps reachable — A key is rotated in the real store and the lane is proven to use it
+- `operator/verify-provider-conformance` — 1/3 steps reachable — A provider is proven to answer the calls its lane will make
+- `operator/register-an-mcp-server` — 0/6 steps reachable — An external MCP server is registered, checked and removed from one registry
+- `operator/set-operator-preferences` — 0/3 steps reachable — Standing constraints are recorded once and honoured by later runs
+- `operator/remove-an-mcp-registration` — 1/3 steps reachable — A stale tool server is removed before it is called by a run
+- `operator/run-the-self-improvement-loop` — 0/4 steps reachable — The engine's own improvement loop is started, watched and halted deliberately
+- `operator/quarantine-a-bad-self-edit` — 0/4 steps reachable — A self-edit that regressed the engine is quarantined and reverted
+- `operator/serve-the-local-api` — 0/3 steps reachable — The local observability API answers while the IDE and scripts read it
+- `operator/step-a-run-by-hand` — 0/3 steps reachable — A single node is executed in isolation to test a change cheaply
 
 ## Steps the IDE cannot run
 
@@ -29,7 +207,91 @@ usable from a shell or an MCP client.
 - `analyst/explain-todays-spend` → `cli:lifetime show`: none
 - `analyst/check-lane-health` → `mcp:lanes`: none
 - `analyst/check-lane-health` → `cli:providers status`: none
-- `analyst/check-lane-health` → `cli:verifier list`: partial (verify.py:317)
+- `analyst/check-lane-health` → `cli:verifier list`: partial (verify.py:323)
+- `analyst/check-lane-health` → `cli:providers`: none
+- `analyst/read-the-lifetime-board` → `cli:lifetime`: partial (lanes.py:59)
+- `analyst/read-the-lifetime-board` → `cli:lifetime show`: none
+- `analyst/dig-into-one-recipe-cost` → `cli:lifetime show`: none
+- `analyst/compare-conductor-generations` → `cli:rsi-cycle show`: none
+- `analyst/find-the-expensive-region` → `cli:board telemetry`: none
+- `analyst/find-the-expensive-region` → `cli:metrics`: none
+- `analyst/revise-a-metric` → `cli:metrics`: none
+- `analyst/revise-a-metric` → `cli:metrics revise`: none
+- `analyst/calibrate-the-router` → `cli:calibrate`: none
+- `analyst/calibrate-the-router` → `cli:metric-anchor`: none
+- `analyst/score-the-reviewer` → `cli:reviewer-eval`: none
+- `analyst/score-the-reviewer` → `cli:reviewer-eval status`: none
+- `analyst/score-the-reviewer` → `cli:reviewer-eval run`: none
+- `analyst/add-a-reviewer-case` → `cli:reviewer-eval add-case`: none
+- `analyst/add-a-reviewer-case` → `cli:reviewer-eval list`: none
+- `analyst/add-a-reviewer-case` → `cli:reviewer-eval refresh-evidence`: none
+- `analyst/score-a-reviewer-run` → `cli:reviewer-eval score`: none
+- `analyst/score-a-reviewer-run` → `cli:reviewer-eval run`: none
+- `analyst/score-a-reviewer-run` → `cli:reviewer-eval status`: none
+- `analyst/refresh-reviewer-evidence` → `cli:reviewer-eval refresh-evidence`: none
+- `analyst/refresh-reviewer-evidence` → `cli:reviewer-eval list`: none
+- `analyst/refresh-reviewer-evidence` → `cli:reviewer-eval add-case`: none
+- `analyst/pick-the-next-eval` → `cli:active-eval`: none
+- `analyst/pick-the-next-eval` → `cli:reviewer-eval status`: none
+- `analyst/pick-the-next-eval` → `cli:metrics`: none
+- `analyst/audit-panel-topology` → `cli:topology`: none
+- `analyst/audit-panel-topology` → `cli:board telemetry`: none
+- `analyst/audit-panel-topology` → `cli:serve`: none
+- `analyst/retire-stale-memory` → `cli:memory-lifecycle`: none
+- `analyst/retire-stale-memory` → `cli:cn status`: none
+- `analyst/retire-stale-memory` → `cli:board learning`: none
+- `analyst/check-for-silent-collapse` → `cli:collapse-check`: none
+- `analyst/check-for-silent-collapse` → `cli:collapse-precursor`: none
+- `analyst/check-for-silent-collapse` → `cli:metrics`: none
+- `analyst/report-collapse-precursors` → `cli:collapse-precursor`: none
+- `analyst/report-collapse-precursors` → `cli:collapse-check`: none
+- `analyst/report-collapse-precursors` → `cli:reviewer-eval status`: none
+- `analyst/probe-for-reward-hacking` → `cli:hack-probe`: none
+- `analyst/probe-for-reward-hacking` → `cli:metrics`: none
+- `analyst/probe-for-reward-hacking` → `cli:rsi-cycle show`: none
+- `analyst/fuzz-the-gates` → `cli:gate-fuzz`: none
+- `analyst/fuzz-the-gates` → `cli:calibrate`: none
+- `analyst/fuzz-the-gates` → `cli:metrics`: none
+- `analyst/watch-a-harness-contrast` → `cli:harness-contrast`: none
+- `analyst/watch-a-harness-contrast` → `cli:harness-audit`: none
+- `analyst/watch-a-harness-contrast` → `cli:metric-anchor`: none
+- `analyst/anchor-a-metric` → `cli:metric-anchor`: none
+- `analyst/anchor-a-metric` → `cli:metrics revise`: none
+- `analyst/anchor-a-metric` → `cli:calibrate`: none
+- `analyst/check-oracle-integrity` → `cli:instruments`: none
+- `analyst/check-oracle-integrity` → `cli:instruments oracle-integrity`: none
+- `analyst/check-oracle-integrity` → `cli:gate-fuzz`: none
+- `analyst/review-an-rsi-cycle` → `cli:rsi-cycle show`: none
+- `analyst/review-an-rsi-cycle` → `cli:rsi-cycle list`: none
+- `analyst/review-an-rsi-cycle` → `cli:rsi-cycle plan`: none
+- `analyst/plan-an-rsi-cycle` → `cli:rsi-cycle plan`: none
+- `analyst/plan-an-rsi-cycle` → `cli:rsi-cycle research`: none
+- `analyst/plan-an-rsi-cycle` → `cli:rsi-cycle impact`: none
+- `analyst/measure-self-improvement` → `cli:self-improve`: none
+- `analyst/measure-self-improvement` → `cli:rsi-cycle impact`: none
+- `analyst/read-run-telemetry` → `cli:board telemetry`: none
+- `analyst/read-run-telemetry` → `cli:board learning`: none
+- `analyst/read-run-telemetry` → `mcp:cost`: none
+- `analyst/ask-cost-over-mcp` → `mcp:cost`: none
+- `analyst/ask-cost-over-mcp` → `mcp:lanes`: none
+- `analyst/ask-lanes-over-mcp` → `mcp:lanes`: none
+- `analyst/ask-lanes-over-mcp` → `cli:providers status`: none
+- `analyst/read-learnings` → `mcp:learnings`: none
+- `analyst/read-learnings` → `cli:board learning`: none
+- `analyst/read-learnings` → `cli:lessons`: partial (run.py:2677)
+- `analyst/budget-a-batch` → `cli:lifetime`: partial (lanes.py:59)
+- `analyst/budget-a-batch` → `cli:board telemetry`: none
+- `analyst/compare-two-recipes` → `cli:lifetime show`: none
+- `analyst/compare-two-recipes` → `cli:metrics`: none
+- `analyst/track-spend-over-time` → `mcp:cost`: none
+- `analyst/attribute-cost-to-a-node` → `cli:board telemetry`: none
+- `analyst/attribute-cost-to-a-node` → `cli:board node`: none
+- `analyst/certify-a-fix-regression` → `cli:certify summary`: none
+- `analyst/certify-a-fix-regression` → `cli:certify`: none
+- `analyst/certify-a-fix-regression` → `cli:metric-anchor`: none
+- `analyst/review-the-learning-writeback` → `cli:board learning`: none
+- `analyst/review-the-learning-writeback` → `cli:memory-lifecycle`: none
+- `analyst/review-the-learning-writeback` → `cli:metrics`: none
 - `author/ticket-to-kickoff` → `cli:kickoff new`: none
 - `author/ticket-to-kickoff` → `mcp:draft_kickoff`: none
 - `author/ticket-to-kickoff` → `cli:validate`: none
@@ -38,17 +300,218 @@ usable from a shell or an MCP client.
 - `author/teach-the-machine-a-recipe` → `cli:recipe-eval`: none
 - `author/teach-the-machine-a-recipe` → `mcp:describe_recipe`: none
 - `author/teach-the-machine-a-recipe` → `mcp:propose_automation`: none
+- `author/spec-to-kickoff` → `cli:specs ingest`: none
+- `author/spec-to-kickoff` → `cli:specs lint`: none
+- `author/spec-to-kickoff` → `cli:kickoff new`: none
+- `author/ratify-a-spec` → `cli:specs list`: none
+- `author/ratify-a-spec` → `cli:specs ratify`: none
+- `author/ratify-a-spec` → `cli:specs lint`: none
+- `author/lint-a-spec-set` → `cli:specs list`: none
+- `author/lint-a-spec-set` → `cli:specs lint`: none
+- `author/lint-a-spec-set` → `cli:specs ingest`: none
+- `author/lint-a-spec-set` → `cli:specs`: none
+- `author/classify-a-request` → `cli:classify`: none
+- `author/classify-a-request` → `cli:kickoff new`: none
+- `author/classify-a-request` → `mcp:start_run`: none
+- `author/plan-before-implementing` → `cli:plan`: none
+- `author/plan-before-implementing` → `cli:plan stdout`: none
+- `author/plan-before-implementing` → `cli:execute`: none
+- `author/reflect-on-a-run` → `cli:reflect`: none
+- `author/reflect-on-a-run` → `cli:execute reflector`: none
+- `author/reflect-on-a-run` → `cli:board learning`: none
+- `author/find-a-recipe-that-fits` → `mcp:list_recipes`: none
+- `author/find-a-recipe-that-fits` → `mcp:recipe_guide`: none
+- `author/find-a-recipe-that-fits` → `mcp:get_recipe_spec`: none
+- `author/find-a-recipe-that-fits` → `mcp:describe_recipe`: none
+- `author/draft-a-recipe-with-an-agent` → `mcp:draft_recipe`: none
+- `author/draft-a-recipe-with-an-agent` → `mcp:get_recipe_spec`: none
+- `author/draft-a-recipe-with-an-agent` → `cli:recipe-eval`: none
+- `author/turn-a-failure-into-a-harness-edit` → `cli:harness-edit`: none
+- `author/turn-a-failure-into-a-harness-edit` → `cli:harness-card`: none
+- `author/turn-a-failure-into-a-harness-edit` → `cli:harness-audit`: none
+- `author/gate-a-harness-edit` → `cli:harness-audit`: none
+- `author/gate-a-harness-edit` → `cli:harness-card`: none
+- `author/gate-a-harness-edit` → `cli:validate`: none
+- `author/apply-a-change-behind-a-mock` → `cli:apply mock`: none
+- `author/apply-a-change-behind-a-mock` → `cli:apply probe`: none
+- `author/apply-a-change-behind-a-mock` → `cli:apply gepa`: none
+- `author/apply-a-change-behind-a-mock` → `cli:apply`: none
+- `author/steer-a-live-run` → `cli:inject`: none
+- `author/steer-a-live-run` → `cli:board steer`: none
+- `author/steer-a-live-run` → `cli:board stream`: none
+- `author/learn-a-rule-from-a-failure` → `cli:lessons`: partial (run.py:2677)
+- `author/learn-a-rule-from-a-failure` → `cli:board learning`: none
+- `author/learn-a-rule-from-a-failure` → `cli:reflect`: none
+- `author/set-a-feature-flag` → `cli:features`: partial (orch.py:170)
+- `author/set-a-feature-flag` → `cli:features unset`: none
+- `author/set-a-feature-from-the-environment` → `cli:features set-env`: partial (orch.py:170)
+- `author/set-a-feature-from-the-environment` → `cli:features`: partial (orch.py:170)
+- `author/render-the-feature-skill` → `cli:features check-skill`: none
+- `author/render-the-feature-skill` → `cli:features render-skill`: none
+- `author/turn-a-knob-on` → `knob:plan_qa_gate`: none
+- `author/turn-a-knob-on` → `cli:validate`: none
+- `author/compare-judging-knobs` → `knob:oracle_gates`: none
+- `author/compare-judging-knobs` → `knob:assay_relations`: none
+- `author/compare-judging-knobs` → `cli:features`: partial (orch.py:170)
+- `author/compare-judging-knobs` → `knob:review_panel`: none
+- `author/choose-the-scoring-arm` → `knob:code_arm_scorer`: none
+- `author/choose-the-scoring-arm` → `knob:prm_score`: none
+- `author/choose-the-scoring-arm` → `cli:metrics`: none
+- `author/turn-on-learning-writeback` → `knob:learning_writeback`: none
+- `author/turn-on-learning-writeback` → `knob:reward_stamp`: none
+- `author/assay-a-differential` → `knob:assay_differential`: none
+- `author/assay-a-differential` → `knob:assay_relations`: none
+- `author/assay-a-differential` → `cli:harness-contrast`: none
+- `author/write-a-skill` → `cli:skills`: partial (skills.py:167)
+- `author/write-a-skill` → `cli:skills list`: none
+- `author/write-a-skill` → `cli:skills show`: none
+- `author/promote-a-mined-skill` → `cli:skills show`: none
+- `author/reuse-prior-work` → `cli:cn status`: none
+- `author/reuse-prior-work` → `cli:cn search`: none
+- `author/reuse-prior-work` → `cli:cn`: partial (node.py:819)
+- `author/acknowledge-an-overlap` → `cli:cn search`: none
+- `author/record-what-happened` → `cli:cn status`: none
+- `author/record-what-happened` → `cli:board learning`: none
+- `author/ask-the-memory-a-question` → `mcp:learnings`: none
+- `author/ask-the-memory-a-question` → `cli:cn search`: none
+- `author/ask-the-memory-a-question` → `cli:lessons`: partial (run.py:2677)
+- `author/draft-a-kickoff-from-a-line` → `cli:kickoff new`: none
+- `author/draft-a-kickoff-from-a-line` → `mcp:draft_kickoff`: none
+- `author/draft-a-kickoff-from-a-line` → `cli:validate`: none
+- `author/draft-a-kickoff-from-a-line` → `cli:kickoff`: none
+- `author/review-a-draft-before-approval` → `mcp:draft_kickoff`: none
+- `author/review-a-draft-before-approval` → `cli:inbox`: none
+- `author/review-a-draft-before-approval` → `mcp:start_run`: none
+- `author/distill-the-trajectories` → `cli:traceotter`: none
+- `author/distill-the-trajectories` → `cli:lessons`: partial (run.py:2677)
+- `author/distill-the-trajectories` → `cli:board learning`: none
+- `author/explain-a-model-choice` → `cli:why`: none
+- `author/explain-a-model-choice` → `cli:board telemetry`: none
+- `author/explain-a-model-choice` → `cli:board learning`: none
+- `author/schedule-a-draft-recipe` → `cli:automations draft`: partial (autos.py:263)
+- `author/schedule-a-draft-recipe` → `cli:automations list`: partial (autos.py:263)
+- `author/check-an-automation-history` → `cli:automations runs`: partial (autos.py:263)
+- `author/check-an-automation-history` → `cli:automations edit`: partial (autos.py:263)
+- `author/check-an-automation-history` → `cli:automations list`: partial (autos.py:263)
+- `author/score-a-certification` → `cli:certify`: none
+- `author/score-a-certification` → `cli:certify summary`: none
+- `author/score-a-certification` → `mcp:certify`: none
+- `author/lint-the-skill-registry` → `cli:skills list`: none
+- `author/lint-the-skill-registry` → `cli:features check-skill`: none
+- `author/plan-a-change-from-a-ticket` → `cli:plan stdout`: none
+- `author/plan-a-change-from-a-ticket` → `cli:specs lint`: none
+- `author/plan-a-change-from-a-ticket` → `cli:kickoff new`: none
 - `debugger/rescue-a-parked-run` → `cli:supervise`: partial (runs.py:398)
 - `debugger/attribute-a-failure` → `cli:triage`: partial (outcome.py:667)
 - `debugger/attribute-a-failure` → `cli:bug-collector`: none
 - `debugger/attribute-a-failure` → `cli:bugs list`: none
 - `debugger/attribute-a-failure` → `cli:bugs prioritize`: none
-- `debugger/fix-a-bad-verdict` → `cli:verifier list`: partial (verify.py:317)
-- `debugger/fix-a-bad-verdict` → `cli:verifier annotate`: partial (verify.py:295)
+- `debugger/fix-a-bad-verdict` → `cli:verifier list`: partial (verify.py:323)
+- `debugger/fix-a-bad-verdict` → `cli:verifier annotate`: partial (verify.py:301)
 - `debugger/fix-a-bad-verdict` → `cli:graph-patch propose`: none
 - `debugger/roll-back-a-bad-landing` → `cli:undo`: none
 - `debugger/roll-back-a-bad-landing` → `cli:rollback`: none
 - `debugger/roll-back-a-bad-landing` → `cli:garden`: none
+- `debugger/inspect-then-reproduce-a-bug` → `cli:bugs show`: none
+- `debugger/inspect-then-reproduce-a-bug` → `cli:triage`: partial (outcome.py:667)
+- `debugger/queue-a-framework-bug` → `cli:bug-collector`: none
+- `debugger/queue-a-framework-bug` → `cli:bugs list`: none
+- `debugger/queue-a-framework-bug` → `cli:bugs prioritize`: none
+- `debugger/sweep-the-bug-queue` → `cli:bugs prioritize`: none
+- `debugger/sweep-the-bug-queue` → `cli:bugs show`: none
+- `debugger/sweep-the-bug-queue` → `cli:bugs`: partial (verify.py:735)
+- `debugger/verify-a-runs-gates` → `cli:verify`: none
+- `debugger/verify-a-runs-gates` → `cli:verifier list`: partial (verify.py:323)
+- `debugger/verify-a-runs-gates` → `cli:board gate`: partial (outcome.py:1019)
+- `debugger/annotate-a-false-negative` → `cli:verifier annotate`: partial (verify.py:301)
+- `debugger/annotate-a-false-negative` → `cli:verifier list`: partial (verify.py:323)
+- `debugger/annotate-a-false-negative` → `cli:board learning`: none
+- `debugger/patch-the-run-graph` → `cli:graph-patch propose`: none
+- `debugger/audit-the-graph-patches` → `cli:graph-patch list`: none
+- `debugger/audit-the-graph-patches` → `cli:graph-patch credit`: none
+- `debugger/audit-the-graph-patches` → `cli:graph-patch`: partial (run.py:842)
+- `debugger/roll-back-a-workflow-version` → `cli:rollback workflow`: none
+- `debugger/roll-back-a-workflow-version` → `cli:rollback name`: none
+- `debugger/roll-back-a-workflow-version` → `cli:rollback`: none
+- `debugger/revert-a-landed-commit` → `cli:undo ref`: none
+- `debugger/revert-a-landed-commit` → `cli:undo`: none
+- `debugger/revert-a-landed-commit` → `cli:board changes`: none
+- `debugger/find-drift-after-a-fix` → `cli:garden`: none
+- `debugger/find-drift-after-a-fix` → `cli:validate`: none
+- `debugger/keep-the-better-race-attempt` → `cli:board race-keep`: none
+- `debugger/keep-the-better-race-attempt` → `cli:board changes`: none
+- `debugger/keep-the-better-race-attempt` → `cli:board checkpoints`: none
+- `debugger/resume-from-a-checkpoint` → `cli:board checkpoints`: none
+- `debugger/resume-from-a-checkpoint` → `cli:resume`: none
+- `debugger/retry-one-node` → `cli:board node`: none
+- `debugger/retry-one-node` → `cli:board prompt`: none
+- `debugger/read-one-node` → `cli:board node`: none
+- `debugger/read-one-node` → `cli:board output`: none
+- `debugger/read-one-node` → `cli:board artifacts`: none
+- `debugger/compare-two-attempts` → `cli:board changes`: none
+- `debugger/compare-two-attempts` → `cli:board checkpoints`: none
+- `debugger/compare-two-attempts` → `cli:board show`: none
+- `debugger/follow-the-stream` → `cli:board stream`: none
+- `debugger/follow-the-stream` → `cli:board node`: none
+- `debugger/follow-the-stream` → `cli:board telemetry`: none
+- `debugger/answer-a-blocking-question` → `cli:board answer`: none
+- `debugger/answer-a-blocking-question` → `cli:inbox`: none
+- `debugger/kill-a-hung-node` → `cli:board stream`: none
+- `debugger/discard-a-bad-worktree` → `cli:board worktree`: none
+- `debugger/discard-a-bad-worktree` → `cli:board changes`: none
+- `debugger/close-a-stale-row` → `cli:board not-needed`: none
+- `debugger/close-a-stale-row` → `cli:board runs`: none
+- `debugger/restore-a-mistaken-close` → `cli:board show`: none
+- `debugger/restore-a-mistaken-close` → `cli:board runs`: none
+- `debugger/run-the-review-panel` → `cli:review run`: none
+- `debugger/run-the-review-panel` → `cli:review findings`: none
+- `debugger/run-the-review-panel` → `cli:review verdict`: none
+- `debugger/run-the-review-panel` → `cli:review`: none
+- `debugger/read-review-findings` → `cli:review list`: none
+- `debugger/read-review-findings` → `cli:review show`: none
+- `debugger/read-review-findings` → `cli:review findings`: none
+- `debugger/resolve-a-finding` → `cli:review resolve`: none
+- `debugger/resolve-a-finding` → `cli:review list`: none
+- `debugger/resolve-a-finding` → `cli:review verdict`: none
+- `debugger/gate-before-push` → `cli:review gate`: none
+- `debugger/gate-before-push` → `cli:review verdict`: none
+- `debugger/gate-before-push` → `cli:review run`: none
+- `debugger/forward-a-finding` → `cli:review forward`: none
+- `debugger/forward-a-finding` → `cli:review findings`: none
+- `debugger/forward-a-finding` → `cli:review list`: none
+- `debugger/repair-a-dead-target` → `cli:recover`: none
+- `debugger/repair-a-dead-target` → `cli:triage`: partial (outcome.py:667)
+- `debugger/supervise-a-parked-batch` → `cli:supervise`: partial (runs.py:398)
+- `debugger/supervise-a-parked-batch` → `cli:board runs`: none
+- `debugger/side-issue-collector` → `cli:bug-collector`: none
+- `debugger/side-issue-collector` → `cli:bugs show`: none
+- `debugger/explain-a-node-outcome` → `cli:why`: none
+- `debugger/explain-a-node-outcome` → `cli:board node`: none
+- `debugger/explain-a-node-outcome` → `cli:board telemetry`: none
+- `debugger/triage-without-touching-code` → `cli:triage`: partial (outcome.py:667)
+- `debugger/triage-without-touching-code` → `cli:bug-collector`: none
+- `debugger/triage-without-touching-code` → `cli:bugs list`: none
+- `debugger/validate-after-a-fix` → `cli:validate`: none
+- `debugger/validate-after-a-fix` → `cli:garden`: none
+- `debugger/compare-harness-variants` → `cli:harness-contrast`: none
+- `debugger/compare-harness-variants` → `cli:harness-audit`: none
+- `debugger/compare-harness-variants` → `cli:harness-card`: none
+- `debugger/replay-a-run-from-its-events` → `cli:board show`: none
+- `debugger/replay-a-run-from-its-events` → `cli:board stream`: none
+- `debugger/replay-a-run-from-its-events` → `cli:execute`: none
+- `debugger/unblock-an-approval` → `cli:approvals show`: none
+- `debugger/unblock-an-approval` → `cli:approvals list`: none
+- `debugger/unblock-an-approval` → `cli:board gate`: partial (outcome.py:1019)
+- `debugger/annotate-node-evidence` → `cli:board node`: none
+- `debugger/annotate-node-evidence` → `cli:verifier annotate`: partial (verify.py:301)
+- `debugger/annotate-node-evidence` → `cli:board learning`: none
+- `debugger/compare-two-verdicts` → `cli:verify`: none
+- `debugger/compare-two-verdicts` → `cli:verifier list`: partial (verify.py:323)
+- `debugger/compare-two-verdicts` → `cli:board gate`: partial (outcome.py:1019)
+- `debugger/compare-two-verdicts` → `cli:verifier`: partial (verify.py:323)
+- `debugger/read-the-changes-page` → `cli:board changes`: none
+- `debugger/read-the-changes-page` → `cli:board show`: none
+- `debugger/read-the-changes-page` → `cli:review list`: none
 - `integrator/drive-work-from-an-agent` → `cli:mcp add`: none
 - `integrator/drive-work-from-an-agent` → `cli:mcp-context`: none
 - `integrator/drive-work-from-an-agent` → `mcp:start_run`: none
@@ -56,258 +519,269 @@ usable from a shell or an MCP client.
 - `integrator/drive-work-from-an-agent` → `mcp:wait_for_run`: none
 - `integrator/coordinate-two-agents` → `cli:concord run`: none
 - `integrator/coordinate-two-agents` → `cli:concord send`: none
-- `integrator/coordinate-two-agents` → `cli:concord inbox`: partial (orch.py:1093)
+- `integrator/coordinate-two-agents` → `cli:concord inbox`: partial (orch.py:1185)
 - `integrator/coordinate-two-agents` → `cli:threads list`: none
+- `integrator/browse-runs-from-an-agent` → `mcp:list_runs`: none
+- `integrator/browse-runs-from-an-agent` → `mcp:run_detail`: none
+- `integrator/browse-runs-from-an-agent` → `mcp:workspaces`: none
+- `integrator/watch-a-run-from-an-agent` → `mcp:run_status`: none
+- `integrator/watch-a-run-from-an-agent` → `mcp:run_detail`: none
+- `integrator/watch-a-run-from-an-agent` → `mcp:wait_for_run`: none
+- `integrator/stop-a-run-from-an-agent` → `mcp:stop_run`: none
+- `integrator/stop-a-run-from-an-agent` → `mcp:run_status`: none
+- `integrator/stop-a-run-from-an-agent` → `mcp:list_runs`: none
+- `integrator/start-a-run-from-an-agent` → `mcp:start_run`: none
+- `integrator/start-a-run-from-an-agent` → `mcp:run_status`: none
+- `integrator/start-a-run-from-an-agent` → `mcp:wait_for_run`: none
+- `integrator/discover-recipes-from-an-agent` → `mcp:list_recipes`: none
+- `integrator/discover-recipes-from-an-agent` → `mcp:recipe_guide`: none
+- `integrator/discover-recipes-from-an-agent` → `mcp:get_recipe_spec`: none
+- `integrator/inspect-recipes-from-an-agent` → `mcp:describe_recipe`: none
+- `integrator/inspect-recipes-from-an-agent` → `mcp:list_recipes`: none
+- `integrator/inspect-recipes-from-an-agent` → `mcp:get_recipe_spec`: none
+- `integrator/inspect-automations-from-an-agent` → `mcp:list_automations`: none
+- `integrator/inspect-automations-from-an-agent` → `mcp:describe_recipe`: none
+- `integrator/inspect-automations-from-an-agent` → `mcp:list_recipes`: none
+- `integrator/ask-cost-from-an-agent` → `mcp:cost`: none
+- `integrator/ask-cost-from-an-agent` → `mcp:lanes`: none
+- `integrator/ask-cost-from-an-agent` → `mcp:run_detail`: none
+- `integrator/ask-lanes-from-an-agent` → `mcp:lanes`: none
+- `integrator/ask-lanes-from-an-agent` → `mcp:cost`: none
+- `integrator/ask-lanes-from-an-agent` → `mcp:workspaces`: none
+- `integrator/recall-learnings-from-an-agent` → `mcp:learnings`: none
+- `integrator/recall-learnings-from-an-agent` → `mcp:run_detail`: none
+- `integrator/recall-learnings-from-an-agent` → `mcp:certify`: none
+- `integrator/certify-from-an-agent` → `mcp:certify`: none
+- `integrator/certify-from-an-agent` → `mcp:run_detail`: none
+- `integrator/certify-from-an-agent` → `cli:certify`: none
+- `integrator/host-the-agent-interface` → `cli:acp`: none
+- `integrator/host-the-agent-interface` → `cli:mcp-context`: none
+- `integrator/host-the-agent-interface` → `cli:serve`: none
+- `integrator/keep-a-thread-alive` → `cli:threads`: none
+- `integrator/keep-a-thread-alive` → `cli:threads list`: none
+- `integrator/keep-a-thread-alive` → `cli:threads show`: none
+- `integrator/attach-to-a-thread` → `cli:threads attach`: none
+- `integrator/attach-to-a-thread` → `cli:threads show`: none
+- `integrator/attach-to-a-thread` → `cli:threads send`: none
+- `integrator/continue-a-thread` → `cli:threads continue`: none
+- `integrator/continue-a-thread` → `cli:threads send`: none
+- `integrator/continue-a-thread` → `cli:threads show`: none
+- `integrator/serve-threads` → `cli:threads serve`: none
+- `integrator/serve-threads` → `cli:threads list`: none
+- `integrator/serve-threads` → `cli:threads attach`: none
+- `integrator/send-into-a-thread` → `cli:threads send`: none
+- `integrator/send-into-a-thread` → `cli:threads continue`: none
+- `integrator/send-into-a-thread` → `cli:threads list`: none
+- `integrator/open-a-concord-scope` → `cli:concord`: partial (orch.py:1147)
+- `integrator/open-a-concord-scope` → `cli:concord run`: none
+- `integrator/open-a-concord-scope` → `cli:concord ps`: none
+- `integrator/broadcast-a-decision` → `cli:concord send`: none
+- `integrator/broadcast-a-decision` → `cli:concord inbox`: partial (orch.py:1185)
+- `integrator/claim-a-file` → `cli:concord admit`: none
+- `integrator/claim-a-file` → `cli:concord claims`: none
+- `integrator/claim-a-file` → `cli:concord violations`: none
+- `integrator/stop-a-concord-scope` → `cli:concord ps`: none
+- `integrator/stop-a-concord-scope` → `cli:concord violations`: none
+- `integrator/check-concord-health` → `cli:concord violations`: none
+- `integrator/check-concord-health` → `cli:concord claims`: none
+- `integrator/check-concord-health` → `cli:concord help`: none
+- `integrator/read-the-orchestrator-thread` → `cli:orchestrator`: none
+- `integrator/read-the-orchestrator-thread` → `cli:orchestrator watch`: none
+- `integrator/read-the-orchestrator-thread` → `cli:board stream`: none
+- `integrator/drive-the-board-over-http` → `cli:serve`: none
+- `integrator/drive-the-board-over-http` → `cli:board page`: none
+- `integrator/drive-the-board-over-http` → `cli:board overview`: none
+- `integrator/poll-the-board-programmatically` → `cli:board runs`: none
+- `integrator/poll-the-board-programmatically` → `cli:board show`: none
+- `integrator/poll-the-board-programmatically` → `cli:board stream`: none
+- `integrator/start-work-programmatically` → `cli:board start`: partial (orch.py:555)
+- `integrator/start-work-programmatically` → `cli:board runs`: none
+- `integrator/start-work-programmatically` → `cli:board show`: none
+- `integrator/read-the-run-page-payload` → `cli:board page`: none
+- `integrator/read-the-run-page-payload` → `cli:board run`: none
+- `integrator/read-the-run-page-payload` → `cli:board overview`: none
+- `integrator/register-tools-for-a-workflow` → `cli:mcp add`: none
+- `integrator/register-tools-for-a-workflow` → `cli:mcp check`: none
+- `integrator/register-tools-for-a-workflow` → `cli:mcp proxy`: none
+- `integrator/remove-a-tools-registration` → `cli:mcp rm`: none
+- `integrator/remove-a-tools-registration` → `cli:mcp list`: none
+- `integrator/remove-a-tools-registration` → `cli:mcp check`: none
+- `integrator/launch-an-mcp-server` → `cli:mcp launch`: none
+- `integrator/launch-an-mcp-server` → `cli:mcp list`: none
+- `integrator/launch-an-mcp-server` → `cli:mcp proxy`: none
+- `integrator/run-a-bounded-child-orchestrator` → `cli:spawn`: none
+- `integrator/run-a-bounded-child-orchestrator` → `cli:board runs`: none
+- `integrator/run-a-bounded-child-orchestrator` → `cli:scheduler`: partial (task.py:420)
+- `integrator/certify-an-integration` → `mcp:certify`: none
+- `integrator/certify-an-integration` → `cli:certify summary`: none
+- `integrator/certify-an-integration` → `cli:board gate`: partial (outcome.py:1019)
+- `integrator/stream-events-to-a-client` → `cli:board stream`: none
+- `integrator/stream-events-to-a-client` → `cli:serve`: none
+- `integrator/stream-events-to-a-client` → `mcp:run_status`: none
+- `integrator/share-a-workspace-view` → `mcp:workspaces`: none
+- `integrator/share-a-workspace-view` → `mcp:list_runs`: none
+- `integrator/share-a-workspace-view` → `cli:board page`: none
+- `integrator/read-a-run-detail` → `mcp:run_detail`: none
+- `integrator/read-a-run-detail` → `mcp:run_status`: none
+- `integrator/read-a-run-detail` → `cli:why`: none
+- `integrator/ask-the-engine-to-draft` → `mcp:draft_kickoff`: none
+- `integrator/ask-the-engine-to-draft` → `mcp:start_run`: none
+- `integrator/ask-the-engine-to-draft` → `mcp:list_runs`: none
 - `operator/roadmap-to-running-agents` → `cli:epics ingest`: none
 - `operator/roadmap-to-running-agents` → `cli:epics split`: none
 - `operator/roadmap-to-running-agents` → `cli:scheduler`: partial (task.py:420)
 - `operator/roadmap-to-running-agents` → `cli:approvals list`: none
-- `operator/nightly-quality-run` → `cli:automations add`: partial (autos.py:163)
-- `operator/nightly-quality-run` → `cli:automations tick`: partial (autos.py:163)
+- `operator/nightly-quality-run` → `cli:automations add`: partial (autos.py:263)
+- `operator/nightly-quality-run` → `cli:automations tick`: partial (autos.py:263)
 - `operator/nightly-quality-run` → `cli:board runs`: none
 - `operator/approve-before-merge` → `cli:board gate`: partial (outcome.py:1019)
 - `operator/approve-before-merge` → `cli:approvals list`: none
 - `operator/stop-a-runaway` → `cli:board steer`: none
 - `operator/stop-a-runaway` → `cli:concord send`: none
-- `operator/onboard-a-new-project` → `cli:onboard`: partial (setup.py:629)
+- `operator/onboard-a-new-project` → `cli:onboard`: partial (setup.py:648)
 - `operator/onboard-a-new-project` → `cli:init`: none
 - `operator/onboard-a-new-project` → `cli:zed setup`: none
 - `operator/onboard-a-new-project` → `cli:validate`: none
 - `operator/onboard-a-new-project` → `cli:board page`: none
+- `operator/health-check-the-install` → `cli:garden`: none
+- `operator/health-check-the-install` → `cli:version`: none
+- `operator/health-check-the-install` → `cli:validate`: none
+- `operator/upgrade-without-losing-runs` → `cli:update`: none
+- `operator/upgrade-without-losing-runs` → `cli:install`: none
+- `operator/upgrade-without-losing-runs` → `cli:version`: none
+- `operator/install-the-ide-entry` → `cli:zed setup`: none
+- `operator/install-the-ide-entry` → `cli:zed status`: none
+- `operator/install-the-ide-entry` → `cli:acp`: none
+- `operator/install-the-ide-entry` → `cli:zed`: none
+- `operator/remove-the-ide-entry` → `cli:zed uninstall`: none
+- `operator/remove-the-ide-entry` → `cli:zed status`: none
+- `operator/remove-the-ide-entry` → `cli:version`: none
+- `operator/split-a-roadmap-into-epics` → `cli:epics ingest`: none
+- `operator/split-a-roadmap-into-epics` → `cli:epics split`: none
+- `operator/split-a-roadmap-into-epics` → `cli:epics list`: none
+- `operator/split-a-roadmap-into-epics` → `cli:epics show`: none
+- `operator/split-a-roadmap-into-epics` → `cli:epics`: partial (task.py:427)
+- `operator/prioritise-the-backlog` → `cli:epics priority`: none
+- `operator/prioritise-the-backlog` → `cli:epics set`: none
+- `operator/prioritise-the-backlog` → `cli:epics ready`: none
+- `operator/inspect-epic-progress` → `cli:epics status`: none
+- `operator/inspect-epic-progress` → `cli:epics list`: none
+- `operator/inspect-epic-progress` → `cli:board runs`: none
+- `operator/archive-finished-epics` → `cli:epics archive`: none
+- `operator/archive-finished-epics` → `cli:epics list`: none
+- `operator/archive-finished-epics` → `cli:epics show`: none
+- `operator/retry-a-stuck-epic` → `cli:epics ready`: none
+- `operator/retry-a-stuck-epic` → `cli:board runs`: none
+- `operator/run-a-backlog-overnight` → `cli:scheduler`: partial (task.py:420)
+- `operator/run-a-backlog-overnight` → `cli:spawn`: none
+- `operator/run-a-backlog-overnight` → `cli:supervise`: partial (runs.py:398)
+- `operator/run-a-backlog-overnight` → `cli:conductor`: none
+- `operator/run-a-backlog-overnight` → `cli:coord`: none
+- `operator/watch-the-queue-drain` → `cli:board overview`: none
+- `operator/watch-the-queue-drain` → `cli:board runs`: none
+- `operator/watch-the-queue-drain` → `cli:board stream`: none
+- `operator/schedule-a-recurring-recipe` → `cli:automations add`: partial (autos.py:263)
+- `operator/schedule-a-recurring-recipe` → `cli:automations tick`: partial (autos.py:263)
+- `operator/schedule-a-recurring-recipe` → `cli:automations scheduler status`: none
+- `operator/schedule-a-recurring-recipe` → `cli:automations scheduler`: partial (autos.py:263)
+- `operator/pause-and-resume-schedules` → `cli:automations pause`: partial (autos.py:263)
+- `operator/pause-and-resume-schedules` → `cli:automations list`: partial (autos.py:263)
+- `operator/pause-and-resume-schedules` → `cli:automations resume`: partial (autos.py:263)
+- `operator/inspect-why-a-schedule-failed` → `cli:automations runs`: partial (autos.py:263)
+- `operator/inspect-why-a-schedule-failed` → `cli:automations edit`: partial (autos.py:263)
+- `operator/draft-a-schedule-from-an-agent` → `mcp:propose_automation`: none
+- `operator/draft-a-schedule-from-an-agent` → `cli:automations draft`: partial (autos.py:263)
+- `operator/poll-a-ticket-tracker` → `cli:intake poll`: none
+- `operator/poll-a-ticket-tracker` → `cli:intake status`: none
+- `operator/poll-a-ticket-tracker` → `cli:intake report`: none
+- `operator/poll-a-ticket-tracker` → `cli:intake`: partial (kanban.py:1245)
+- `operator/push-a-ticket-into-a-run` → `cli:board runs`: none
+- `operator/connect-a-pm-source` → `cli:pm sources`: none
+- `operator/connect-a-pm-source` → `cli:pm add`: partial (kanban.py:890)
+- `operator/connect-a-pm-source` → `cli:pm`: partial (kanban.py:795)
+- `operator/handle-an-approval-request` → `cli:approvals list`: none
+- `operator/handle-an-approval-request` → `cli:approvals show`: none
+- `operator/handle-an-approval-request` → `cli:approvals policy`: none
+- `operator/handle-an-approval-request` → `cli:approvals`: partial (inbox.py:344)
+- `operator/reject-and-request-changes` → `cli:approvals reject`: none
+- `operator/reject-and-request-changes` → `cli:approvals request-changes`: none
+- `operator/reject-and-request-changes` → `cli:inbox`: none
+- `operator/reject-and-request-changes` → `cli:oversight`: none
+- `operator/answer-a-question-the-run-asks` → `cli:inbox`: none
+- `operator/answer-a-question-the-run-asks` → `cli:board answer`: none
+- `operator/answer-a-question-the-run-asks` → `cli:board overview`: none
+- `operator/dismiss-a-run-that-is-not-needed` → `cli:board not-needed`: none
+- `operator/dismiss-a-run-that-is-not-needed` → `cli:board runs`: none
+- `operator/kill-and-clean-a-run` → `cli:board worktree`: none
+- `operator/restore-a-closed-run` → `cli:board show`: none
+- `operator/restore-a-closed-run` → `cli:board runs`: none
+- `operator/inspect-a-run-row` → `cli:board show`: none
+- `operator/inspect-a-run-row` → `cli:board overview`: none
+- `operator/inspect-a-run-row` → `cli:board telemetry`: none
+- `operator/inspect-a-run-row` → `cli:board`: partial (changes.py:108)
+- `operator/read-a-runs-artifacts` → `cli:board artifacts`: none
+- `operator/read-a-runs-artifacts` → `cli:board output`: none
+- `operator/read-a-runs-artifacts` → `cli:board checkpoints`: none
+- `operator/see-what-a-run-carried` → `cli:board prompt`: none
+- `operator/see-what-a-run-carried` → `cli:board harness`: none
+- `operator/see-what-a-run-carried` → `cli:board learning`: none
+- `operator/take-over-a-dead-run` → `cli:recover`: none
+- `operator/take-over-a-dead-run` → `cli:resume`: none
+- `operator/sweep-and-label-drift` → `cli:supervise`: partial (runs.py:398)
+- `operator/sweep-and-label-drift` → `cli:watchdog`: none
+- `operator/sweep-and-label-drift` → `cli:garden`: none
+- `operator/check-the-fleet` → `cli:nodes ls`: none
+- `operator/check-the-fleet` → `cli:nodes doctor`: partial (nodes.py:361)
+- `operator/check-the-fleet` → `cli:nodes`: partial (nodes.py:242)
+- `operator/start-a-remote-node` → `cli:node-agent`: none
+- `operator/start-a-remote-node` → `cli:node-agent docker`: none
+- `operator/start-a-remote-node` → `cli:node-agent host`: none
+- `operator/reclaim-leaked-sandboxes` → `cli:sandbox-gc all`: partial (nodes.py:440)
+- `operator/reclaim-leaked-sandboxes` → `cli:sandbox-gc docker`: partial (nodes.py:440)
+- `operator/sweep-cloud-sandboxes` → `cli:sandbox-gc e2b`: partial (nodes.py:440)
+- `operator/sweep-cloud-sandboxes` → `cli:sandbox-gc modal`: partial (nodes.py:440)
+- `operator/sweep-cloud-sandboxes` → `cli:sandbox-gc daytona`: partial (nodes.py:440)
+- `operator/sweep-cloud-sandboxes` → `cli:sandbox-gc microvm`: partial (nodes.py:440)
+- `operator/sweep-cloud-sandboxes` → `cli:sandbox-gc static`: partial (nodes.py:440)
+- `operator/rotate-a-provider-key` → `cli:vault`: none
+- `operator/rotate-a-provider-key` → `cli:vault status`: none
+- `operator/rotate-a-provider-key` → `cli:vault which`: none
+- `operator/rotate-a-provider-key` → `cli:providers configure`: none
+- `operator/verify-provider-conformance` → `cli:providers status`: none
+- `operator/verify-provider-conformance` → `cli:providers conform`: none
+- `operator/register-an-mcp-server` → `cli:mcp add`: none
+- `operator/register-an-mcp-server` → `cli:mcp list`: none
+- `operator/register-an-mcp-server` → `cli:mcp check`: none
+- `operator/register-an-mcp-server` → `cli:mcp launch`: none
+- `operator/register-an-mcp-server` → `cli:mcp proxy`: none
+- `operator/register-an-mcp-server` → `cli:mcp`: none
+- `operator/set-operator-preferences` → `cli:prefs`: none
+- `operator/set-operator-preferences` → `cli:board in-place`: none
+- `operator/set-operator-preferences` → `cli:board page`: none
+- `operator/remove-an-mcp-registration` → `cli:mcp rm`: none
+- `operator/remove-an-mcp-registration` → `cli:mcp list`: none
+- `operator/run-the-self-improvement-loop` → `cli:rsi-cycle`: none
+- `operator/run-the-self-improvement-loop` → `cli:rsi-cycle plan`: none
+- `operator/run-the-self-improvement-loop` → `cli:rsi-cycle doctor`: none
+- `operator/run-the-self-improvement-loop` → `cli:rsi-cycle halt`: none
+- `operator/quarantine-a-bad-self-edit` → `cli:rsi-cycle list`: none
+- `operator/quarantine-a-bad-self-edit` → `cli:rsi-cycle show`: none
+- `operator/quarantine-a-bad-self-edit` → `cli:rsi-cycle quarantine`: none
+- `operator/quarantine-a-bad-self-edit` → `cli:rsi-cycle revert`: none
+- `operator/serve-the-local-api` → `cli:serve`: none
+- `operator/serve-the-local-api` → `cli:board page`: none
+- `operator/serve-the-local-api` → `cli:topology`: none
+- `operator/step-a-run-by-hand` → `cli:execute`: none
+- `operator/step-a-run-by-hand` → `cli:execute reflector`: none
+- `operator/step-a-run-by-hand` → `cli:run`: none
 
 ## Capabilities with no journey
 
-### Hidden from `--help` and uncovered (127)
-- `cli:acp`
-- `cli:active-eval`
-- `cli:approvals`
-- `cli:approvals policy`
-- `cli:approvals reject`
-- `cli:approvals request-changes`
-- `cli:approvals show`
-- `cli:bugs`
-- `cli:bugs show`
-- `cli:bugs sweep`
-- `cli:calibrate`
-- `cli:certify`
-- `cli:certify summary`
-- `cli:collapse-check`
-- `cli:collapse-precursor`
-- `cli:conductor`
-- `cli:coord`
-- `cli:epics`
-- `cli:epics archive`
-- `cli:epics list`
-- `cli:epics priority`
-- `cli:epics ready`
-- `cli:epics retry`
-- `cli:epics set`
-- `cli:epics show`
-- `cli:epics status`
-- `cli:features`
-- `cli:features check-skill`
-- `cli:features render-skill`
-- `cli:features set`
-- `cli:features set-env`
-- `cli:features unset`
-- `cli:features unset-env`
-- `cli:gate-fuzz`
-- `cli:hack-probe`
-- `cli:harness-audit`
-- `cli:harness-contrast`
-- `cli:harness-edit`
-- `cli:inject`
-- `cli:intake`
-- `cli:intake poll`
-- `cli:intake report`
-- `cli:intake status`
-- `cli:kickoff`
-- `cli:lessons`
-- `cli:lifetime`
-- `cli:lifetime conductor-history`
-- `cli:memory-lifecycle`
-- `cli:metric-anchor`
-- `cli:metrics`
-- `cli:metrics revise`
-- `cli:node-agent`
-- `cli:node-agent docker`
-- `cli:node-agent host`
-- `cli:nodes`
-- `cli:nodes doctor`
-- `cli:nodes ls`
-- `cli:orchestrator`
-- `cli:orchestrator watch`
-- `cli:oversight`
-- `cli:pm`
-- `cli:pm add`
-- `cli:pm remove`
-- `cli:pm sources`
-- `cli:pm test`
-- `cli:prefs`
-- `cli:recover`
-- `cli:resume`
-- `cli:review`
-- `cli:review findings`
-- `cli:review forward`
-- `cli:review gate`
-- `cli:review list`
-- `cli:review resolve`
-- `cli:review run`
-- `cli:review show`
-- `cli:review verdict`
-- `cli:rollback name`
-- `cli:rollback workflow`
-- `cli:sandbox-gc`
-- `cli:sandbox-gc all`
-- `cli:sandbox-gc daytona`
-- `cli:sandbox-gc docker`
-- `cli:sandbox-gc e2b`
-- `cli:sandbox-gc microvm`
-- `cli:sandbox-gc modal`
-- `cli:sandbox-gc static`
-- `cli:serve`
-- `cli:skills`
-- `cli:skills list`
-- `cli:skills promote`
-- `cli:skills show`
-- `cli:skills skill`
-- `cli:skills validate`
-- `cli:spawn`
-- `cli:specs`
-- `cli:specs ingest`
-- `cli:specs lint`
-- `cli:specs list`
-- `cli:threads`
-- `cli:threads attach`
-- `cli:threads continue`
-- `cli:threads send`
-- `cli:threads serve`
-- `cli:threads show`
-- `cli:topology`
-- `cli:traceotter`
-- `cli:watchdog`
-- `knob:assay_differential`
-- `knob:assay_relations`
-- `knob:code_arm_scorer`
-- `knob:learning_writeback`
-- `knob:oracle_gates`
-- `knob:plan_qa_gate`
-- `knob:prm_score`
-- `knob:review_panel`
-- `knob:reward_stamp`
-- `mcp:certify`
-- `mcp:get_recipe_spec`
-- `mcp:learnings`
-- `mcp:list_automations`
-- `mcp:list_recipes`
-- `mcp:list_runs`
-- `mcp:recipe_guide`
-- `mcp:run_detail`
-- `mcp:stop_run`
-- `mcp:workspaces`
+### Hidden from `--help` and uncovered (0)
+- none
 
-### Documented but uncovered (101)
-- `cli:apply`
-- `cli:apply gepa`
-- `cli:apply mock`
-- `cli:apply probe`
-- `cli:automations`
-- `cli:automations list`
-- `cli:automations pause`
-- `cli:automations remove`
-- `cli:automations resume`
-- `cli:automations run`
-- `cli:automations scheduler`
-- `cli:automations scheduler install`
-- `cli:automations scheduler status`
-- `cli:automations scheduler uninstall`
-- `cli:board`
-- `cli:board answer`
-- `cli:board artifacts`
-- `cli:board changes`
-- `cli:board checkpoints`
-- `cli:board discard`
-- `cli:board dismiss`
-- `cli:board harness`
-- `cli:board in-place`
-- `cli:board kill`
-- `cli:board learning`
-- `cli:board node`
-- `cli:board not-needed`
-- `cli:board output`
-- `cli:board overview`
-- `cli:board prompt`
-- `cli:board race-keep`
-- `cli:board restore`
-- `cli:board resume`
-- `cli:board run`
-- `cli:board show`
-- `cli:board start`
-- `cli:board stream`
-- `cli:board telemetry`
-- `cli:board worktree`
-- `cli:classify`
-- `cli:cn`
-- `cli:cn ack-overlap`
-- `cli:cn outcome`
-- `cli:cn search`
-- `cli:cn seen-before`
-- `cli:cn status`
-- `cli:concord`
-- `cli:concord ack`
-- `cli:concord admit`
-- `cli:concord claims`
-- `cli:concord help`
-- `cli:concord ps`
-- `cli:concord stop`
-- `cli:concord violations`
-- `cli:doctor`
-- `cli:execute`
-- `cli:execute reflector`
-- `cli:graph-patch`
-- `cli:graph-patch credit`
-- `cli:graph-patch list`
-- `cli:graph-patch validate`
-- `cli:install`
-- `cli:mcp`
-- `cli:mcp check`
-- `cli:mcp launch`
-- `cli:mcp list`
-- `cli:mcp proxy`
-- `cli:mcp rm`
-- `cli:plan`
-- `cli:plan stdout`
-- `cli:providers`
-- `cli:providers configure`
-- `cli:reflect`
-- `cli:reviewer-eval`
-- `cli:reviewer-eval add-case`
-- `cli:reviewer-eval list`
-- `cli:reviewer-eval refresh-evidence`
-- `cli:reviewer-eval run`
-- `cli:reviewer-eval score`
-- `cli:reviewer-eval status`
-- `cli:rsi-cycle`
-- `cli:rsi-cycle doctor`
-- `cli:rsi-cycle halt`
-- `cli:rsi-cycle list`
-- `cli:rsi-cycle plan`
-- `cli:rsi-cycle quarantine`
-- `cli:rsi-cycle revert`
-- `cli:rsi-cycle show`
-- `cli:run`
-- `cli:self-improve`
-- `cli:undo ref`
-- `cli:update`
-- `cli:vault`
-- `cli:vault status`
-- `cli:vault which`
-- `cli:verifier`
-- `cli:verify`
-- `cli:version`
-- `cli:zed`
-- `cli:zed status`
-- `cli:zed uninstall`
+### Documented but uncovered (0)
+- none
 
 ## Undiscoverable help
 
@@ -317,7 +791,7 @@ usable from a shell or an MCP client.
 - `cli:cn`: usage-only
 - `cli:conductor`: executed
 - `cli:coord`: crash
-- `cli:doctor`: executed
+- `cli:inbox`: executed
 - `cli:init`: executed
 - `cli:pm`: usage-only
 - `cli:run`: executed
@@ -328,7 +802,7 @@ usable from a shell or an MCP client.
 
 ## Reach index
 
-- Emitted actions: 58
+- Emitted actions: 64
 - Dynamic `S.cli(...)` calls (not resolvable): 2
-  - orch.py:577
+  - orch.py:663
   - outcome.py:363

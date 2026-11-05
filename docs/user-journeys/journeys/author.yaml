@@ -42,3 +42,620 @@ journeys:
     terminal_evidence:
       kind: dir
       anchor: "recipe-drafts"
+
+  - id: author/spec-to-kickoff
+    persona: author
+    value: "A markdown spec becomes ingestible work with a kickoff per unit"
+    impact: "Spec-driven delivery starts from the document, not from a copied template"
+    preconditions:
+      - "The spec is markdown with headings the ingester recognises"
+    steps:
+      - cap: cli:specs ingest
+        page: recipes
+      - cap: cli:specs lint
+        page: recipes
+        note: "Catches a spec whose sections cannot become a run"
+      - cap: cli:kickoff new
+        page: recipes
+    terminal_evidence:
+      kind: dir
+      anchor: "specs"
+
+  - id: author/ratify-a-spec
+    persona: author
+    value: "A spec that passed lint is ratified so it can drive dispatch"
+    impact: "Only reviewed specs produce runs; drafts stay drafts"
+    preconditions:
+      - "The spec has been ingested and linted"
+    steps:
+      - cap: cli:specs list
+        page: recipes
+      - cap: cli:specs ratify
+        page: recipes
+      - cap: cli:specs lint
+        page: recipes
+        note: "The gate that must stay green after ratification"
+    terminal_evidence:
+      kind: dir
+      anchor: "ratify"
+
+  - id: author/lint-a-spec-set
+    persona: author
+    value: "Every pending spec is checked in one pass before a batch dispatch"
+    impact: "A batch does not half-dispatch on specs that could never run"
+    preconditions:
+      - "More than one spec is pending"
+    steps:
+      - cap: cli:specs list
+        page: recipes
+      - cap: cli:specs lint
+        page: recipes
+      - cap: cli:specs ingest
+        page: recipes
+      - cap: cli:specs
+        note: "The spec store the set is linted in"
+    terminal_evidence:
+      kind: dir
+      anchor: "specs"
+
+  - id: author/classify-a-request
+    persona: author
+    value: "A free-text request is routed to the task class that should own it"
+    impact: "The right recipe is chosen before the engineer picks one by habit"
+    preconditions:
+      - "The project has task_class rules"
+    steps:
+      - cap: cli:classify
+      - cap: cli:kickoff new
+      - cap: mcp:start_run
+        page: runs
+    terminal_evidence:
+      kind: file
+      anchor: "task_class"
+
+  - id: author/plan-before-implementing
+    persona: author
+    value: "A plan is produced and inspected before any implementer edits a file"
+    impact: "A wrong decomposition costs a minute, not a run"
+    preconditions:
+      - "A kickoff exists"
+    steps:
+      - cap: cli:plan
+      - cap: cli:plan stdout
+        note: "The machine-readable plan a node would consume"
+      - cap: cli:execute
+        page: run
+    terminal_evidence:
+      kind: file
+      anchor: "plan"
+
+  - id: author/reflect-on-a-run
+    persona: author
+    value: "What the run learned is written back instead of discarded with the session"
+    impact: "The next run of the same class starts smarter"
+    preconditions:
+      - "The run is finished"
+    steps:
+      - cap: cli:reflect
+        page: learn
+      - cap: cli:execute reflector
+        page: learn
+      - cap: cli:board learning
+        page: run
+    terminal_evidence:
+      kind: db-row
+      anchor: "reflect"
+
+  - id: author/find-a-recipe-that-fits
+    persona: author
+    value: "An existing recipe is found and read before a new one is written"
+    impact: "Duplicate recipes stop accumulating under different names"
+    preconditions:
+      - "The project has a recipe directory"
+    steps:
+      - cap: mcp:list_recipes
+        page: recipes
+      - cap: mcp:recipe_guide
+        page: recipes
+      - cap: mcp:get_recipe_spec
+        page: recipes
+      - cap: mcp:describe_recipe
+        page: recipes
+    terminal_evidence:
+      kind: dir
+      anchor: "recipes"
+
+  - id: author/draft-a-recipe-with-an-agent
+    persona: author
+    value: "An agent drafts a recipe and the engineer grades it before it is adopted"
+    impact: "Recipe authoring moves to a conversation, with the grade as the receipt"
+    preconditions:
+      - "An MCP client is connected"
+    steps:
+      - cap: mcp:draft_recipe
+        page: recipes
+      - cap: mcp:get_recipe_spec
+        page: recipes
+      - cap: cli:recipe-eval
+        page: recipes
+    terminal_evidence:
+      kind: dir
+      anchor: "recipe-drafts"
+
+  - id: author/turn-a-failure-into-a-harness-edit
+    persona: author
+    value: "A failure receipt becomes a typed harness edit instead of a prompt tweak"
+    impact: "Prompt fixes stop being invisible edits to a string nobody reviews"
+    preconditions:
+      - "A failed node emitted a receipt"
+    steps:
+      - cap: cli:harness-edit
+        page: learn
+      - cap: cli:harness-card
+        page: learn
+        note: "The edit's card, which is what a reviewer approves"
+      - cap: cli:harness-audit
+        page: learn
+    terminal_evidence:
+      kind: file
+      anchor: "harness"
+
+  - id: author/gate-a-harness-edit
+    persona: author
+    value: "An applied harness edit is audited for tampering before it is kept"
+    impact: "A hand-edited prompt cannot masquerade as an engine-applied change"
+    preconditions:
+      - "A harness edit was applied"
+    steps:
+      - cap: cli:harness-audit
+        page: learn
+      - cap: cli:harness-card
+        page: learn
+      - cap: cli:validate
+        page: setup
+    terminal_evidence:
+      kind: file
+      anchor: "harness-audit"
+
+  - id: author/apply-a-change-behind-a-mock
+    persona: author
+    value: "A change is rehearsed against a mock and a probe before it is applied for real"
+    impact: "The apply loop is closed without spending provider tokens on a rehearsal"
+    preconditions:
+      - "A patch exists"
+    steps:
+      - cap: cli:apply mock
+      - cap: cli:apply probe
+      - cap: cli:apply gepa
+      - cap: cli:apply
+    terminal_evidence:
+      kind: file
+      anchor: "apply"
+
+  - id: author/steer-a-live-run
+    persona: author
+    value: "A running agent is steered with a typed injection rather than a stop and restart"
+    impact: "Correcting course keeps the spent context"
+    preconditions:
+      - "The run is live"
+    steps:
+      - cap: cli:inject
+        page: run
+      - cap: cli:board steer
+        page: run
+      - cap: cli:board stream
+        page: run
+        note: "The stream that shows the steer landed"
+    terminal_evidence:
+      kind: run-row
+      anchor: "inject"
+
+  - id: author/learn-a-rule-from-a-failure
+    persona: author
+    value: "A repeated failure becomes a learned rule with provenance"
+    impact: "The same mistake is not rediscovered by the next engineer"
+    preconditions:
+      - "The failure happened more than once"
+    steps:
+      - cap: cli:lessons
+        page: learn
+      - cap: cli:board learning
+        page: run
+      - cap: cli:reflect
+        page: learn
+    terminal_evidence:
+      kind: db-row
+      anchor: "lessons"
+
+  - id: author/set-a-feature-flag
+    persona: author
+    value: "A cost or behaviour feature is switched on for one project, deliberately"
+    impact: "Experimental behaviour is a declared setting, not a hidden default"
+    preconditions:
+      - "The engineer knows the feature id"
+    steps:
+      - cap: cli:features
+        page: features
+      - cap: cli:features set
+        page: features
+      - cap: cli:features unset
+        page: features
+        note: "The rollback, exercised with the flag it turns off"
+    terminal_evidence:
+      kind: file
+      anchor: "features"
+
+  - id: author/set-a-feature-from-the-environment
+    persona: author
+    value: "A CI job turns a feature on with an environment variable, not a config edit"
+    impact: "The same repo runs both configurations without a diff"
+    preconditions:
+      - "The job can set environment variables"
+    steps:
+      - cap: cli:features set-env
+        page: features
+      - cap: cli:features unset-env
+        page: features
+      - cap: cli:features
+        page: features
+    terminal_evidence:
+      kind: file
+      anchor: "set-env"
+
+  - id: author/render-the-feature-skill
+    persona: author
+    value: "The feature catalogue is rendered into the skill an agent reads"
+    impact: "Agents describe the flags the project actually has"
+    preconditions:
+      - "A skill directory is configured"
+    steps:
+      - cap: cli:features check-skill
+        page: features
+      - cap: cli:features render-skill
+        page: features
+      - cap: cli:skills validate
+        page: skills
+    terminal_evidence:
+      kind: file
+      anchor: "render-skill"
+
+  - id: author/turn-a-knob-on
+    persona: author
+    value: "A single quality knob is enabled and its cost is accepted knowingly"
+    impact: "Quality and spend are tuned per project instead of globally"
+    preconditions:
+      - "The project has a feature config"
+    steps:
+      - cap: knob:plan_qa_gate
+        page: features
+      - cap: cli:features set
+        page: features
+      - cap: cli:validate
+        page: setup
+    terminal_evidence:
+      kind: file
+      anchor: "plan_qa_gate"
+
+  - id: author/compare-judging-knobs
+    persona: author
+    value: "The oracle and relation gates are chosen with their trade-off in view"
+    impact: "A stricter gate is a decision about false negatives, not a default"
+    preconditions:
+      - "The engineer has a failure mode to protect against"
+    steps:
+      - cap: knob:oracle_gates
+        page: features
+      - cap: knob:assay_relations
+        page: features
+      - cap: cli:features
+        page: features
+      - cap: knob:review_panel
+        note: "The review panel width a judging change also touches"
+    terminal_evidence:
+      kind: file
+      anchor: "oracle_gates"
+
+  - id: author/choose-the-scoring-arm
+    persona: author
+    value: "The scoring arm is picked once and stays comparable across runs"
+    impact: "Metrics stop moving because the scorer changed, not the work"
+    preconditions:
+      - "The project records scores"
+    steps:
+      - cap: knob:code_arm_scorer
+        page: features
+      - cap: knob:prm_score
+        page: features
+      - cap: cli:metrics
+        page: learn
+    terminal_evidence:
+      kind: db-row
+      anchor: "code_arm_scorer"
+
+  - id: author/turn-on-learning-writeback
+    persona: author
+    value: "Learned rules are written back without also minting reward stamps"
+    impact: "The learning path can be adopted before the scoring path is trusted"
+    preconditions:
+      - "Learning is enabled for the project"
+    steps:
+      - cap: knob:learning_writeback
+        page: features
+      - cap: knob:reward_stamp
+        page: features
+      - cap: cli:features set
+        page: features
+    terminal_evidence:
+      kind: file
+      anchor: "learning_writeback"
+
+  - id: author/assay-a-differential
+    persona: author
+    value: "A differential assay is run as a declared comparison, not a one-off script"
+    impact: "Harness changes get an A-vs-B result that can be cited"
+    preconditions:
+      - "Two harness variants exist"
+    steps:
+      - cap: knob:assay_differential
+        page: features
+      - cap: knob:assay_relations
+        page: features
+      - cap: cli:harness-contrast
+        page: learn
+    terminal_evidence:
+      kind: file
+      anchor: "assay_differential"
+
+  - id: author/write-a-skill
+    persona: author
+    value: "A procedure is packaged as a skill an agent can be granted"
+    impact: "Knowledge is a reviewable artifact instead of tribal memory"
+    preconditions:
+      - "The procedure has a written SKILL.md"
+    steps:
+      - cap: cli:skills
+        page: skills
+      - cap: cli:skills list
+        page: skills
+      - cap: cli:skills show
+        page: skills
+    terminal_evidence:
+      kind: file
+      anchor: "SKILL.md"
+
+  - id: author/promote-a-mined-skill
+    persona: author
+    value: "A procedure mined from traces is promoted only after it validates"
+    impact: "Learned procedure enters the registry with a check, not on faith"
+    preconditions:
+      - "A mined procedure exists"
+    steps:
+      - cap: cli:skills validate
+        page: skills
+      - cap: cli:skills promote
+        page: skills
+      - cap: cli:skills show
+        page: skills
+    terminal_evidence:
+      kind: file
+      anchor: "skills.json"
+
+  - id: author/reuse-prior-work
+    persona: author
+    value: "A new task is checked against prior work before a run is spent on it"
+    impact: "The same problem is not solved twice by different sessions"
+    preconditions:
+      - "The semantic memory has entries"
+    steps:
+      - cap: cli:cn status
+        page: context
+      - cap: cli:cn search
+        page: context
+      - cap: cli:cn seen-before
+        page: context
+      - cap: cli:cn
+        note: "The ContextNest operator surface"
+    terminal_evidence:
+      kind: db-row
+      anchor: "seen-before"
+
+  - id: author/acknowledge-an-overlap
+    persona: author
+    value: "A known overlap is acknowledged so it stops resurfacing as a warning"
+    impact: "Duplicate-work warnings stay meaningful"
+    preconditions:
+      - "An overlap was reported"
+    steps:
+      - cap: cli:cn ack-overlap
+        page: context
+      - cap: cli:cn search
+        page: context
+      - cap: cli:cn outcome
+        page: context
+    terminal_evidence:
+      kind: db-row
+      anchor: "ack-overlap"
+
+  - id: author/record-what-happened
+    persona: author
+    value: "The outcome of a task is recorded against the work it reused"
+    impact: "Later sessions learn from what actually shipped"
+    preconditions:
+      - "A run or task finished"
+    steps:
+      - cap: cli:cn outcome
+        page: context
+      - cap: cli:cn status
+        page: context
+      - cap: cli:board learning
+        page: run
+    terminal_evidence:
+      kind: db-row
+      anchor: "outcome"
+
+  - id: author/ask-the-memory-a-question
+    persona: author
+    value: "A question about prior decisions is answered from stored memory"
+    impact: "Decisions are not re-litigated from scratch"
+    preconditions:
+      - "The memory has been written to"
+    steps:
+      - cap: mcp:learnings
+      - cap: cli:cn search
+        page: context
+      - cap: cli:lessons
+        page: learn
+    terminal_evidence:
+      kind: db-row
+      anchor: "learnings"
+
+  - id: author/draft-a-kickoff-from-a-line
+    persona: author
+    value: "One sentence becomes a kickoff skeleton the engineer edits"
+    impact: "Starting work costs a sentence, not a template hunt"
+    preconditions:
+      - "The project is onboarded"
+    steps:
+      - cap: cli:kickoff new
+      - cap: mcp:draft_kickoff
+      - cap: cli:validate
+        page: setup
+      - cap: cli:kickoff
+        note: "The kickoff command whose subcommand writes the skeleton"
+    terminal_evidence:
+      kind: dir
+      anchor: "kickoffs"
+
+  - id: author/review-a-draft-before-approval
+    persona: author
+    value: "An agent's kickoff draft is reviewed and approved, never auto-started"
+    impact: "Agents propose work; humans still authorise the spend"
+    preconditions:
+      - "An agent drafted a kickoff"
+    steps:
+      - cap: mcp:draft_kickoff
+        page: inbox
+      - cap: cli:inbox
+        page: inbox
+      - cap: mcp:start_run
+        page: runs
+    terminal_evidence:
+      kind: file
+      anchor: "draft_kickoff"
+
+  - id: author/distill-the-trajectories
+    persona: author
+    value: "Recorded trajectories are distilled into grounded lessons"
+    impact: "The run history becomes instruction instead of storage cost"
+    preconditions:
+      - "The project has finished runs"
+    steps:
+      - cap: cli:traceotter
+        page: learn
+      - cap: cli:lessons
+        page: learn
+      - cap: cli:board learning
+        page: run
+    terminal_evidence:
+      kind: file
+      anchor: "traceotter"
+
+  - id: author/explain-a-model-choice
+    persona: author
+    value: "The model behind an artifact is justified from recorded routing, not memory"
+    impact: "Cost and quality arguments cite the row that chose the lane"
+    preconditions:
+      - "The node has produced an artifact"
+    steps:
+      - cap: cli:why
+        page: run
+      - cap: cli:board telemetry
+        page: run
+      - cap: cli:board learning
+        page: run
+    terminal_evidence:
+      kind: run-row
+      anchor: "why"
+
+  - id: author/schedule-a-draft-recipe
+    persona: author
+    value: "A drafted recipe is scheduled only after the draft is committed"
+    impact: "The authoring and scheduling steps stay separate and reviewable"
+    preconditions:
+      - "A recipe draft exists"
+    steps:
+      - cap: cli:automations draft
+        page: autos
+      - cap: cli:automations draft commit
+        page: autos
+      - cap: cli:automations list
+        page: autos
+    terminal_evidence:
+      kind: file
+      anchor: "draft"
+
+  - id: author/check-an-automation-history
+    persona: author
+    value: "A recipe's firing history is read before its schedule is changed"
+    impact: "Schedule edits are made against evidence of how often it fired and failed"
+    preconditions:
+      - "The automation has fired"
+    steps:
+      - cap: cli:automations runs
+        page: autos
+      - cap: cli:automations edit
+        page: autos
+      - cap: cli:automations list
+        page: autos
+    terminal_evidence:
+      kind: run-row
+      anchor: "automations"
+
+  - id: author/score-a-certification
+    persona: author
+    value: "A change is certified as actually fixing the bug it claims"
+    impact: "A green test stops standing in for a fixed defect"
+    preconditions:
+      - "A bug and a candidate fix exist"
+    steps:
+      - cap: cli:certify
+        page: verify
+      - cap: cli:certify summary
+        page: verify
+      - cap: mcp:certify
+        page: verify
+    terminal_evidence:
+      kind: file
+      anchor: "certify"
+
+  - id: author/lint-the-skill-registry
+    persona: author
+    value: "Every registered skill is validated before a workflow grants it"
+    impact: "A malformed skill fails review, not a paid run"
+    preconditions:
+      - "At least one skill is registered"
+    steps:
+      - cap: cli:skills validate
+        page: skills
+      - cap: cli:skills list
+        page: skills
+      - cap: cli:features check-skill
+        page: features
+    terminal_evidence:
+      kind: file
+      anchor: "SKILL.md"
+
+  - id: author/plan-a-change-from-a-ticket
+    persona: author
+    value: "A ticket is planned into steps that a reviewer can argue with"
+    impact: "Decomposition is reviewed before it is executed"
+    preconditions:
+      - "The ticket names a target file"
+    steps:
+      - cap: cli:plan stdout
+      - cap: cli:specs lint
+        page: recipes
+      - cap: cli:kickoff new
+    terminal_evidence:
+      kind: file
+      anchor: "plan"

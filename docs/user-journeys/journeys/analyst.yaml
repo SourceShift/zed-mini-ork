@@ -1,5 +1,5 @@
 # Journeys of the engineer who has to answer for the machine: what it cost,
-# and whether the lanes it runs on are healthy.
+# whether the lanes it runs on are healthy, and whether the scores mean anything.
 
 journeys:
   - id: analyst/explain-todays-spend
@@ -38,6 +38,563 @@ journeys:
       - cap: cli:verifier list
         page: verify
         note: "Which verifiers exist, so a green run can be trusted"
+      - cap: cli:providers
+        note: "The provider registry the status reads"
     terminal_evidence:
       kind: file
       anchor: "providers.yaml"
+
+  - id: analyst/read-the-lifetime-board
+    persona: analyst
+    value: "The leaderboard shows which recipes earn their keep over a day, a week and a lifetime"
+    impact: "Investment decisions cite a record instead of a recent anecdote"
+    preconditions:
+      - "The home has run more than one recipe"
+    steps:
+      - cap: cli:lifetime
+        page: learn
+      - cap: cli:lifetime summary
+        page: learn
+      - cap: cli:lifetime show
+        page: learn
+    terminal_evidence:
+      kind: db-row
+      anchor: "lifetime"
+
+  - id: analyst/dig-into-one-recipe-cost
+    persona: analyst
+    value: "One recipe's cost is broken down before it is nominated for a budget cut"
+    impact: "The cut lands on the expensive step, not the whole recipe"
+    preconditions:
+      - "The recipe has runs"
+    steps:
+      - cap: cli:lifetime show
+        page: learn
+      - cap: cli:usage-report
+        page: lanes
+      - cap: cli:lifetime conductor-history
+        page: learn
+    terminal_evidence:
+      kind: db-row
+      anchor: "usage-report"
+
+  - id: analyst/compare-conductor-generations
+    persona: analyst
+    value: "Two conductor generations are compared on cost and outcome"
+    impact: "The self-improvement loop is judged on results, not on activity"
+    preconditions:
+      - "At least two generations ran"
+    steps:
+      - cap: cli:lifetime conductor-history
+        page: learn
+      - cap: cli:lifetime summary
+        page: learn
+      - cap: cli:rsi-cycle show
+        page: learn
+    terminal_evidence:
+      kind: db-row
+      anchor: "conductor-history"
+
+  - id: analyst/find-the-expensive-region
+    persona: analyst
+    value: "The code region that burns the budget is named from recorded usage"
+    impact: "Optimisation effort goes where the money is"
+    preconditions:
+      - "Runs recorded token usage"
+    steps:
+      - cap: cli:usage-report
+        page: lanes
+      - cap: cli:board telemetry
+        page: run
+      - cap: cli:metrics
+        page: learn
+    terminal_evidence:
+      kind: db-row
+      anchor: "usage"
+
+  - id: analyst/revise-a-metric
+    persona: analyst
+    value: "A metric definition is revised with its history preserved"
+    impact: "Comparisons across revisions stay honest"
+    preconditions:
+      - "The metric has recorded values"
+    steps:
+      - cap: cli:metrics
+        page: learn
+      - cap: cli:metrics revise
+        page: learn
+      - cap: cli:usage-report
+        page: lanes
+    terminal_evidence:
+      kind: db-row
+      anchor: "metrics"
+
+  - id: analyst/calibrate-the-router
+    persona: analyst
+    value: "Router calibration error and the gate's blind spot are measured"
+    impact: "Routing mistakes are quantified before the lane map is changed"
+    preconditions:
+      - "The router has recorded choices"
+    steps:
+      - cap: cli:calibrate
+        page: lanes
+      - cap: cli:metric-anchor
+        page: learn
+      - cap: cli:usage-report
+        page: lanes
+    terminal_evidence:
+      kind: db-row
+      anchor: "calibrate"
+
+  - id: analyst/score-the-reviewer
+    persona: analyst
+    value: "The review panel's verdicts are scored against the outcomes they predicted"
+    impact: "A reviewer that approves everything is caught by its own record"
+    preconditions:
+      - "Reviews have run"
+    steps:
+      - cap: cli:reviewer-eval
+        page: verify
+      - cap: cli:reviewer-eval status
+        page: verify
+      - cap: cli:reviewer-eval run
+        page: verify
+    terminal_evidence:
+      kind: file
+      anchor: "reviewer-eval"
+
+  - id: analyst/add-a-reviewer-case
+    persona: analyst
+    value: "A known-hard change becomes a permanent reviewer case"
+    impact: "A reviewer regression cannot ship unnoticed"
+    preconditions:
+      - "A case's evidence is available"
+    steps:
+      - cap: cli:reviewer-eval add-case
+        page: verify
+      - cap: cli:reviewer-eval list
+        page: verify
+      - cap: cli:reviewer-eval refresh-evidence
+        page: verify
+    terminal_evidence:
+      kind: file
+      anchor: "add-case"
+
+  - id: analyst/score-a-reviewer-run
+    persona: analyst
+    value: "One reviewer eval run is scored and compared with the previous one"
+    impact: "Reviewer quality has a trend line"
+    preconditions:
+      - "An eval run exists"
+    steps:
+      - cap: cli:reviewer-eval score
+        page: verify
+      - cap: cli:reviewer-eval run
+        page: verify
+      - cap: cli:reviewer-eval status
+        page: verify
+    terminal_evidence:
+      kind: file
+      anchor: "score"
+
+  - id: analyst/refresh-reviewer-evidence
+    persona: analyst
+    value: "Stale reviewer evidence is refreshed before a scoring round"
+    impact: "Scores reflect today's code, not the code at case creation"
+    preconditions:
+      - "Cases exist"
+    steps:
+      - cap: cli:reviewer-eval refresh-evidence
+        page: verify
+      - cap: cli:reviewer-eval list
+        page: verify
+      - cap: cli:reviewer-eval add-case
+        page: verify
+    terminal_evidence:
+      kind: file
+      anchor: "refresh-evidence"
+
+  - id: analyst/pick-the-next-eval
+    persona: analyst
+    value: "The next eval to probe is chosen from what the record says is weakest"
+    impact: "Eval effort is allocated instead of guessed"
+    preconditions:
+      - "Several evals exist"
+    steps:
+      - cap: cli:active-eval
+        page: learn
+      - cap: cli:reviewer-eval status
+        page: verify
+      - cap: cli:metrics
+        page: learn
+    terminal_evidence:
+      kind: file
+      anchor: "active-eval"
+
+  - id: analyst/audit-panel-topology
+    persona: analyst
+    value: "Panel topology telemetry is read to explain a slow or missing panel"
+    impact: "UI problems are diagnosed from data instead of re-opening the window"
+    preconditions:
+      - "The IDE has opened panels"
+    steps:
+      - cap: cli:topology
+        page: orch
+      - cap: cli:board telemetry
+        page: run
+      - cap: cli:serve
+        page: kanban
+    terminal_evidence:
+      kind: file
+      anchor: "topology"
+
+  - id: analyst/retire-stale-memory
+    persona: analyst
+    value: "Memory that is past its usefulness is retired with a record"
+    impact: "Retrieval stays precise as the ledger grows"
+    preconditions:
+      - "The memory ledger has aged entries"
+    steps:
+      - cap: cli:memory-lifecycle
+        page: learn
+      - cap: cli:cn status
+        page: context
+      - cap: cli:board learning
+        page: run
+    terminal_evidence:
+      kind: db-row
+      anchor: "memory-lifecycle"
+
+  - id: analyst/check-for-silent-collapse
+    persona: analyst
+    value: "A promotion history that is collapsing is detected before quality drops"
+    impact: "Degradation is seen while it is still reversible"
+    preconditions:
+      - "A promotion history exists"
+    steps:
+      - cap: cli:collapse-check
+        page: learn
+      - cap: cli:collapse-precursor
+        page: learn
+      - cap: cli:metrics
+        page: learn
+    terminal_evidence:
+      kind: db-row
+      anchor: "collapse-check"
+
+  - id: analyst/report-collapse-precursors
+    persona: analyst
+    value: "Silent-collapse precursors are reported alongside the collapse verdict"
+    impact: "The team gets the warning, not just the postmortem"
+    preconditions:
+      - "History is long enough to measure"
+    steps:
+      - cap: cli:collapse-precursor
+        page: learn
+      - cap: cli:collapse-check
+        page: learn
+      - cap: cli:reviewer-eval status
+        page: verify
+    terminal_evidence:
+      kind: db-row
+      anchor: "precursor"
+
+  - id: analyst/probe-for-reward-hacking
+    persona: analyst
+    value: "A generation history is checked for reward hacking before it is trusted"
+    impact: "A scorer that is being gamed is caught by its own record"
+    preconditions:
+      - "A generation history exists"
+    steps:
+      - cap: cli:hack-probe
+        page: learn
+      - cap: cli:metrics
+        page: learn
+      - cap: cli:rsi-cycle show
+        page: learn
+    terminal_evidence:
+      kind: db-row
+      anchor: "hack-probe"
+
+  - id: analyst/fuzz-the-gates
+    persona: analyst
+    value: "The gates are fuzzed and their false-rate is reported"
+    impact: "Gate strictness is chosen from measured rates"
+    preconditions:
+      - "The gate fuzzer can run hermetically"
+    steps:
+      - cap: cli:gate-fuzz
+        page: verify
+      - cap: cli:calibrate
+        page: lanes
+      - cap: cli:metrics
+        page: learn
+    terminal_evidence:
+      kind: file
+      anchor: "gate-fuzz"
+
+  - id: analyst/watch-a-harness-contrast
+    persona: analyst
+    value: "An A-vs-B harness contrast is attributed to a cause, not just a delta"
+    impact: "Harness changes are adopted on attribution, not correlation"
+    preconditions:
+      - "Both harness variants have run"
+    steps:
+      - cap: cli:harness-contrast
+        page: learn
+      - cap: cli:harness-audit
+        page: learn
+      - cap: cli:metric-anchor
+        page: learn
+    terminal_evidence:
+      kind: file
+      anchor: "harness-contrast"
+
+  - id: analyst/anchor-a-metric
+    persona: analyst
+    value: "A metric is tied to the anchor that proves it measures what it claims"
+    impact: "Metrics stop being numbers with no referent"
+    preconditions:
+      - "The metric exists"
+    steps:
+      - cap: cli:metric-anchor
+        page: learn
+      - cap: cli:metrics revise
+        page: learn
+      - cap: cli:calibrate
+        page: lanes
+    terminal_evidence:
+      kind: file
+      anchor: "metric-anchor"
+
+  - id: analyst/check-oracle-integrity
+    persona: analyst
+    value: "The oracle's integrity is checked before its verdicts are used as ground truth"
+    impact: "A corrupted oracle cannot silently poison evaluations"
+    preconditions:
+      - "The oracle has produced verdicts"
+    steps:
+      - cap: cli:instruments
+        page: verify
+      - cap: cli:instruments oracle-integrity
+        page: verify
+      - cap: cli:gate-fuzz
+        page: verify
+    terminal_evidence:
+      kind: file
+      anchor: "oracle-integrity"
+
+  - id: analyst/review-an-rsi-cycle
+    persona: analyst
+    value: "One self-improvement cycle is read before the next is planned"
+    impact: "The loop is audited per cycle instead of in aggregate"
+    preconditions:
+      - "A cycle has run"
+    steps:
+      - cap: cli:rsi-cycle show
+        page: learn
+      - cap: cli:rsi-cycle list
+        page: learn
+      - cap: cli:rsi-cycle plan
+        page: learn
+    terminal_evidence:
+      kind: db-row
+      anchor: "rsi-cycle"
+
+  - id: analyst/plan-an-rsi-cycle
+    persona: analyst
+    value: "The next improvement cycle is planned from research and expected impact"
+    impact: "Self-improvement is aimed, not random"
+    preconditions:
+      - "The loop is configured"
+    steps:
+      - cap: cli:rsi-cycle plan
+        page: learn
+      - cap: cli:rsi-cycle research
+        page: learn
+      - cap: cli:rsi-cycle impact
+        page: learn
+    terminal_evidence:
+      kind: db-row
+      anchor: "impact"
+
+  - id: analyst/measure-self-improvement
+    persona: analyst
+    value: "A budgeted self-improvement pass is measured against the leaderboard"
+    impact: "The loop justifies its wall clock"
+    preconditions:
+      - "A time budget is agreed"
+    steps:
+      - cap: cli:self-improve
+        page: learn
+      - cap: cli:rsi-cycle impact
+        page: learn
+      - cap: cli:lifetime summary
+        page: learn
+    terminal_evidence:
+      kind: db-row
+      anchor: "self-improve"
+
+  - id: analyst/read-run-telemetry
+    persona: analyst
+    value: "One run's telemetry explains where its time and tokens went"
+    impact: "Cost questions about a single run are answered without a query"
+    preconditions:
+      - "The run is finished"
+    steps:
+      - cap: cli:board telemetry
+        page: run
+      - cap: cli:board learning
+        page: run
+      - cap: mcp:cost
+    terminal_evidence:
+      kind: run-row
+      anchor: "telemetry"
+
+  - id: analyst/ask-cost-over-mcp
+    persona: analyst
+    value: "An assistant answers a cost question without shell access"
+    impact: "Spend reporting reaches people who never open a terminal"
+    preconditions:
+      - "An MCP client is connected"
+    steps:
+      - cap: mcp:cost
+      - cap: mcp:lanes
+      - cap: cli:lifetime summary
+        page: learn
+    terminal_evidence:
+      kind: db-row
+      anchor: "cost"
+
+  - id: analyst/ask-lanes-over-mcp
+    persona: analyst
+    value: "The lane inventory is answered from the active config, not from a stale doc"
+    impact: "Planning uses the lanes that exist today"
+    preconditions:
+      - "An agents config exists"
+    steps:
+      - cap: mcp:lanes
+      - cap: cli:providers status
+        page: setup
+      - cap: cli:usage-report
+        page: lanes
+    terminal_evidence:
+      kind: file
+      anchor: "lanes"
+
+  - id: analyst/read-learnings
+    persona: analyst
+    value: "The lessons the engine wrote back are read and triaged"
+    impact: "Learned rules are curated, not accumulated"
+    preconditions:
+      - "The engine has written learnings"
+    steps:
+      - cap: mcp:learnings
+      - cap: cli:board learning
+        page: run
+      - cap: cli:lessons
+        page: learn
+    terminal_evidence:
+      kind: db-row
+      anchor: "learning"
+
+  - id: analyst/budget-a-batch
+    persona: analyst
+    value: "A batch is budgeted from recorded per-run spend before it is queued"
+    impact: "The queue is sized to the wallet, not to optimism"
+    preconditions:
+      - "Comparable runs exist"
+    steps:
+      - cap: cli:lifetime
+        page: learn
+      - cap: cli:usage-report
+        page: lanes
+      - cap: cli:board telemetry
+        page: run
+    terminal_evidence:
+      kind: db-row
+      anchor: "cost_usd"
+
+  - id: analyst/compare-two-recipes
+    persona: analyst
+    value: "Two recipes are compared on cost, success and track record"
+    impact: "The cheaper recipe wins on evidence, not on age"
+    preconditions:
+      - "Both recipes have run"
+    steps:
+      - cap: cli:lifetime show
+        page: learn
+      - cap: cli:metrics
+        page: learn
+      - cap: cli:usage-report
+        page: lanes
+    terminal_evidence:
+      kind: db-row
+      anchor: "lifetime"
+
+  - id: analyst/track-spend-over-time
+    persona: analyst
+    value: "Spend over a day, a week and a lifetime is read from the same record"
+    impact: "Trend questions do not require a bespoke query"
+    preconditions:
+      - "Runs span more than one day"
+    steps:
+      - cap: cli:lifetime summary
+        page: learn
+      - cap: cli:usage-report
+        page: lanes
+      - cap: mcp:cost
+    terminal_evidence:
+      kind: db-row
+      anchor: "h24"
+
+  - id: analyst/attribute-cost-to-a-node
+    persona: analyst
+    value: "Spend is attributed to the node and lane that spent it"
+    impact: "A cost overrun has an owner"
+    preconditions:
+      - "The run's nodes recorded tokens"
+    steps:
+      - cap: cli:board telemetry
+        page: run
+      - cap: cli:board node
+        page: run
+      - cap: cli:usage-report
+        page: lanes
+    terminal_evidence:
+      kind: run-row
+      anchor: "tokens"
+
+  - id: analyst/certify-a-fix-regression
+    persona: analyst
+    value: "A fix is certified rather than assumed from a passing test suite"
+    impact: "Regression claims are evidence, not vibes"
+    preconditions:
+      - "A bug and a candidate fix exist"
+    steps:
+      - cap: cli:certify summary
+        page: verify
+      - cap: cli:certify
+        page: verify
+      - cap: cli:metric-anchor
+        page: learn
+    terminal_evidence:
+      kind: file
+      anchor: "certify"
+
+  - id: analyst/review-the-learning-writeback
+    persona: analyst
+    value: "Learned rules are audited against the outcomes that produced them"
+    impact: "Bad lessons are retired before they shape future runs"
+    preconditions:
+      - "The writeback path has produced rules"
+    steps:
+      - cap: cli:board learning
+        page: run
+      - cap: cli:memory-lifecycle
+        page: learn
+      - cap: cli:metrics
+        page: learn
+    terminal_evidence:
+      kind: db-row
+      anchor: "writeback"

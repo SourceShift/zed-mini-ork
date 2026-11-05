@@ -31,6 +31,338 @@ flowchart LR
   analyst_check_lane_health_s3["verifier list<br/><i>partial</i>"]
   analyst_check_lane_health_s2 --> analyst_check_lane_health_s3
   page_verify -.-> analyst_check_lane_health_s3
+  analyst_check_lane_health_s4["providers<br/><i>none</i>"]
+  analyst_check_lane_health_s3 --> analyst_check_lane_health_s4
+  analyst_read_the_lifetime_board["analyst/read-the-lifetime-board<br/><i>none</i>"]
+  analyst_read_the_lifetime_board_s0["lifetime<br/><i>partial</i>"]
+  analyst_read_the_lifetime_board --> analyst_read_the_lifetime_board_s0
+  page_learn -.-> analyst_read_the_lifetime_board_s0
+  analyst_read_the_lifetime_board_s1["lifetime summary<br/><i>full</i>"]
+  analyst_read_the_lifetime_board_s0 --> analyst_read_the_lifetime_board_s1
+  page_learn -.-> analyst_read_the_lifetime_board_s1
+  analyst_read_the_lifetime_board_s2["lifetime show<br/><i>none</i>"]
+  analyst_read_the_lifetime_board_s1 --> analyst_read_the_lifetime_board_s2
+  page_learn -.-> analyst_read_the_lifetime_board_s2
+  analyst_dig_into_one_recipe_cost["analyst/dig-into-one-recipe-cost<br/><i>none</i>"]
+  analyst_dig_into_one_recipe_cost_s0["lifetime show<br/><i>none</i>"]
+  analyst_dig_into_one_recipe_cost --> analyst_dig_into_one_recipe_cost_s0
+  page_learn -.-> analyst_dig_into_one_recipe_cost_s0
+  analyst_dig_into_one_recipe_cost_s1["usage-report<br/><i>full</i>"]
+  analyst_dig_into_one_recipe_cost_s0 --> analyst_dig_into_one_recipe_cost_s1
+  page_lanes -.-> analyst_dig_into_one_recipe_cost_s1
+  analyst_dig_into_one_recipe_cost_s2["lifetime conductor-history<br/><i>full</i>"]
+  analyst_dig_into_one_recipe_cost_s1 --> analyst_dig_into_one_recipe_cost_s2
+  page_learn -.-> analyst_dig_into_one_recipe_cost_s2
+  analyst_compare_conductor_generations["analyst/compare-conductor-generations<br/><i>none</i>"]
+  analyst_compare_conductor_generations_s0["lifetime conductor-history<br/><i>full</i>"]
+  analyst_compare_conductor_generations --> analyst_compare_conductor_generations_s0
+  page_learn -.-> analyst_compare_conductor_generations_s0
+  analyst_compare_conductor_generations_s1["lifetime summary<br/><i>full</i>"]
+  analyst_compare_conductor_generations_s0 --> analyst_compare_conductor_generations_s1
+  page_learn -.-> analyst_compare_conductor_generations_s1
+  analyst_compare_conductor_generations_s2["rsi-cycle show<br/><i>none</i>"]
+  analyst_compare_conductor_generations_s1 --> analyst_compare_conductor_generations_s2
+  page_learn -.-> analyst_compare_conductor_generations_s2
+  analyst_find_the_expensive_region["analyst/find-the-expensive-region<br/><i>none</i>"]
+  analyst_find_the_expensive_region_s0["usage-report<br/><i>full</i>"]
+  analyst_find_the_expensive_region --> analyst_find_the_expensive_region_s0
+  page_lanes -.-> analyst_find_the_expensive_region_s0
+  analyst_find_the_expensive_region_s1["board telemetry<br/><i>none</i>"]
+  analyst_find_the_expensive_region_s0 --> analyst_find_the_expensive_region_s1
+  page_run -.-> analyst_find_the_expensive_region_s1
+  analyst_find_the_expensive_region_s2["metrics<br/><i>none</i>"]
+  analyst_find_the_expensive_region_s1 --> analyst_find_the_expensive_region_s2
+  page_learn -.-> analyst_find_the_expensive_region_s2
+  analyst_revise_a_metric["analyst/revise-a-metric<br/><i>none</i>"]
+  analyst_revise_a_metric_s0["metrics<br/><i>none</i>"]
+  analyst_revise_a_metric --> analyst_revise_a_metric_s0
+  page_learn -.-> analyst_revise_a_metric_s0
+  analyst_revise_a_metric_s1["metrics revise<br/><i>none</i>"]
+  analyst_revise_a_metric_s0 --> analyst_revise_a_metric_s1
+  page_learn -.-> analyst_revise_a_metric_s1
+  analyst_revise_a_metric_s2["usage-report<br/><i>full</i>"]
+  analyst_revise_a_metric_s1 --> analyst_revise_a_metric_s2
+  page_lanes -.-> analyst_revise_a_metric_s2
+  analyst_calibrate_the_router["analyst/calibrate-the-router<br/><i>none</i>"]
+  analyst_calibrate_the_router_s0["calibrate<br/><i>none</i>"]
+  analyst_calibrate_the_router --> analyst_calibrate_the_router_s0
+  page_lanes -.-> analyst_calibrate_the_router_s0
+  analyst_calibrate_the_router_s1["metric-anchor<br/><i>none</i>"]
+  analyst_calibrate_the_router_s0 --> analyst_calibrate_the_router_s1
+  page_learn -.-> analyst_calibrate_the_router_s1
+  analyst_calibrate_the_router_s2["usage-report<br/><i>full</i>"]
+  analyst_calibrate_the_router_s1 --> analyst_calibrate_the_router_s2
+  page_lanes -.-> analyst_calibrate_the_router_s2
+  analyst_score_the_reviewer["analyst/score-the-reviewer<br/><i>none</i>"]
+  analyst_score_the_reviewer_s0["reviewer-eval<br/><i>none</i>"]
+  analyst_score_the_reviewer --> analyst_score_the_reviewer_s0
+  page_verify -.-> analyst_score_the_reviewer_s0
+  analyst_score_the_reviewer_s1["reviewer-eval status<br/><i>none</i>"]
+  analyst_score_the_reviewer_s0 --> analyst_score_the_reviewer_s1
+  page_verify -.-> analyst_score_the_reviewer_s1
+  analyst_score_the_reviewer_s2["reviewer-eval run<br/><i>none</i>"]
+  analyst_score_the_reviewer_s1 --> analyst_score_the_reviewer_s2
+  page_verify -.-> analyst_score_the_reviewer_s2
+  analyst_add_a_reviewer_case["analyst/add-a-reviewer-case<br/><i>none</i>"]
+  analyst_add_a_reviewer_case_s0["reviewer-eval add-case<br/><i>none</i>"]
+  analyst_add_a_reviewer_case --> analyst_add_a_reviewer_case_s0
+  page_verify -.-> analyst_add_a_reviewer_case_s0
+  analyst_add_a_reviewer_case_s1["reviewer-eval list<br/><i>none</i>"]
+  analyst_add_a_reviewer_case_s0 --> analyst_add_a_reviewer_case_s1
+  page_verify -.-> analyst_add_a_reviewer_case_s1
+  analyst_add_a_reviewer_case_s2["reviewer-eval refresh-evidence<br/><i>none</i>"]
+  analyst_add_a_reviewer_case_s1 --> analyst_add_a_reviewer_case_s2
+  page_verify -.-> analyst_add_a_reviewer_case_s2
+  analyst_score_a_reviewer_run["analyst/score-a-reviewer-run<br/><i>none</i>"]
+  analyst_score_a_reviewer_run_s0["reviewer-eval score<br/><i>none</i>"]
+  analyst_score_a_reviewer_run --> analyst_score_a_reviewer_run_s0
+  page_verify -.-> analyst_score_a_reviewer_run_s0
+  analyst_score_a_reviewer_run_s1["reviewer-eval run<br/><i>none</i>"]
+  analyst_score_a_reviewer_run_s0 --> analyst_score_a_reviewer_run_s1
+  page_verify -.-> analyst_score_a_reviewer_run_s1
+  analyst_score_a_reviewer_run_s2["reviewer-eval status<br/><i>none</i>"]
+  analyst_score_a_reviewer_run_s1 --> analyst_score_a_reviewer_run_s2
+  page_verify -.-> analyst_score_a_reviewer_run_s2
+  analyst_refresh_reviewer_evidence["analyst/refresh-reviewer-evidence<br/><i>none</i>"]
+  analyst_refresh_reviewer_evidence_s0["reviewer-eval refresh-evidence<br/><i>none</i>"]
+  analyst_refresh_reviewer_evidence --> analyst_refresh_reviewer_evidence_s0
+  page_verify -.-> analyst_refresh_reviewer_evidence_s0
+  analyst_refresh_reviewer_evidence_s1["reviewer-eval list<br/><i>none</i>"]
+  analyst_refresh_reviewer_evidence_s0 --> analyst_refresh_reviewer_evidence_s1
+  page_verify -.-> analyst_refresh_reviewer_evidence_s1
+  analyst_refresh_reviewer_evidence_s2["reviewer-eval add-case<br/><i>none</i>"]
+  analyst_refresh_reviewer_evidence_s1 --> analyst_refresh_reviewer_evidence_s2
+  page_verify -.-> analyst_refresh_reviewer_evidence_s2
+  analyst_pick_the_next_eval["analyst/pick-the-next-eval<br/><i>none</i>"]
+  analyst_pick_the_next_eval_s0["active-eval<br/><i>none</i>"]
+  analyst_pick_the_next_eval --> analyst_pick_the_next_eval_s0
+  page_learn -.-> analyst_pick_the_next_eval_s0
+  analyst_pick_the_next_eval_s1["reviewer-eval status<br/><i>none</i>"]
+  analyst_pick_the_next_eval_s0 --> analyst_pick_the_next_eval_s1
+  page_verify -.-> analyst_pick_the_next_eval_s1
+  analyst_pick_the_next_eval_s2["metrics<br/><i>none</i>"]
+  analyst_pick_the_next_eval_s1 --> analyst_pick_the_next_eval_s2
+  page_learn -.-> analyst_pick_the_next_eval_s2
+  analyst_audit_panel_topology["analyst/audit-panel-topology<br/><i>none</i>"]
+  analyst_audit_panel_topology_s0["topology<br/><i>none</i>"]
+  analyst_audit_panel_topology --> analyst_audit_panel_topology_s0
+  page_orch -.-> analyst_audit_panel_topology_s0
+  analyst_audit_panel_topology_s1["board telemetry<br/><i>none</i>"]
+  analyst_audit_panel_topology_s0 --> analyst_audit_panel_topology_s1
+  page_run -.-> analyst_audit_panel_topology_s1
+  analyst_audit_panel_topology_s2["serve<br/><i>none</i>"]
+  analyst_audit_panel_topology_s1 --> analyst_audit_panel_topology_s2
+  page_kanban -.-> analyst_audit_panel_topology_s2
+  analyst_retire_stale_memory["analyst/retire-stale-memory<br/><i>none</i>"]
+  analyst_retire_stale_memory_s0["memory-lifecycle<br/><i>none</i>"]
+  analyst_retire_stale_memory --> analyst_retire_stale_memory_s0
+  page_learn -.-> analyst_retire_stale_memory_s0
+  analyst_retire_stale_memory_s1["cn status<br/><i>none</i>"]
+  analyst_retire_stale_memory_s0 --> analyst_retire_stale_memory_s1
+  page_context -.-> analyst_retire_stale_memory_s1
+  analyst_retire_stale_memory_s2["board learning<br/><i>none</i>"]
+  analyst_retire_stale_memory_s1 --> analyst_retire_stale_memory_s2
+  page_run -.-> analyst_retire_stale_memory_s2
+  analyst_check_for_silent_collapse["analyst/check-for-silent-collapse<br/><i>none</i>"]
+  analyst_check_for_silent_collapse_s0["collapse-check<br/><i>none</i>"]
+  analyst_check_for_silent_collapse --> analyst_check_for_silent_collapse_s0
+  page_learn -.-> analyst_check_for_silent_collapse_s0
+  analyst_check_for_silent_collapse_s1["collapse-precursor<br/><i>none</i>"]
+  analyst_check_for_silent_collapse_s0 --> analyst_check_for_silent_collapse_s1
+  page_learn -.-> analyst_check_for_silent_collapse_s1
+  analyst_check_for_silent_collapse_s2["metrics<br/><i>none</i>"]
+  analyst_check_for_silent_collapse_s1 --> analyst_check_for_silent_collapse_s2
+  page_learn -.-> analyst_check_for_silent_collapse_s2
+  analyst_report_collapse_precursors["analyst/report-collapse-precursors<br/><i>none</i>"]
+  analyst_report_collapse_precursors_s0["collapse-precursor<br/><i>none</i>"]
+  analyst_report_collapse_precursors --> analyst_report_collapse_precursors_s0
+  page_learn -.-> analyst_report_collapse_precursors_s0
+  analyst_report_collapse_precursors_s1["collapse-check<br/><i>none</i>"]
+  analyst_report_collapse_precursors_s0 --> analyst_report_collapse_precursors_s1
+  page_learn -.-> analyst_report_collapse_precursors_s1
+  analyst_report_collapse_precursors_s2["reviewer-eval status<br/><i>none</i>"]
+  analyst_report_collapse_precursors_s1 --> analyst_report_collapse_precursors_s2
+  page_verify -.-> analyst_report_collapse_precursors_s2
+  analyst_probe_for_reward_hacking["analyst/probe-for-reward-hacking<br/><i>none</i>"]
+  analyst_probe_for_reward_hacking_s0["hack-probe<br/><i>none</i>"]
+  analyst_probe_for_reward_hacking --> analyst_probe_for_reward_hacking_s0
+  page_learn -.-> analyst_probe_for_reward_hacking_s0
+  analyst_probe_for_reward_hacking_s1["metrics<br/><i>none</i>"]
+  analyst_probe_for_reward_hacking_s0 --> analyst_probe_for_reward_hacking_s1
+  page_learn -.-> analyst_probe_for_reward_hacking_s1
+  analyst_probe_for_reward_hacking_s2["rsi-cycle show<br/><i>none</i>"]
+  analyst_probe_for_reward_hacking_s1 --> analyst_probe_for_reward_hacking_s2
+  page_learn -.-> analyst_probe_for_reward_hacking_s2
+  analyst_fuzz_the_gates["analyst/fuzz-the-gates<br/><i>none</i>"]
+  analyst_fuzz_the_gates_s0["gate-fuzz<br/><i>none</i>"]
+  analyst_fuzz_the_gates --> analyst_fuzz_the_gates_s0
+  page_verify -.-> analyst_fuzz_the_gates_s0
+  analyst_fuzz_the_gates_s1["calibrate<br/><i>none</i>"]
+  analyst_fuzz_the_gates_s0 --> analyst_fuzz_the_gates_s1
+  page_lanes -.-> analyst_fuzz_the_gates_s1
+  analyst_fuzz_the_gates_s2["metrics<br/><i>none</i>"]
+  analyst_fuzz_the_gates_s1 --> analyst_fuzz_the_gates_s2
+  page_learn -.-> analyst_fuzz_the_gates_s2
+  analyst_watch_a_harness_contrast["analyst/watch-a-harness-contrast<br/><i>none</i>"]
+  analyst_watch_a_harness_contrast_s0["harness-contrast<br/><i>none</i>"]
+  analyst_watch_a_harness_contrast --> analyst_watch_a_harness_contrast_s0
+  page_learn -.-> analyst_watch_a_harness_contrast_s0
+  analyst_watch_a_harness_contrast_s1["harness-audit<br/><i>none</i>"]
+  analyst_watch_a_harness_contrast_s0 --> analyst_watch_a_harness_contrast_s1
+  page_learn -.-> analyst_watch_a_harness_contrast_s1
+  analyst_watch_a_harness_contrast_s2["metric-anchor<br/><i>none</i>"]
+  analyst_watch_a_harness_contrast_s1 --> analyst_watch_a_harness_contrast_s2
+  page_learn -.-> analyst_watch_a_harness_contrast_s2
+  analyst_anchor_a_metric["analyst/anchor-a-metric<br/><i>none</i>"]
+  analyst_anchor_a_metric_s0["metric-anchor<br/><i>none</i>"]
+  analyst_anchor_a_metric --> analyst_anchor_a_metric_s0
+  page_learn -.-> analyst_anchor_a_metric_s0
+  analyst_anchor_a_metric_s1["metrics revise<br/><i>none</i>"]
+  analyst_anchor_a_metric_s0 --> analyst_anchor_a_metric_s1
+  page_learn -.-> analyst_anchor_a_metric_s1
+  analyst_anchor_a_metric_s2["calibrate<br/><i>none</i>"]
+  analyst_anchor_a_metric_s1 --> analyst_anchor_a_metric_s2
+  page_lanes -.-> analyst_anchor_a_metric_s2
+  analyst_check_oracle_integrity["analyst/check-oracle-integrity<br/><i>none</i>"]
+  analyst_check_oracle_integrity_s0["instruments<br/><i>none</i>"]
+  analyst_check_oracle_integrity --> analyst_check_oracle_integrity_s0
+  page_verify -.-> analyst_check_oracle_integrity_s0
+  analyst_check_oracle_integrity_s1["instruments oracle-integrity<br/><i>none</i>"]
+  analyst_check_oracle_integrity_s0 --> analyst_check_oracle_integrity_s1
+  page_verify -.-> analyst_check_oracle_integrity_s1
+  analyst_check_oracle_integrity_s2["gate-fuzz<br/><i>none</i>"]
+  analyst_check_oracle_integrity_s1 --> analyst_check_oracle_integrity_s2
+  page_verify -.-> analyst_check_oracle_integrity_s2
+  analyst_review_an_rsi_cycle["analyst/review-an-rsi-cycle<br/><i>none</i>"]
+  analyst_review_an_rsi_cycle_s0["rsi-cycle show<br/><i>none</i>"]
+  analyst_review_an_rsi_cycle --> analyst_review_an_rsi_cycle_s0
+  page_learn -.-> analyst_review_an_rsi_cycle_s0
+  analyst_review_an_rsi_cycle_s1["rsi-cycle list<br/><i>none</i>"]
+  analyst_review_an_rsi_cycle_s0 --> analyst_review_an_rsi_cycle_s1
+  page_learn -.-> analyst_review_an_rsi_cycle_s1
+  analyst_review_an_rsi_cycle_s2["rsi-cycle plan<br/><i>none</i>"]
+  analyst_review_an_rsi_cycle_s1 --> analyst_review_an_rsi_cycle_s2
+  page_learn -.-> analyst_review_an_rsi_cycle_s2
+  analyst_plan_an_rsi_cycle["analyst/plan-an-rsi-cycle<br/><i>none</i>"]
+  analyst_plan_an_rsi_cycle_s0["rsi-cycle plan<br/><i>none</i>"]
+  analyst_plan_an_rsi_cycle --> analyst_plan_an_rsi_cycle_s0
+  page_learn -.-> analyst_plan_an_rsi_cycle_s0
+  analyst_plan_an_rsi_cycle_s1["rsi-cycle research<br/><i>none</i>"]
+  analyst_plan_an_rsi_cycle_s0 --> analyst_plan_an_rsi_cycle_s1
+  page_learn -.-> analyst_plan_an_rsi_cycle_s1
+  analyst_plan_an_rsi_cycle_s2["rsi-cycle impact<br/><i>none</i>"]
+  analyst_plan_an_rsi_cycle_s1 --> analyst_plan_an_rsi_cycle_s2
+  page_learn -.-> analyst_plan_an_rsi_cycle_s2
+  analyst_measure_self_improvement["analyst/measure-self-improvement<br/><i>none</i>"]
+  analyst_measure_self_improvement_s0["self-improve<br/><i>none</i>"]
+  analyst_measure_self_improvement --> analyst_measure_self_improvement_s0
+  page_learn -.-> analyst_measure_self_improvement_s0
+  analyst_measure_self_improvement_s1["rsi-cycle impact<br/><i>none</i>"]
+  analyst_measure_self_improvement_s0 --> analyst_measure_self_improvement_s1
+  page_learn -.-> analyst_measure_self_improvement_s1
+  analyst_measure_self_improvement_s2["lifetime summary<br/><i>full</i>"]
+  analyst_measure_self_improvement_s1 --> analyst_measure_self_improvement_s2
+  page_learn -.-> analyst_measure_self_improvement_s2
+  analyst_read_run_telemetry["analyst/read-run-telemetry<br/><i>none</i>"]
+  analyst_read_run_telemetry_s0["board telemetry<br/><i>none</i>"]
+  analyst_read_run_telemetry --> analyst_read_run_telemetry_s0
+  page_run -.-> analyst_read_run_telemetry_s0
+  analyst_read_run_telemetry_s1["board learning<br/><i>none</i>"]
+  analyst_read_run_telemetry_s0 --> analyst_read_run_telemetry_s1
+  page_run -.-> analyst_read_run_telemetry_s1
+  analyst_read_run_telemetry_s2["cost<br/><i>none</i>"]
+  analyst_read_run_telemetry_s1 --> analyst_read_run_telemetry_s2
+  analyst_ask_cost_over_mcp["analyst/ask-cost-over-mcp<br/><i>none</i>"]
+  analyst_ask_cost_over_mcp_s0["cost<br/><i>none</i>"]
+  analyst_ask_cost_over_mcp --> analyst_ask_cost_over_mcp_s0
+  analyst_ask_cost_over_mcp_s1["lanes<br/><i>none</i>"]
+  analyst_ask_cost_over_mcp_s0 --> analyst_ask_cost_over_mcp_s1
+  analyst_ask_cost_over_mcp_s2["lifetime summary<br/><i>full</i>"]
+  analyst_ask_cost_over_mcp_s1 --> analyst_ask_cost_over_mcp_s2
+  page_learn -.-> analyst_ask_cost_over_mcp_s2
+  analyst_ask_lanes_over_mcp["analyst/ask-lanes-over-mcp<br/><i>none</i>"]
+  analyst_ask_lanes_over_mcp_s0["lanes<br/><i>none</i>"]
+  analyst_ask_lanes_over_mcp --> analyst_ask_lanes_over_mcp_s0
+  analyst_ask_lanes_over_mcp_s1["providers status<br/><i>none</i>"]
+  analyst_ask_lanes_over_mcp_s0 --> analyst_ask_lanes_over_mcp_s1
+  page_setup -.-> analyst_ask_lanes_over_mcp_s1
+  analyst_ask_lanes_over_mcp_s2["usage-report<br/><i>full</i>"]
+  analyst_ask_lanes_over_mcp_s1 --> analyst_ask_lanes_over_mcp_s2
+  page_lanes -.-> analyst_ask_lanes_over_mcp_s2
+  analyst_read_learnings["analyst/read-learnings<br/><i>none</i>"]
+  analyst_read_learnings_s0["learnings<br/><i>none</i>"]
+  analyst_read_learnings --> analyst_read_learnings_s0
+  analyst_read_learnings_s1["board learning<br/><i>none</i>"]
+  analyst_read_learnings_s0 --> analyst_read_learnings_s1
+  page_run -.-> analyst_read_learnings_s1
+  analyst_read_learnings_s2["lessons<br/><i>partial</i>"]
+  analyst_read_learnings_s1 --> analyst_read_learnings_s2
+  page_learn -.-> analyst_read_learnings_s2
+  analyst_budget_a_batch["analyst/budget-a-batch<br/><i>none</i>"]
+  analyst_budget_a_batch_s0["lifetime<br/><i>partial</i>"]
+  analyst_budget_a_batch --> analyst_budget_a_batch_s0
+  page_learn -.-> analyst_budget_a_batch_s0
+  analyst_budget_a_batch_s1["usage-report<br/><i>full</i>"]
+  analyst_budget_a_batch_s0 --> analyst_budget_a_batch_s1
+  page_lanes -.-> analyst_budget_a_batch_s1
+  analyst_budget_a_batch_s2["board telemetry<br/><i>none</i>"]
+  analyst_budget_a_batch_s1 --> analyst_budget_a_batch_s2
+  page_run -.-> analyst_budget_a_batch_s2
+  analyst_compare_two_recipes["analyst/compare-two-recipes<br/><i>none</i>"]
+  analyst_compare_two_recipes_s0["lifetime show<br/><i>none</i>"]
+  analyst_compare_two_recipes --> analyst_compare_two_recipes_s0
+  page_learn -.-> analyst_compare_two_recipes_s0
+  analyst_compare_two_recipes_s1["metrics<br/><i>none</i>"]
+  analyst_compare_two_recipes_s0 --> analyst_compare_two_recipes_s1
+  page_learn -.-> analyst_compare_two_recipes_s1
+  analyst_compare_two_recipes_s2["usage-report<br/><i>full</i>"]
+  analyst_compare_two_recipes_s1 --> analyst_compare_two_recipes_s2
+  page_lanes -.-> analyst_compare_two_recipes_s2
+  analyst_track_spend_over_time["analyst/track-spend-over-time<br/><i>none</i>"]
+  analyst_track_spend_over_time_s0["lifetime summary<br/><i>full</i>"]
+  analyst_track_spend_over_time --> analyst_track_spend_over_time_s0
+  page_learn -.-> analyst_track_spend_over_time_s0
+  analyst_track_spend_over_time_s1["usage-report<br/><i>full</i>"]
+  analyst_track_spend_over_time_s0 --> analyst_track_spend_over_time_s1
+  page_lanes -.-> analyst_track_spend_over_time_s1
+  analyst_track_spend_over_time_s2["cost<br/><i>none</i>"]
+  analyst_track_spend_over_time_s1 --> analyst_track_spend_over_time_s2
+  analyst_attribute_cost_to_a_node["analyst/attribute-cost-to-a-node<br/><i>none</i>"]
+  analyst_attribute_cost_to_a_node_s0["board telemetry<br/><i>none</i>"]
+  analyst_attribute_cost_to_a_node --> analyst_attribute_cost_to_a_node_s0
+  page_run -.-> analyst_attribute_cost_to_a_node_s0
+  analyst_attribute_cost_to_a_node_s1["board node<br/><i>none</i>"]
+  analyst_attribute_cost_to_a_node_s0 --> analyst_attribute_cost_to_a_node_s1
+  page_run -.-> analyst_attribute_cost_to_a_node_s1
+  analyst_attribute_cost_to_a_node_s2["usage-report<br/><i>full</i>"]
+  analyst_attribute_cost_to_a_node_s1 --> analyst_attribute_cost_to_a_node_s2
+  page_lanes -.-> analyst_attribute_cost_to_a_node_s2
+  analyst_certify_a_fix_regression["analyst/certify-a-fix-regression<br/><i>none</i>"]
+  analyst_certify_a_fix_regression_s0["certify summary<br/><i>none</i>"]
+  analyst_certify_a_fix_regression --> analyst_certify_a_fix_regression_s0
+  page_verify -.-> analyst_certify_a_fix_regression_s0
+  analyst_certify_a_fix_regression_s1["certify<br/><i>none</i>"]
+  analyst_certify_a_fix_regression_s0 --> analyst_certify_a_fix_regression_s1
+  page_verify -.-> analyst_certify_a_fix_regression_s1
+  analyst_certify_a_fix_regression_s2["metric-anchor<br/><i>none</i>"]
+  analyst_certify_a_fix_regression_s1 --> analyst_certify_a_fix_regression_s2
+  page_learn -.-> analyst_certify_a_fix_regression_s2
+  analyst_review_the_learning_writeback["analyst/review-the-learning-writeback<br/><i>none</i>"]
+  analyst_review_the_learning_writeback_s0["board learning<br/><i>none</i>"]
+  analyst_review_the_learning_writeback --> analyst_review_the_learning_writeback_s0
+  page_run -.-> analyst_review_the_learning_writeback_s0
+  analyst_review_the_learning_writeback_s1["memory-lifecycle<br/><i>none</i>"]
+  analyst_review_the_learning_writeback_s0 --> analyst_review_the_learning_writeback_s1
+  page_learn -.-> analyst_review_the_learning_writeback_s1
+  analyst_review_the_learning_writeback_s2["metrics<br/><i>none</i>"]
+  analyst_review_the_learning_writeback_s1 --> analyst_review_the_learning_writeback_s2
+  page_learn -.-> analyst_review_the_learning_writeback_s2
+  page_context(["#page context"])
+  page_kanban(["#page kanban"])
+  page_lanes(["#page lanes"])
+  page_learn(["#page learn"])
+  page_orch(["#page orch"])
+  page_run(["#page run"])
   page_setup(["#page setup"])
   page_verify(["#page verify"])
 ```
@@ -60,9 +392,378 @@ flowchart LR
   author_teach_the_machine_a_recipe_s3["propose_automation<br/><i>none</i>"]
   author_teach_the_machine_a_recipe_s2 --> author_teach_the_machine_a_recipe_s3
   page_autos -.-> author_teach_the_machine_a_recipe_s3
+  author_spec_to_kickoff["author/spec-to-kickoff<br/><i>none</i>"]
+  author_spec_to_kickoff_s0["specs ingest<br/><i>none</i>"]
+  author_spec_to_kickoff --> author_spec_to_kickoff_s0
+  page_recipes -.-> author_spec_to_kickoff_s0
+  author_spec_to_kickoff_s1["specs lint<br/><i>none</i>"]
+  author_spec_to_kickoff_s0 --> author_spec_to_kickoff_s1
+  page_recipes -.-> author_spec_to_kickoff_s1
+  author_spec_to_kickoff_s2["kickoff new<br/><i>none</i>"]
+  author_spec_to_kickoff_s1 --> author_spec_to_kickoff_s2
+  page_recipes -.-> author_spec_to_kickoff_s2
+  author_ratify_a_spec["author/ratify-a-spec<br/><i>none</i>"]
+  author_ratify_a_spec_s0["specs list<br/><i>none</i>"]
+  author_ratify_a_spec --> author_ratify_a_spec_s0
+  page_recipes -.-> author_ratify_a_spec_s0
+  author_ratify_a_spec_s1["specs ratify<br/><i>none</i>"]
+  author_ratify_a_spec_s0 --> author_ratify_a_spec_s1
+  page_recipes -.-> author_ratify_a_spec_s1
+  author_ratify_a_spec_s2["specs lint<br/><i>none</i>"]
+  author_ratify_a_spec_s1 --> author_ratify_a_spec_s2
+  page_recipes -.-> author_ratify_a_spec_s2
+  author_lint_a_spec_set["author/lint-a-spec-set<br/><i>none</i>"]
+  author_lint_a_spec_set_s0["specs list<br/><i>none</i>"]
+  author_lint_a_spec_set --> author_lint_a_spec_set_s0
+  page_recipes -.-> author_lint_a_spec_set_s0
+  author_lint_a_spec_set_s1["specs lint<br/><i>none</i>"]
+  author_lint_a_spec_set_s0 --> author_lint_a_spec_set_s1
+  page_recipes -.-> author_lint_a_spec_set_s1
+  author_lint_a_spec_set_s2["specs ingest<br/><i>none</i>"]
+  author_lint_a_spec_set_s1 --> author_lint_a_spec_set_s2
+  page_recipes -.-> author_lint_a_spec_set_s2
+  author_lint_a_spec_set_s3["specs<br/><i>none</i>"]
+  author_lint_a_spec_set_s2 --> author_lint_a_spec_set_s3
+  author_classify_a_request["author/classify-a-request<br/><i>none</i>"]
+  author_classify_a_request_s0["classify<br/><i>none</i>"]
+  author_classify_a_request --> author_classify_a_request_s0
+  author_classify_a_request_s1["kickoff new<br/><i>none</i>"]
+  author_classify_a_request_s0 --> author_classify_a_request_s1
+  author_classify_a_request_s2["start_run<br/><i>none</i>"]
+  author_classify_a_request_s1 --> author_classify_a_request_s2
+  page_runs -.-> author_classify_a_request_s2
+  author_plan_before_implementing["author/plan-before-implementing<br/><i>none</i>"]
+  author_plan_before_implementing_s0["plan<br/><i>none</i>"]
+  author_plan_before_implementing --> author_plan_before_implementing_s0
+  author_plan_before_implementing_s1["plan stdout<br/><i>none</i>"]
+  author_plan_before_implementing_s0 --> author_plan_before_implementing_s1
+  author_plan_before_implementing_s2["execute<br/><i>none</i>"]
+  author_plan_before_implementing_s1 --> author_plan_before_implementing_s2
+  page_run -.-> author_plan_before_implementing_s2
+  author_reflect_on_a_run["author/reflect-on-a-run<br/><i>none</i>"]
+  author_reflect_on_a_run_s0["reflect<br/><i>none</i>"]
+  author_reflect_on_a_run --> author_reflect_on_a_run_s0
+  page_learn -.-> author_reflect_on_a_run_s0
+  author_reflect_on_a_run_s1["execute reflector<br/><i>none</i>"]
+  author_reflect_on_a_run_s0 --> author_reflect_on_a_run_s1
+  page_learn -.-> author_reflect_on_a_run_s1
+  author_reflect_on_a_run_s2["board learning<br/><i>none</i>"]
+  author_reflect_on_a_run_s1 --> author_reflect_on_a_run_s2
+  page_run -.-> author_reflect_on_a_run_s2
+  author_find_a_recipe_that_fits["author/find-a-recipe-that-fits<br/><i>none</i>"]
+  author_find_a_recipe_that_fits_s0["list_recipes<br/><i>none</i>"]
+  author_find_a_recipe_that_fits --> author_find_a_recipe_that_fits_s0
+  page_recipes -.-> author_find_a_recipe_that_fits_s0
+  author_find_a_recipe_that_fits_s1["recipe_guide<br/><i>none</i>"]
+  author_find_a_recipe_that_fits_s0 --> author_find_a_recipe_that_fits_s1
+  page_recipes -.-> author_find_a_recipe_that_fits_s1
+  author_find_a_recipe_that_fits_s2["get_recipe_spec<br/><i>none</i>"]
+  author_find_a_recipe_that_fits_s1 --> author_find_a_recipe_that_fits_s2
+  page_recipes -.-> author_find_a_recipe_that_fits_s2
+  author_find_a_recipe_that_fits_s3["describe_recipe<br/><i>none</i>"]
+  author_find_a_recipe_that_fits_s2 --> author_find_a_recipe_that_fits_s3
+  page_recipes -.-> author_find_a_recipe_that_fits_s3
+  author_draft_a_recipe_with_an_agent["author/draft-a-recipe-with-an-agent<br/><i>none</i>"]
+  author_draft_a_recipe_with_an_agent_s0["draft_recipe<br/><i>none</i>"]
+  author_draft_a_recipe_with_an_agent --> author_draft_a_recipe_with_an_agent_s0
+  page_recipes -.-> author_draft_a_recipe_with_an_agent_s0
+  author_draft_a_recipe_with_an_agent_s1["get_recipe_spec<br/><i>none</i>"]
+  author_draft_a_recipe_with_an_agent_s0 --> author_draft_a_recipe_with_an_agent_s1
+  page_recipes -.-> author_draft_a_recipe_with_an_agent_s1
+  author_draft_a_recipe_with_an_agent_s2["recipe-eval<br/><i>none</i>"]
+  author_draft_a_recipe_with_an_agent_s1 --> author_draft_a_recipe_with_an_agent_s2
+  page_recipes -.-> author_draft_a_recipe_with_an_agent_s2
+  author_turn_a_failure_into_a_harness_edit["author/turn-a-failure-into-a-harness-edit<br/><i>none</i>"]
+  author_turn_a_failure_into_a_harness_edit_s0["harness-edit<br/><i>none</i>"]
+  author_turn_a_failure_into_a_harness_edit --> author_turn_a_failure_into_a_harness_edit_s0
+  page_learn -.-> author_turn_a_failure_into_a_harness_edit_s0
+  author_turn_a_failure_into_a_harness_edit_s1["harness-card<br/><i>none</i>"]
+  author_turn_a_failure_into_a_harness_edit_s0 --> author_turn_a_failure_into_a_harness_edit_s1
+  page_learn -.-> author_turn_a_failure_into_a_harness_edit_s1
+  author_turn_a_failure_into_a_harness_edit_s2["harness-audit<br/><i>none</i>"]
+  author_turn_a_failure_into_a_harness_edit_s1 --> author_turn_a_failure_into_a_harness_edit_s2
+  page_learn -.-> author_turn_a_failure_into_a_harness_edit_s2
+  author_gate_a_harness_edit["author/gate-a-harness-edit<br/><i>none</i>"]
+  author_gate_a_harness_edit_s0["harness-audit<br/><i>none</i>"]
+  author_gate_a_harness_edit --> author_gate_a_harness_edit_s0
+  page_learn -.-> author_gate_a_harness_edit_s0
+  author_gate_a_harness_edit_s1["harness-card<br/><i>none</i>"]
+  author_gate_a_harness_edit_s0 --> author_gate_a_harness_edit_s1
+  page_learn -.-> author_gate_a_harness_edit_s1
+  author_gate_a_harness_edit_s2["validate<br/><i>none</i>"]
+  author_gate_a_harness_edit_s1 --> author_gate_a_harness_edit_s2
+  page_setup -.-> author_gate_a_harness_edit_s2
+  author_apply_a_change_behind_a_mock["author/apply-a-change-behind-a-mock<br/><i>none</i>"]
+  author_apply_a_change_behind_a_mock_s0["apply mock<br/><i>none</i>"]
+  author_apply_a_change_behind_a_mock --> author_apply_a_change_behind_a_mock_s0
+  author_apply_a_change_behind_a_mock_s1["apply probe<br/><i>none</i>"]
+  author_apply_a_change_behind_a_mock_s0 --> author_apply_a_change_behind_a_mock_s1
+  author_apply_a_change_behind_a_mock_s2["apply gepa<br/><i>none</i>"]
+  author_apply_a_change_behind_a_mock_s1 --> author_apply_a_change_behind_a_mock_s2
+  author_apply_a_change_behind_a_mock_s3["apply<br/><i>none</i>"]
+  author_apply_a_change_behind_a_mock_s2 --> author_apply_a_change_behind_a_mock_s3
+  author_steer_a_live_run["author/steer-a-live-run<br/><i>none</i>"]
+  author_steer_a_live_run_s0["inject<br/><i>none</i>"]
+  author_steer_a_live_run --> author_steer_a_live_run_s0
+  page_run -.-> author_steer_a_live_run_s0
+  author_steer_a_live_run_s1["board steer<br/><i>none</i>"]
+  author_steer_a_live_run_s0 --> author_steer_a_live_run_s1
+  page_run -.-> author_steer_a_live_run_s1
+  author_steer_a_live_run_s2["board stream<br/><i>none</i>"]
+  author_steer_a_live_run_s1 --> author_steer_a_live_run_s2
+  page_run -.-> author_steer_a_live_run_s2
+  author_learn_a_rule_from_a_failure["author/learn-a-rule-from-a-failure<br/><i>none</i>"]
+  author_learn_a_rule_from_a_failure_s0["lessons<br/><i>partial</i>"]
+  author_learn_a_rule_from_a_failure --> author_learn_a_rule_from_a_failure_s0
+  page_learn -.-> author_learn_a_rule_from_a_failure_s0
+  author_learn_a_rule_from_a_failure_s1["board learning<br/><i>none</i>"]
+  author_learn_a_rule_from_a_failure_s0 --> author_learn_a_rule_from_a_failure_s1
+  page_run -.-> author_learn_a_rule_from_a_failure_s1
+  author_learn_a_rule_from_a_failure_s2["reflect<br/><i>none</i>"]
+  author_learn_a_rule_from_a_failure_s1 --> author_learn_a_rule_from_a_failure_s2
+  page_learn -.-> author_learn_a_rule_from_a_failure_s2
+  author_set_a_feature_flag["author/set-a-feature-flag<br/><i>none</i>"]
+  author_set_a_feature_flag_s0["features<br/><i>partial</i>"]
+  author_set_a_feature_flag --> author_set_a_feature_flag_s0
+  page_features -.-> author_set_a_feature_flag_s0
+  author_set_a_feature_flag_s1["features set<br/><i>full</i>"]
+  author_set_a_feature_flag_s0 --> author_set_a_feature_flag_s1
+  page_features -.-> author_set_a_feature_flag_s1
+  author_set_a_feature_flag_s2["features unset<br/><i>none</i>"]
+  author_set_a_feature_flag_s1 --> author_set_a_feature_flag_s2
+  page_features -.-> author_set_a_feature_flag_s2
+  author_set_a_feature_from_the_environment["author/set-a-feature-from-the-environment<br/><i>partial</i>"]
+  author_set_a_feature_from_the_environment_s0["features set-env<br/><i>partial</i>"]
+  author_set_a_feature_from_the_environment --> author_set_a_feature_from_the_environment_s0
+  page_features -.-> author_set_a_feature_from_the_environment_s0
+  author_set_a_feature_from_the_environment_s1["features unset-env<br/><i>full</i>"]
+  author_set_a_feature_from_the_environment_s0 --> author_set_a_feature_from_the_environment_s1
+  page_features -.-> author_set_a_feature_from_the_environment_s1
+  author_set_a_feature_from_the_environment_s2["features<br/><i>partial</i>"]
+  author_set_a_feature_from_the_environment_s1 --> author_set_a_feature_from_the_environment_s2
+  page_features -.-> author_set_a_feature_from_the_environment_s2
+  author_render_the_feature_skill["author/render-the-feature-skill<br/><i>none</i>"]
+  author_render_the_feature_skill_s0["features check-skill<br/><i>none</i>"]
+  author_render_the_feature_skill --> author_render_the_feature_skill_s0
+  page_features -.-> author_render_the_feature_skill_s0
+  author_render_the_feature_skill_s1["features render-skill<br/><i>none</i>"]
+  author_render_the_feature_skill_s0 --> author_render_the_feature_skill_s1
+  page_features -.-> author_render_the_feature_skill_s1
+  author_render_the_feature_skill_s2["skills validate<br/><i>full</i>"]
+  author_render_the_feature_skill_s1 --> author_render_the_feature_skill_s2
+  page_skills -.-> author_render_the_feature_skill_s2
+  author_turn_a_knob_on["author/turn-a-knob-on<br/><i>none</i>"]
+  author_turn_a_knob_on_s0["plan_qa_gate<br/><i>none</i>"]
+  author_turn_a_knob_on --> author_turn_a_knob_on_s0
+  page_features -.-> author_turn_a_knob_on_s0
+  author_turn_a_knob_on_s1["features set<br/><i>full</i>"]
+  author_turn_a_knob_on_s0 --> author_turn_a_knob_on_s1
+  page_features -.-> author_turn_a_knob_on_s1
+  author_turn_a_knob_on_s2["validate<br/><i>none</i>"]
+  author_turn_a_knob_on_s1 --> author_turn_a_knob_on_s2
+  page_setup -.-> author_turn_a_knob_on_s2
+  author_compare_judging_knobs["author/compare-judging-knobs<br/><i>none</i>"]
+  author_compare_judging_knobs_s0["oracle_gates<br/><i>none</i>"]
+  author_compare_judging_knobs --> author_compare_judging_knobs_s0
+  page_features -.-> author_compare_judging_knobs_s0
+  author_compare_judging_knobs_s1["assay_relations<br/><i>none</i>"]
+  author_compare_judging_knobs_s0 --> author_compare_judging_knobs_s1
+  page_features -.-> author_compare_judging_knobs_s1
+  author_compare_judging_knobs_s2["features<br/><i>partial</i>"]
+  author_compare_judging_knobs_s1 --> author_compare_judging_knobs_s2
+  page_features -.-> author_compare_judging_knobs_s2
+  author_compare_judging_knobs_s3["review_panel<br/><i>none</i>"]
+  author_compare_judging_knobs_s2 --> author_compare_judging_knobs_s3
+  author_choose_the_scoring_arm["author/choose-the-scoring-arm<br/><i>none</i>"]
+  author_choose_the_scoring_arm_s0["code_arm_scorer<br/><i>none</i>"]
+  author_choose_the_scoring_arm --> author_choose_the_scoring_arm_s0
+  page_features -.-> author_choose_the_scoring_arm_s0
+  author_choose_the_scoring_arm_s1["prm_score<br/><i>none</i>"]
+  author_choose_the_scoring_arm_s0 --> author_choose_the_scoring_arm_s1
+  page_features -.-> author_choose_the_scoring_arm_s1
+  author_choose_the_scoring_arm_s2["metrics<br/><i>none</i>"]
+  author_choose_the_scoring_arm_s1 --> author_choose_the_scoring_arm_s2
+  page_learn -.-> author_choose_the_scoring_arm_s2
+  author_turn_on_learning_writeback["author/turn-on-learning-writeback<br/><i>none</i>"]
+  author_turn_on_learning_writeback_s0["learning_writeback<br/><i>none</i>"]
+  author_turn_on_learning_writeback --> author_turn_on_learning_writeback_s0
+  page_features -.-> author_turn_on_learning_writeback_s0
+  author_turn_on_learning_writeback_s1["reward_stamp<br/><i>none</i>"]
+  author_turn_on_learning_writeback_s0 --> author_turn_on_learning_writeback_s1
+  page_features -.-> author_turn_on_learning_writeback_s1
+  author_turn_on_learning_writeback_s2["features set<br/><i>full</i>"]
+  author_turn_on_learning_writeback_s1 --> author_turn_on_learning_writeback_s2
+  page_features -.-> author_turn_on_learning_writeback_s2
+  author_assay_a_differential["author/assay-a-differential<br/><i>none</i>"]
+  author_assay_a_differential_s0["assay_differential<br/><i>none</i>"]
+  author_assay_a_differential --> author_assay_a_differential_s0
+  page_features -.-> author_assay_a_differential_s0
+  author_assay_a_differential_s1["assay_relations<br/><i>none</i>"]
+  author_assay_a_differential_s0 --> author_assay_a_differential_s1
+  page_features -.-> author_assay_a_differential_s1
+  author_assay_a_differential_s2["harness-contrast<br/><i>none</i>"]
+  author_assay_a_differential_s1 --> author_assay_a_differential_s2
+  page_learn -.-> author_assay_a_differential_s2
+  author_write_a_skill["author/write-a-skill<br/><i>none</i>"]
+  author_write_a_skill_s0["skills<br/><i>partial</i>"]
+  author_write_a_skill --> author_write_a_skill_s0
+  page_skills -.-> author_write_a_skill_s0
+  author_write_a_skill_s1["skills list<br/><i>none</i>"]
+  author_write_a_skill_s0 --> author_write_a_skill_s1
+  page_skills -.-> author_write_a_skill_s1
+  author_write_a_skill_s2["skills show<br/><i>none</i>"]
+  author_write_a_skill_s1 --> author_write_a_skill_s2
+  page_skills -.-> author_write_a_skill_s2
+  author_promote_a_mined_skill["author/promote-a-mined-skill<br/><i>none</i>"]
+  author_promote_a_mined_skill_s0["skills validate<br/><i>full</i>"]
+  author_promote_a_mined_skill --> author_promote_a_mined_skill_s0
+  page_skills -.-> author_promote_a_mined_skill_s0
+  author_promote_a_mined_skill_s1["skills promote<br/><i>full</i>"]
+  author_promote_a_mined_skill_s0 --> author_promote_a_mined_skill_s1
+  page_skills -.-> author_promote_a_mined_skill_s1
+  author_promote_a_mined_skill_s2["skills show<br/><i>none</i>"]
+  author_promote_a_mined_skill_s1 --> author_promote_a_mined_skill_s2
+  page_skills -.-> author_promote_a_mined_skill_s2
+  author_reuse_prior_work["author/reuse-prior-work<br/><i>none</i>"]
+  author_reuse_prior_work_s0["cn status<br/><i>none</i>"]
+  author_reuse_prior_work --> author_reuse_prior_work_s0
+  page_context -.-> author_reuse_prior_work_s0
+  author_reuse_prior_work_s1["cn search<br/><i>none</i>"]
+  author_reuse_prior_work_s0 --> author_reuse_prior_work_s1
+  page_context -.-> author_reuse_prior_work_s1
+  author_reuse_prior_work_s2["cn seen-before<br/><i>full</i>"]
+  author_reuse_prior_work_s1 --> author_reuse_prior_work_s2
+  page_context -.-> author_reuse_prior_work_s2
+  author_reuse_prior_work_s3["cn<br/><i>partial</i>"]
+  author_reuse_prior_work_s2 --> author_reuse_prior_work_s3
+  author_acknowledge_an_overlap["author/acknowledge-an-overlap<br/><i>none</i>"]
+  author_acknowledge_an_overlap_s0["cn ack-overlap<br/><i>full</i>"]
+  author_acknowledge_an_overlap --> author_acknowledge_an_overlap_s0
+  page_context -.-> author_acknowledge_an_overlap_s0
+  author_acknowledge_an_overlap_s1["cn search<br/><i>none</i>"]
+  author_acknowledge_an_overlap_s0 --> author_acknowledge_an_overlap_s1
+  page_context -.-> author_acknowledge_an_overlap_s1
+  author_acknowledge_an_overlap_s2["cn outcome<br/><i>full</i>"]
+  author_acknowledge_an_overlap_s1 --> author_acknowledge_an_overlap_s2
+  page_context -.-> author_acknowledge_an_overlap_s2
+  author_record_what_happened["author/record-what-happened<br/><i>none</i>"]
+  author_record_what_happened_s0["cn outcome<br/><i>full</i>"]
+  author_record_what_happened --> author_record_what_happened_s0
+  page_context -.-> author_record_what_happened_s0
+  author_record_what_happened_s1["cn status<br/><i>none</i>"]
+  author_record_what_happened_s0 --> author_record_what_happened_s1
+  page_context -.-> author_record_what_happened_s1
+  author_record_what_happened_s2["board learning<br/><i>none</i>"]
+  author_record_what_happened_s1 --> author_record_what_happened_s2
+  page_run -.-> author_record_what_happened_s2
+  author_ask_the_memory_a_question["author/ask-the-memory-a-question<br/><i>none</i>"]
+  author_ask_the_memory_a_question_s0["learnings<br/><i>none</i>"]
+  author_ask_the_memory_a_question --> author_ask_the_memory_a_question_s0
+  author_ask_the_memory_a_question_s1["cn search<br/><i>none</i>"]
+  author_ask_the_memory_a_question_s0 --> author_ask_the_memory_a_question_s1
+  page_context -.-> author_ask_the_memory_a_question_s1
+  author_ask_the_memory_a_question_s2["lessons<br/><i>partial</i>"]
+  author_ask_the_memory_a_question_s1 --> author_ask_the_memory_a_question_s2
+  page_learn -.-> author_ask_the_memory_a_question_s2
+  author_draft_a_kickoff_from_a_line["author/draft-a-kickoff-from-a-line<br/><i>none</i>"]
+  author_draft_a_kickoff_from_a_line_s0["kickoff new<br/><i>none</i>"]
+  author_draft_a_kickoff_from_a_line --> author_draft_a_kickoff_from_a_line_s0
+  author_draft_a_kickoff_from_a_line_s1["draft_kickoff<br/><i>none</i>"]
+  author_draft_a_kickoff_from_a_line_s0 --> author_draft_a_kickoff_from_a_line_s1
+  author_draft_a_kickoff_from_a_line_s2["validate<br/><i>none</i>"]
+  author_draft_a_kickoff_from_a_line_s1 --> author_draft_a_kickoff_from_a_line_s2
+  page_setup -.-> author_draft_a_kickoff_from_a_line_s2
+  author_draft_a_kickoff_from_a_line_s3["kickoff<br/><i>none</i>"]
+  author_draft_a_kickoff_from_a_line_s2 --> author_draft_a_kickoff_from_a_line_s3
+  author_review_a_draft_before_approval["author/review-a-draft-before-approval<br/><i>none</i>"]
+  author_review_a_draft_before_approval_s0["draft_kickoff<br/><i>none</i>"]
+  author_review_a_draft_before_approval --> author_review_a_draft_before_approval_s0
+  page_inbox -.-> author_review_a_draft_before_approval_s0
+  author_review_a_draft_before_approval_s1["inbox<br/><i>none</i>"]
+  author_review_a_draft_before_approval_s0 --> author_review_a_draft_before_approval_s1
+  page_inbox -.-> author_review_a_draft_before_approval_s1
+  author_review_a_draft_before_approval_s2["start_run<br/><i>none</i>"]
+  author_review_a_draft_before_approval_s1 --> author_review_a_draft_before_approval_s2
+  page_runs -.-> author_review_a_draft_before_approval_s2
+  author_distill_the_trajectories["author/distill-the-trajectories<br/><i>none</i>"]
+  author_distill_the_trajectories_s0["traceotter<br/><i>none</i>"]
+  author_distill_the_trajectories --> author_distill_the_trajectories_s0
+  page_learn -.-> author_distill_the_trajectories_s0
+  author_distill_the_trajectories_s1["lessons<br/><i>partial</i>"]
+  author_distill_the_trajectories_s0 --> author_distill_the_trajectories_s1
+  page_learn -.-> author_distill_the_trajectories_s1
+  author_distill_the_trajectories_s2["board learning<br/><i>none</i>"]
+  author_distill_the_trajectories_s1 --> author_distill_the_trajectories_s2
+  page_run -.-> author_distill_the_trajectories_s2
+  author_explain_a_model_choice["author/explain-a-model-choice<br/><i>none</i>"]
+  author_explain_a_model_choice_s0["why<br/><i>none</i>"]
+  author_explain_a_model_choice --> author_explain_a_model_choice_s0
+  page_run -.-> author_explain_a_model_choice_s0
+  author_explain_a_model_choice_s1["board telemetry<br/><i>none</i>"]
+  author_explain_a_model_choice_s0 --> author_explain_a_model_choice_s1
+  page_run -.-> author_explain_a_model_choice_s1
+  author_explain_a_model_choice_s2["board learning<br/><i>none</i>"]
+  author_explain_a_model_choice_s1 --> author_explain_a_model_choice_s2
+  page_run -.-> author_explain_a_model_choice_s2
+  author_schedule_a_draft_recipe["author/schedule-a-draft-recipe<br/><i>partial</i>"]
+  author_schedule_a_draft_recipe_s0["automations draft<br/><i>partial</i>"]
+  author_schedule_a_draft_recipe --> author_schedule_a_draft_recipe_s0
+  page_autos -.-> author_schedule_a_draft_recipe_s0
+  author_schedule_a_draft_recipe_s1["automations draft commit<br/><i>full</i>"]
+  author_schedule_a_draft_recipe_s0 --> author_schedule_a_draft_recipe_s1
+  page_autos -.-> author_schedule_a_draft_recipe_s1
+  author_schedule_a_draft_recipe_s2["automations list<br/><i>partial</i>"]
+  author_schedule_a_draft_recipe_s1 --> author_schedule_a_draft_recipe_s2
+  page_autos -.-> author_schedule_a_draft_recipe_s2
+  author_check_an_automation_history["author/check-an-automation-history<br/><i>partial</i>"]
+  author_check_an_automation_history_s0["automations runs<br/><i>partial</i>"]
+  author_check_an_automation_history --> author_check_an_automation_history_s0
+  page_autos -.-> author_check_an_automation_history_s0
+  author_check_an_automation_history_s1["automations edit<br/><i>partial</i>"]
+  author_check_an_automation_history_s0 --> author_check_an_automation_history_s1
+  page_autos -.-> author_check_an_automation_history_s1
+  author_check_an_automation_history_s2["automations list<br/><i>partial</i>"]
+  author_check_an_automation_history_s1 --> author_check_an_automation_history_s2
+  page_autos -.-> author_check_an_automation_history_s2
+  author_score_a_certification["author/score-a-certification<br/><i>none</i>"]
+  author_score_a_certification_s0["certify<br/><i>none</i>"]
+  author_score_a_certification --> author_score_a_certification_s0
+  page_verify -.-> author_score_a_certification_s0
+  author_score_a_certification_s1["certify summary<br/><i>none</i>"]
+  author_score_a_certification_s0 --> author_score_a_certification_s1
+  page_verify -.-> author_score_a_certification_s1
+  author_score_a_certification_s2["certify<br/><i>none</i>"]
+  author_score_a_certification_s1 --> author_score_a_certification_s2
+  page_verify -.-> author_score_a_certification_s2
+  author_lint_the_skill_registry["author/lint-the-skill-registry<br/><i>none</i>"]
+  author_lint_the_skill_registry_s0["skills validate<br/><i>full</i>"]
+  author_lint_the_skill_registry --> author_lint_the_skill_registry_s0
+  page_skills -.-> author_lint_the_skill_registry_s0
+  author_lint_the_skill_registry_s1["skills list<br/><i>none</i>"]
+  author_lint_the_skill_registry_s0 --> author_lint_the_skill_registry_s1
+  page_skills -.-> author_lint_the_skill_registry_s1
+  author_lint_the_skill_registry_s2["features check-skill<br/><i>none</i>"]
+  author_lint_the_skill_registry_s1 --> author_lint_the_skill_registry_s2
+  page_features -.-> author_lint_the_skill_registry_s2
+  author_plan_a_change_from_a_ticket["author/plan-a-change-from-a-ticket<br/><i>none</i>"]
+  author_plan_a_change_from_a_ticket_s0["plan stdout<br/><i>none</i>"]
+  author_plan_a_change_from_a_ticket --> author_plan_a_change_from_a_ticket_s0
+  author_plan_a_change_from_a_ticket_s1["specs lint<br/><i>none</i>"]
+  author_plan_a_change_from_a_ticket_s0 --> author_plan_a_change_from_a_ticket_s1
+  page_recipes -.-> author_plan_a_change_from_a_ticket_s1
+  author_plan_a_change_from_a_ticket_s2["kickoff new<br/><i>none</i>"]
+  author_plan_a_change_from_a_ticket_s1 --> author_plan_a_change_from_a_ticket_s2
   page_autos(["#page autos"])
+  page_context(["#page context"])
+  page_features(["#page features"])
+  page_inbox(["#page inbox"])
+  page_learn(["#page learn"])
+  page_recipes(["#page recipes"])
+  page_run(["#page run"])
   page_runs(["#page runs"])
   page_setup(["#page setup"])
+  page_skills(["#page skills"])
+  page_verify(["#page verify"])
 ```
 
 ## debugger
@@ -116,7 +817,398 @@ flowchart LR
   debugger_roll_back_a_bad_landing_s2["garden<br/><i>none</i>"]
   debugger_roll_back_a_bad_landing_s1 --> debugger_roll_back_a_bad_landing_s2
   page_setup -.-> debugger_roll_back_a_bad_landing_s2
+  debugger_inspect_then_reproduce_a_bug["debugger/inspect-then-reproduce-a-bug<br/><i>none</i>"]
+  debugger_inspect_then_reproduce_a_bug_s0["bugs show<br/><i>none</i>"]
+  debugger_inspect_then_reproduce_a_bug --> debugger_inspect_then_reproduce_a_bug_s0
+  page_runs -.-> debugger_inspect_then_reproduce_a_bug_s0
+  debugger_inspect_then_reproduce_a_bug_s1["bugs sweep<br/><i>full</i>"]
+  debugger_inspect_then_reproduce_a_bug_s0 --> debugger_inspect_then_reproduce_a_bug_s1
+  page_runs -.-> debugger_inspect_then_reproduce_a_bug_s1
+  debugger_inspect_then_reproduce_a_bug_s2["triage<br/><i>partial</i>"]
+  debugger_inspect_then_reproduce_a_bug_s1 --> debugger_inspect_then_reproduce_a_bug_s2
+  page_runs -.-> debugger_inspect_then_reproduce_a_bug_s2
+  debugger_queue_a_framework_bug["debugger/queue-a-framework-bug<br/><i>none</i>"]
+  debugger_queue_a_framework_bug_s0["bug-collector<br/><i>none</i>"]
+  debugger_queue_a_framework_bug --> debugger_queue_a_framework_bug_s0
+  page_runs -.-> debugger_queue_a_framework_bug_s0
+  debugger_queue_a_framework_bug_s1["bugs list<br/><i>none</i>"]
+  debugger_queue_a_framework_bug_s0 --> debugger_queue_a_framework_bug_s1
+  page_runs -.-> debugger_queue_a_framework_bug_s1
+  debugger_queue_a_framework_bug_s2["bugs prioritize<br/><i>none</i>"]
+  debugger_queue_a_framework_bug_s1 --> debugger_queue_a_framework_bug_s2
+  page_runs -.-> debugger_queue_a_framework_bug_s2
+  debugger_sweep_the_bug_queue["debugger/sweep-the-bug-queue<br/><i>none</i>"]
+  debugger_sweep_the_bug_queue_s0["bugs sweep<br/><i>full</i>"]
+  debugger_sweep_the_bug_queue --> debugger_sweep_the_bug_queue_s0
+  page_runs -.-> debugger_sweep_the_bug_queue_s0
+  debugger_sweep_the_bug_queue_s1["bugs prioritize<br/><i>none</i>"]
+  debugger_sweep_the_bug_queue_s0 --> debugger_sweep_the_bug_queue_s1
+  page_runs -.-> debugger_sweep_the_bug_queue_s1
+  debugger_sweep_the_bug_queue_s2["bugs show<br/><i>none</i>"]
+  debugger_sweep_the_bug_queue_s1 --> debugger_sweep_the_bug_queue_s2
+  page_runs -.-> debugger_sweep_the_bug_queue_s2
+  debugger_sweep_the_bug_queue_s3["bugs<br/><i>partial</i>"]
+  debugger_sweep_the_bug_queue_s2 --> debugger_sweep_the_bug_queue_s3
+  debugger_verify_a_runs_gates["debugger/verify-a-runs-gates<br/><i>none</i>"]
+  debugger_verify_a_runs_gates_s0["verify<br/><i>none</i>"]
+  debugger_verify_a_runs_gates --> debugger_verify_a_runs_gates_s0
+  page_verify -.-> debugger_verify_a_runs_gates_s0
+  debugger_verify_a_runs_gates_s1["verifier list<br/><i>partial</i>"]
+  debugger_verify_a_runs_gates_s0 --> debugger_verify_a_runs_gates_s1
+  page_verify -.-> debugger_verify_a_runs_gates_s1
+  debugger_verify_a_runs_gates_s2["board gate<br/><i>partial</i>"]
+  debugger_verify_a_runs_gates_s1 --> debugger_verify_a_runs_gates_s2
+  page_run -.-> debugger_verify_a_runs_gates_s2
+  debugger_annotate_a_false_negative["debugger/annotate-a-false-negative<br/><i>none</i>"]
+  debugger_annotate_a_false_negative_s0["verifier annotate<br/><i>partial</i>"]
+  debugger_annotate_a_false_negative --> debugger_annotate_a_false_negative_s0
+  page_verify -.-> debugger_annotate_a_false_negative_s0
+  debugger_annotate_a_false_negative_s1["verifier list<br/><i>partial</i>"]
+  debugger_annotate_a_false_negative_s0 --> debugger_annotate_a_false_negative_s1
+  page_verify -.-> debugger_annotate_a_false_negative_s1
+  debugger_annotate_a_false_negative_s2["board learning<br/><i>none</i>"]
+  debugger_annotate_a_false_negative_s1 --> debugger_annotate_a_false_negative_s2
+  page_run -.-> debugger_annotate_a_false_negative_s2
+  debugger_patch_the_run_graph["debugger/patch-the-run-graph<br/><i>none</i>"]
+  debugger_patch_the_run_graph_s0["graph-patch propose<br/><i>none</i>"]
+  debugger_patch_the_run_graph --> debugger_patch_the_run_graph_s0
+  page_verify -.-> debugger_patch_the_run_graph_s0
+  debugger_patch_the_run_graph_s1["graph-patch validate<br/><i>full</i>"]
+  debugger_patch_the_run_graph_s0 --> debugger_patch_the_run_graph_s1
+  page_verify -.-> debugger_patch_the_run_graph_s1
+  debugger_patch_the_run_graph_s2["graph-patch apply<br/><i>full</i>"]
+  debugger_patch_the_run_graph_s1 --> debugger_patch_the_run_graph_s2
+  page_verify -.-> debugger_patch_the_run_graph_s2
+  debugger_audit_the_graph_patches["debugger/audit-the-graph-patches<br/><i>none</i>"]
+  debugger_audit_the_graph_patches_s0["graph-patch list<br/><i>none</i>"]
+  debugger_audit_the_graph_patches --> debugger_audit_the_graph_patches_s0
+  page_verify -.-> debugger_audit_the_graph_patches_s0
+  debugger_audit_the_graph_patches_s1["graph-patch validate<br/><i>full</i>"]
+  debugger_audit_the_graph_patches_s0 --> debugger_audit_the_graph_patches_s1
+  page_verify -.-> debugger_audit_the_graph_patches_s1
+  debugger_audit_the_graph_patches_s2["graph-patch credit<br/><i>none</i>"]
+  debugger_audit_the_graph_patches_s1 --> debugger_audit_the_graph_patches_s2
+  page_verify -.-> debugger_audit_the_graph_patches_s2
+  debugger_audit_the_graph_patches_s3["graph-patch<br/><i>partial</i>"]
+  debugger_audit_the_graph_patches_s2 --> debugger_audit_the_graph_patches_s3
+  debugger_roll_back_a_workflow_version["debugger/roll-back-a-workflow-version<br/><i>none</i>"]
+  debugger_roll_back_a_workflow_version_s0["rollback workflow<br/><i>none</i>"]
+  debugger_roll_back_a_workflow_version --> debugger_roll_back_a_workflow_version_s0
+  page_recipes -.-> debugger_roll_back_a_workflow_version_s0
+  debugger_roll_back_a_workflow_version_s1["rollback name<br/><i>none</i>"]
+  debugger_roll_back_a_workflow_version_s0 --> debugger_roll_back_a_workflow_version_s1
+  page_recipes -.-> debugger_roll_back_a_workflow_version_s1
+  debugger_roll_back_a_workflow_version_s2["rollback<br/><i>none</i>"]
+  debugger_roll_back_a_workflow_version_s1 --> debugger_roll_back_a_workflow_version_s2
+  page_recipes -.-> debugger_roll_back_a_workflow_version_s2
+  debugger_revert_a_landed_commit["debugger/revert-a-landed-commit<br/><i>none</i>"]
+  debugger_revert_a_landed_commit_s0["undo ref<br/><i>none</i>"]
+  debugger_revert_a_landed_commit --> debugger_revert_a_landed_commit_s0
+  page_changes -.-> debugger_revert_a_landed_commit_s0
+  debugger_revert_a_landed_commit_s1["undo<br/><i>none</i>"]
+  debugger_revert_a_landed_commit_s0 --> debugger_revert_a_landed_commit_s1
+  page_changes -.-> debugger_revert_a_landed_commit_s1
+  debugger_revert_a_landed_commit_s2["board changes<br/><i>none</i>"]
+  debugger_revert_a_landed_commit_s1 --> debugger_revert_a_landed_commit_s2
+  page_changes -.-> debugger_revert_a_landed_commit_s2
+  debugger_find_drift_after_a_fix["debugger/find-drift-after-a-fix<br/><i>none</i>"]
+  debugger_find_drift_after_a_fix_s0["garden<br/><i>none</i>"]
+  debugger_find_drift_after_a_fix --> debugger_find_drift_after_a_fix_s0
+  page_setup -.-> debugger_find_drift_after_a_fix_s0
+  debugger_find_drift_after_a_fix_s1["validate<br/><i>none</i>"]
+  debugger_find_drift_after_a_fix_s0 --> debugger_find_drift_after_a_fix_s1
+  page_setup -.-> debugger_find_drift_after_a_fix_s1
+  debugger_find_drift_after_a_fix_s2["doctor<br/><i>full</i>"]
+  debugger_find_drift_after_a_fix_s1 --> debugger_find_drift_after_a_fix_s2
+  page_setup -.-> debugger_find_drift_after_a_fix_s2
+  debugger_keep_the_better_race_attempt["debugger/keep-the-better-race-attempt<br/><i>none</i>"]
+  debugger_keep_the_better_race_attempt_s0["board race-keep<br/><i>none</i>"]
+  debugger_keep_the_better_race_attempt --> debugger_keep_the_better_race_attempt_s0
+  page_run -.-> debugger_keep_the_better_race_attempt_s0
+  debugger_keep_the_better_race_attempt_s1["board changes<br/><i>none</i>"]
+  debugger_keep_the_better_race_attempt_s0 --> debugger_keep_the_better_race_attempt_s1
+  page_changes -.-> debugger_keep_the_better_race_attempt_s1
+  debugger_keep_the_better_race_attempt_s2["board checkpoints<br/><i>none</i>"]
+  debugger_keep_the_better_race_attempt_s1 --> debugger_keep_the_better_race_attempt_s2
+  page_run -.-> debugger_keep_the_better_race_attempt_s2
+  debugger_resume_from_a_checkpoint["debugger/resume-from-a-checkpoint<br/><i>none</i>"]
+  debugger_resume_from_a_checkpoint_s0["board checkpoints<br/><i>none</i>"]
+  debugger_resume_from_a_checkpoint --> debugger_resume_from_a_checkpoint_s0
+  page_run -.-> debugger_resume_from_a_checkpoint_s0
+  debugger_resume_from_a_checkpoint_s1["board resume<br/><i>full</i>"]
+  debugger_resume_from_a_checkpoint_s0 --> debugger_resume_from_a_checkpoint_s1
+  page_run -.-> debugger_resume_from_a_checkpoint_s1
+  debugger_resume_from_a_checkpoint_s2["resume<br/><i>none</i>"]
+  debugger_resume_from_a_checkpoint_s1 --> debugger_resume_from_a_checkpoint_s2
+  page_run -.-> debugger_resume_from_a_checkpoint_s2
+  debugger_retry_one_node["debugger/retry-one-node<br/><i>none</i>"]
+  debugger_retry_one_node_s0["board node<br/><i>none</i>"]
+  debugger_retry_one_node --> debugger_retry_one_node_s0
+  page_run -.-> debugger_retry_one_node_s0
+  debugger_retry_one_node_s1["board retry<br/><i>full</i>"]
+  debugger_retry_one_node_s0 --> debugger_retry_one_node_s1
+  page_run -.-> debugger_retry_one_node_s1
+  debugger_retry_one_node_s2["board prompt<br/><i>none</i>"]
+  debugger_retry_one_node_s1 --> debugger_retry_one_node_s2
+  page_run -.-> debugger_retry_one_node_s2
+  debugger_read_one_node["debugger/read-one-node<br/><i>none</i>"]
+  debugger_read_one_node_s0["board node<br/><i>none</i>"]
+  debugger_read_one_node --> debugger_read_one_node_s0
+  page_run -.-> debugger_read_one_node_s0
+  debugger_read_one_node_s1["board output<br/><i>none</i>"]
+  debugger_read_one_node_s0 --> debugger_read_one_node_s1
+  page_run -.-> debugger_read_one_node_s1
+  debugger_read_one_node_s2["board artifacts<br/><i>none</i>"]
+  debugger_read_one_node_s1 --> debugger_read_one_node_s2
+  page_run -.-> debugger_read_one_node_s2
+  debugger_compare_two_attempts["debugger/compare-two-attempts<br/><i>none</i>"]
+  debugger_compare_two_attempts_s0["board changes<br/><i>none</i>"]
+  debugger_compare_two_attempts --> debugger_compare_two_attempts_s0
+  page_changes -.-> debugger_compare_two_attempts_s0
+  debugger_compare_two_attempts_s1["board checkpoints<br/><i>none</i>"]
+  debugger_compare_two_attempts_s0 --> debugger_compare_two_attempts_s1
+  page_run -.-> debugger_compare_two_attempts_s1
+  debugger_compare_two_attempts_s2["board show<br/><i>none</i>"]
+  debugger_compare_two_attempts_s1 --> debugger_compare_two_attempts_s2
+  page_run -.-> debugger_compare_two_attempts_s2
+  debugger_follow_the_stream["debugger/follow-the-stream<br/><i>none</i>"]
+  debugger_follow_the_stream_s0["board stream<br/><i>none</i>"]
+  debugger_follow_the_stream --> debugger_follow_the_stream_s0
+  page_run -.-> debugger_follow_the_stream_s0
+  debugger_follow_the_stream_s1["board node<br/><i>none</i>"]
+  debugger_follow_the_stream_s0 --> debugger_follow_the_stream_s1
+  page_run -.-> debugger_follow_the_stream_s1
+  debugger_follow_the_stream_s2["board telemetry<br/><i>none</i>"]
+  debugger_follow_the_stream_s1 --> debugger_follow_the_stream_s2
+  page_run -.-> debugger_follow_the_stream_s2
+  debugger_answer_a_blocking_question["debugger/answer-a-blocking-question<br/><i>none</i>"]
+  debugger_answer_a_blocking_question_s0["board answer<br/><i>none</i>"]
+  debugger_answer_a_blocking_question --> debugger_answer_a_blocking_question_s0
+  page_run -.-> debugger_answer_a_blocking_question_s0
+  debugger_answer_a_blocking_question_s1["inbox<br/><i>none</i>"]
+  debugger_answer_a_blocking_question_s0 --> debugger_answer_a_blocking_question_s1
+  page_inbox -.-> debugger_answer_a_blocking_question_s1
+  debugger_answer_a_blocking_question_s2["board resume<br/><i>full</i>"]
+  debugger_answer_a_blocking_question_s1 --> debugger_answer_a_blocking_question_s2
+  page_run -.-> debugger_answer_a_blocking_question_s2
+  debugger_kill_a_hung_node["debugger/kill-a-hung-node<br/><i>none</i>"]
+  debugger_kill_a_hung_node_s0["board kill<br/><i>full</i>"]
+  debugger_kill_a_hung_node --> debugger_kill_a_hung_node_s0
+  page_run -.-> debugger_kill_a_hung_node_s0
+  debugger_kill_a_hung_node_s1["board stop<br/><i>full</i>"]
+  debugger_kill_a_hung_node_s0 --> debugger_kill_a_hung_node_s1
+  page_run -.-> debugger_kill_a_hung_node_s1
+  debugger_kill_a_hung_node_s2["board stream<br/><i>none</i>"]
+  debugger_kill_a_hung_node_s1 --> debugger_kill_a_hung_node_s2
+  page_run -.-> debugger_kill_a_hung_node_s2
+  debugger_discard_a_bad_worktree["debugger/discard-a-bad-worktree<br/><i>none</i>"]
+  debugger_discard_a_bad_worktree_s0["board discard<br/><i>full</i>"]
+  debugger_discard_a_bad_worktree --> debugger_discard_a_bad_worktree_s0
+  page_run -.-> debugger_discard_a_bad_worktree_s0
+  debugger_discard_a_bad_worktree_s1["board worktree<br/><i>none</i>"]
+  debugger_discard_a_bad_worktree_s0 --> debugger_discard_a_bad_worktree_s1
+  page_run -.-> debugger_discard_a_bad_worktree_s1
+  debugger_discard_a_bad_worktree_s2["board changes<br/><i>none</i>"]
+  debugger_discard_a_bad_worktree_s1 --> debugger_discard_a_bad_worktree_s2
+  page_changes -.-> debugger_discard_a_bad_worktree_s2
+  debugger_close_a_stale_row["debugger/close-a-stale-row<br/><i>none</i>"]
+  debugger_close_a_stale_row_s0["board dismiss<br/><i>full</i>"]
+  debugger_close_a_stale_row --> debugger_close_a_stale_row_s0
+  page_run -.-> debugger_close_a_stale_row_s0
+  debugger_close_a_stale_row_s1["board not-needed<br/><i>none</i>"]
+  debugger_close_a_stale_row_s0 --> debugger_close_a_stale_row_s1
+  page_run -.-> debugger_close_a_stale_row_s1
+  debugger_close_a_stale_row_s2["board runs<br/><i>none</i>"]
+  debugger_close_a_stale_row_s1 --> debugger_close_a_stale_row_s2
+  page_runs -.-> debugger_close_a_stale_row_s2
+  debugger_restore_a_mistaken_close["debugger/restore-a-mistaken-close<br/><i>none</i>"]
+  debugger_restore_a_mistaken_close_s0["board restore<br/><i>full</i>"]
+  debugger_restore_a_mistaken_close --> debugger_restore_a_mistaken_close_s0
+  page_run -.-> debugger_restore_a_mistaken_close_s0
+  debugger_restore_a_mistaken_close_s1["board show<br/><i>none</i>"]
+  debugger_restore_a_mistaken_close_s0 --> debugger_restore_a_mistaken_close_s1
+  page_run -.-> debugger_restore_a_mistaken_close_s1
+  debugger_restore_a_mistaken_close_s2["board runs<br/><i>none</i>"]
+  debugger_restore_a_mistaken_close_s1 --> debugger_restore_a_mistaken_close_s2
+  page_runs -.-> debugger_restore_a_mistaken_close_s2
+  debugger_run_the_review_panel["debugger/run-the-review-panel<br/><i>none</i>"]
+  debugger_run_the_review_panel_s0["review run<br/><i>none</i>"]
+  debugger_run_the_review_panel --> debugger_run_the_review_panel_s0
+  page_changes -.-> debugger_run_the_review_panel_s0
+  debugger_run_the_review_panel_s1["review findings<br/><i>none</i>"]
+  debugger_run_the_review_panel_s0 --> debugger_run_the_review_panel_s1
+  page_changes -.-> debugger_run_the_review_panel_s1
+  debugger_run_the_review_panel_s2["review verdict<br/><i>none</i>"]
+  debugger_run_the_review_panel_s1 --> debugger_run_the_review_panel_s2
+  page_changes -.-> debugger_run_the_review_panel_s2
+  debugger_run_the_review_panel_s3["review<br/><i>none</i>"]
+  debugger_run_the_review_panel_s2 --> debugger_run_the_review_panel_s3
+  debugger_read_review_findings["debugger/read-review-findings<br/><i>none</i>"]
+  debugger_read_review_findings_s0["review list<br/><i>none</i>"]
+  debugger_read_review_findings --> debugger_read_review_findings_s0
+  page_changes -.-> debugger_read_review_findings_s0
+  debugger_read_review_findings_s1["review show<br/><i>none</i>"]
+  debugger_read_review_findings_s0 --> debugger_read_review_findings_s1
+  page_changes -.-> debugger_read_review_findings_s1
+  debugger_read_review_findings_s2["review findings<br/><i>none</i>"]
+  debugger_read_review_findings_s1 --> debugger_read_review_findings_s2
+  page_changes -.-> debugger_read_review_findings_s2
+  debugger_resolve_a_finding["debugger/resolve-a-finding<br/><i>none</i>"]
+  debugger_resolve_a_finding_s0["review resolve<br/><i>none</i>"]
+  debugger_resolve_a_finding --> debugger_resolve_a_finding_s0
+  page_changes -.-> debugger_resolve_a_finding_s0
+  debugger_resolve_a_finding_s1["review list<br/><i>none</i>"]
+  debugger_resolve_a_finding_s0 --> debugger_resolve_a_finding_s1
+  page_changes -.-> debugger_resolve_a_finding_s1
+  debugger_resolve_a_finding_s2["review verdict<br/><i>none</i>"]
+  debugger_resolve_a_finding_s1 --> debugger_resolve_a_finding_s2
+  page_changes -.-> debugger_resolve_a_finding_s2
+  debugger_gate_before_push["debugger/gate-before-push<br/><i>none</i>"]
+  debugger_gate_before_push_s0["review gate<br/><i>none</i>"]
+  debugger_gate_before_push --> debugger_gate_before_push_s0
+  page_changes -.-> debugger_gate_before_push_s0
+  debugger_gate_before_push_s1["review verdict<br/><i>none</i>"]
+  debugger_gate_before_push_s0 --> debugger_gate_before_push_s1
+  page_changes -.-> debugger_gate_before_push_s1
+  debugger_gate_before_push_s2["review run<br/><i>none</i>"]
+  debugger_gate_before_push_s1 --> debugger_gate_before_push_s2
+  page_changes -.-> debugger_gate_before_push_s2
+  debugger_forward_a_finding["debugger/forward-a-finding<br/><i>none</i>"]
+  debugger_forward_a_finding_s0["review forward<br/><i>none</i>"]
+  debugger_forward_a_finding --> debugger_forward_a_finding_s0
+  page_changes -.-> debugger_forward_a_finding_s0
+  debugger_forward_a_finding_s1["review findings<br/><i>none</i>"]
+  debugger_forward_a_finding_s0 --> debugger_forward_a_finding_s1
+  page_changes -.-> debugger_forward_a_finding_s1
+  debugger_forward_a_finding_s2["review list<br/><i>none</i>"]
+  debugger_forward_a_finding_s1 --> debugger_forward_a_finding_s2
+  page_changes -.-> debugger_forward_a_finding_s2
+  debugger_repair_a_dead_target["debugger/repair-a-dead-target<br/><i>none</i>"]
+  debugger_repair_a_dead_target_s0["repair<br/><i>full</i>"]
+  debugger_repair_a_dead_target --> debugger_repair_a_dead_target_s0
+  page_run -.-> debugger_repair_a_dead_target_s0
+  debugger_repair_a_dead_target_s1["recover<br/><i>none</i>"]
+  debugger_repair_a_dead_target_s0 --> debugger_repair_a_dead_target_s1
+  page_run -.-> debugger_repair_a_dead_target_s1
+  debugger_repair_a_dead_target_s2["triage<br/><i>partial</i>"]
+  debugger_repair_a_dead_target_s1 --> debugger_repair_a_dead_target_s2
+  page_runs -.-> debugger_repair_a_dead_target_s2
+  debugger_supervise_a_parked_batch["debugger/supervise-a-parked-batch<br/><i>none</i>"]
+  debugger_supervise_a_parked_batch_s0["supervise<br/><i>partial</i>"]
+  debugger_supervise_a_parked_batch --> debugger_supervise_a_parked_batch_s0
+  page_runs -.-> debugger_supervise_a_parked_batch_s0
+  debugger_supervise_a_parked_batch_s1["reap<br/><i>full</i>"]
+  debugger_supervise_a_parked_batch_s0 --> debugger_supervise_a_parked_batch_s1
+  page_runs -.-> debugger_supervise_a_parked_batch_s1
+  debugger_supervise_a_parked_batch_s2["board runs<br/><i>none</i>"]
+  debugger_supervise_a_parked_batch_s1 --> debugger_supervise_a_parked_batch_s2
+  page_runs -.-> debugger_supervise_a_parked_batch_s2
+  debugger_side_issue_collector["debugger/side-issue-collector<br/><i>none</i>"]
+  debugger_side_issue_collector_s0["bug-collector<br/><i>none</i>"]
+  debugger_side_issue_collector --> debugger_side_issue_collector_s0
+  page_runs -.-> debugger_side_issue_collector_s0
+  debugger_side_issue_collector_s1["bugs sweep<br/><i>full</i>"]
+  debugger_side_issue_collector_s0 --> debugger_side_issue_collector_s1
+  page_runs -.-> debugger_side_issue_collector_s1
+  debugger_side_issue_collector_s2["bugs show<br/><i>none</i>"]
+  debugger_side_issue_collector_s1 --> debugger_side_issue_collector_s2
+  page_runs -.-> debugger_side_issue_collector_s2
+  debugger_explain_a_node_outcome["debugger/explain-a-node-outcome<br/><i>none</i>"]
+  debugger_explain_a_node_outcome_s0["why<br/><i>none</i>"]
+  debugger_explain_a_node_outcome --> debugger_explain_a_node_outcome_s0
+  page_run -.-> debugger_explain_a_node_outcome_s0
+  debugger_explain_a_node_outcome_s1["board node<br/><i>none</i>"]
+  debugger_explain_a_node_outcome_s0 --> debugger_explain_a_node_outcome_s1
+  page_run -.-> debugger_explain_a_node_outcome_s1
+  debugger_explain_a_node_outcome_s2["board telemetry<br/><i>none</i>"]
+  debugger_explain_a_node_outcome_s1 --> debugger_explain_a_node_outcome_s2
+  page_run -.-> debugger_explain_a_node_outcome_s2
+  debugger_triage_without_touching_code["debugger/triage-without-touching-code<br/><i>none</i>"]
+  debugger_triage_without_touching_code_s0["triage<br/><i>partial</i>"]
+  debugger_triage_without_touching_code --> debugger_triage_without_touching_code_s0
+  page_runs -.-> debugger_triage_without_touching_code_s0
+  debugger_triage_without_touching_code_s1["bug-collector<br/><i>none</i>"]
+  debugger_triage_without_touching_code_s0 --> debugger_triage_without_touching_code_s1
+  page_runs -.-> debugger_triage_without_touching_code_s1
+  debugger_triage_without_touching_code_s2["bugs list<br/><i>none</i>"]
+  debugger_triage_without_touching_code_s1 --> debugger_triage_without_touching_code_s2
+  page_runs -.-> debugger_triage_without_touching_code_s2
+  debugger_validate_after_a_fix["debugger/validate-after-a-fix<br/><i>none</i>"]
+  debugger_validate_after_a_fix_s0["validate<br/><i>none</i>"]
+  debugger_validate_after_a_fix --> debugger_validate_after_a_fix_s0
+  page_setup -.-> debugger_validate_after_a_fix_s0
+  debugger_validate_after_a_fix_s1["garden<br/><i>none</i>"]
+  debugger_validate_after_a_fix_s0 --> debugger_validate_after_a_fix_s1
+  page_setup -.-> debugger_validate_after_a_fix_s1
+  debugger_validate_after_a_fix_s2["doctor<br/><i>full</i>"]
+  debugger_validate_after_a_fix_s1 --> debugger_validate_after_a_fix_s2
+  page_setup -.-> debugger_validate_after_a_fix_s2
+  debugger_compare_harness_variants["debugger/compare-harness-variants<br/><i>none</i>"]
+  debugger_compare_harness_variants_s0["harness-contrast<br/><i>none</i>"]
+  debugger_compare_harness_variants --> debugger_compare_harness_variants_s0
+  page_learn -.-> debugger_compare_harness_variants_s0
+  debugger_compare_harness_variants_s1["harness-audit<br/><i>none</i>"]
+  debugger_compare_harness_variants_s0 --> debugger_compare_harness_variants_s1
+  page_learn -.-> debugger_compare_harness_variants_s1
+  debugger_compare_harness_variants_s2["harness-card<br/><i>none</i>"]
+  debugger_compare_harness_variants_s1 --> debugger_compare_harness_variants_s2
+  page_learn -.-> debugger_compare_harness_variants_s2
+  debugger_replay_a_run_from_its_events["debugger/replay-a-run-from-its-events<br/><i>none</i>"]
+  debugger_replay_a_run_from_its_events_s0["board show<br/><i>none</i>"]
+  debugger_replay_a_run_from_its_events --> debugger_replay_a_run_from_its_events_s0
+  page_run -.-> debugger_replay_a_run_from_its_events_s0
+  debugger_replay_a_run_from_its_events_s1["board stream<br/><i>none</i>"]
+  debugger_replay_a_run_from_its_events_s0 --> debugger_replay_a_run_from_its_events_s1
+  page_run -.-> debugger_replay_a_run_from_its_events_s1
+  debugger_replay_a_run_from_its_events_s2["execute<br/><i>none</i>"]
+  debugger_replay_a_run_from_its_events_s1 --> debugger_replay_a_run_from_its_events_s2
+  page_run -.-> debugger_replay_a_run_from_its_events_s2
+  debugger_unblock_an_approval["debugger/unblock-an-approval<br/><i>none</i>"]
+  debugger_unblock_an_approval_s0["approvals show<br/><i>none</i>"]
+  debugger_unblock_an_approval --> debugger_unblock_an_approval_s0
+  page_inbox -.-> debugger_unblock_an_approval_s0
+  debugger_unblock_an_approval_s1["approvals list<br/><i>none</i>"]
+  debugger_unblock_an_approval_s0 --> debugger_unblock_an_approval_s1
+  page_inbox -.-> debugger_unblock_an_approval_s1
+  debugger_unblock_an_approval_s2["board gate<br/><i>partial</i>"]
+  debugger_unblock_an_approval_s1 --> debugger_unblock_an_approval_s2
+  page_run -.-> debugger_unblock_an_approval_s2
+  debugger_annotate_node_evidence["debugger/annotate-node-evidence<br/><i>none</i>"]
+  debugger_annotate_node_evidence_s0["board node<br/><i>none</i>"]
+  debugger_annotate_node_evidence --> debugger_annotate_node_evidence_s0
+  page_run -.-> debugger_annotate_node_evidence_s0
+  debugger_annotate_node_evidence_s1["verifier annotate<br/><i>partial</i>"]
+  debugger_annotate_node_evidence_s0 --> debugger_annotate_node_evidence_s1
+  page_verify -.-> debugger_annotate_node_evidence_s1
+  debugger_annotate_node_evidence_s2["board learning<br/><i>none</i>"]
+  debugger_annotate_node_evidence_s1 --> debugger_annotate_node_evidence_s2
+  page_run -.-> debugger_annotate_node_evidence_s2
+  debugger_compare_two_verdicts["debugger/compare-two-verdicts<br/><i>none</i>"]
+  debugger_compare_two_verdicts_s0["verify<br/><i>none</i>"]
+  debugger_compare_two_verdicts --> debugger_compare_two_verdicts_s0
+  page_verify -.-> debugger_compare_two_verdicts_s0
+  debugger_compare_two_verdicts_s1["verifier list<br/><i>partial</i>"]
+  debugger_compare_two_verdicts_s0 --> debugger_compare_two_verdicts_s1
+  page_verify -.-> debugger_compare_two_verdicts_s1
+  debugger_compare_two_verdicts_s2["board gate<br/><i>partial</i>"]
+  debugger_compare_two_verdicts_s1 --> debugger_compare_two_verdicts_s2
+  page_run -.-> debugger_compare_two_verdicts_s2
+  debugger_compare_two_verdicts_s3["verifier<br/><i>partial</i>"]
+  debugger_compare_two_verdicts_s2 --> debugger_compare_two_verdicts_s3
+  debugger_read_the_changes_page["debugger/read-the-changes-page<br/><i>none</i>"]
+  debugger_read_the_changes_page_s0["board changes<br/><i>none</i>"]
+  debugger_read_the_changes_page --> debugger_read_the_changes_page_s0
+  page_changes -.-> debugger_read_the_changes_page_s0
+  debugger_read_the_changes_page_s1["board show<br/><i>none</i>"]
+  debugger_read_the_changes_page_s0 --> debugger_read_the_changes_page_s1
+  page_run -.-> debugger_read_the_changes_page_s1
+  debugger_read_the_changes_page_s2["review list<br/><i>none</i>"]
+  debugger_read_the_changes_page_s1 --> debugger_read_the_changes_page_s2
+  page_changes -.-> debugger_read_the_changes_page_s2
   page_changes(["#page changes"])
+  page_inbox(["#page inbox"])
+  page_learn(["#page learn"])
+  page_recipes(["#page recipes"])
   page_run(["#page run"])
   page_runs(["#page runs"])
   page_setup(["#page setup"])
@@ -148,7 +1240,302 @@ flowchart LR
   integrator_coordinate_two_agents_s1 --> integrator_coordinate_two_agents_s2
   integrator_coordinate_two_agents_s3["threads list<br/><i>none</i>"]
   integrator_coordinate_two_agents_s2 --> integrator_coordinate_two_agents_s3
+  integrator_browse_runs_from_an_agent["integrator/browse-runs-from-an-agent<br/><i>none</i>"]
+  integrator_browse_runs_from_an_agent_s0["list_runs<br/><i>none</i>"]
+  integrator_browse_runs_from_an_agent --> integrator_browse_runs_from_an_agent_s0
+  integrator_browse_runs_from_an_agent_s1["run_detail<br/><i>none</i>"]
+  integrator_browse_runs_from_an_agent_s0 --> integrator_browse_runs_from_an_agent_s1
+  integrator_browse_runs_from_an_agent_s2["workspaces<br/><i>none</i>"]
+  integrator_browse_runs_from_an_agent_s1 --> integrator_browse_runs_from_an_agent_s2
+  integrator_watch_a_run_from_an_agent["integrator/watch-a-run-from-an-agent<br/><i>none</i>"]
+  integrator_watch_a_run_from_an_agent_s0["run_status<br/><i>none</i>"]
+  integrator_watch_a_run_from_an_agent --> integrator_watch_a_run_from_an_agent_s0
+  integrator_watch_a_run_from_an_agent_s1["run_detail<br/><i>none</i>"]
+  integrator_watch_a_run_from_an_agent_s0 --> integrator_watch_a_run_from_an_agent_s1
+  integrator_watch_a_run_from_an_agent_s2["wait_for_run<br/><i>none</i>"]
+  integrator_watch_a_run_from_an_agent_s1 --> integrator_watch_a_run_from_an_agent_s2
+  integrator_stop_a_run_from_an_agent["integrator/stop-a-run-from-an-agent<br/><i>none</i>"]
+  integrator_stop_a_run_from_an_agent_s0["stop_run<br/><i>none</i>"]
+  integrator_stop_a_run_from_an_agent --> integrator_stop_a_run_from_an_agent_s0
+  integrator_stop_a_run_from_an_agent_s1["run_status<br/><i>none</i>"]
+  integrator_stop_a_run_from_an_agent_s0 --> integrator_stop_a_run_from_an_agent_s1
+  integrator_stop_a_run_from_an_agent_s2["list_runs<br/><i>none</i>"]
+  integrator_stop_a_run_from_an_agent_s1 --> integrator_stop_a_run_from_an_agent_s2
+  integrator_start_a_run_from_an_agent["integrator/start-a-run-from-an-agent<br/><i>none</i>"]
+  integrator_start_a_run_from_an_agent_s0["start_run<br/><i>none</i>"]
+  integrator_start_a_run_from_an_agent --> integrator_start_a_run_from_an_agent_s0
+  integrator_start_a_run_from_an_agent_s1["run_status<br/><i>none</i>"]
+  integrator_start_a_run_from_an_agent_s0 --> integrator_start_a_run_from_an_agent_s1
+  integrator_start_a_run_from_an_agent_s2["wait_for_run<br/><i>none</i>"]
+  integrator_start_a_run_from_an_agent_s1 --> integrator_start_a_run_from_an_agent_s2
+  integrator_discover_recipes_from_an_agent["integrator/discover-recipes-from-an-agent<br/><i>none</i>"]
+  integrator_discover_recipes_from_an_agent_s0["list_recipes<br/><i>none</i>"]
+  integrator_discover_recipes_from_an_agent --> integrator_discover_recipes_from_an_agent_s0
+  integrator_discover_recipes_from_an_agent_s1["recipe_guide<br/><i>none</i>"]
+  integrator_discover_recipes_from_an_agent_s0 --> integrator_discover_recipes_from_an_agent_s1
+  integrator_discover_recipes_from_an_agent_s2["get_recipe_spec<br/><i>none</i>"]
+  integrator_discover_recipes_from_an_agent_s1 --> integrator_discover_recipes_from_an_agent_s2
+  integrator_inspect_recipes_from_an_agent["integrator/inspect-recipes-from-an-agent<br/><i>none</i>"]
+  integrator_inspect_recipes_from_an_agent_s0["describe_recipe<br/><i>none</i>"]
+  integrator_inspect_recipes_from_an_agent --> integrator_inspect_recipes_from_an_agent_s0
+  integrator_inspect_recipes_from_an_agent_s1["list_recipes<br/><i>none</i>"]
+  integrator_inspect_recipes_from_an_agent_s0 --> integrator_inspect_recipes_from_an_agent_s1
+  integrator_inspect_recipes_from_an_agent_s2["get_recipe_spec<br/><i>none</i>"]
+  integrator_inspect_recipes_from_an_agent_s1 --> integrator_inspect_recipes_from_an_agent_s2
+  integrator_inspect_automations_from_an_agent["integrator/inspect-automations-from-an-agent<br/><i>none</i>"]
+  integrator_inspect_automations_from_an_agent_s0["list_automations<br/><i>none</i>"]
+  integrator_inspect_automations_from_an_agent --> integrator_inspect_automations_from_an_agent_s0
+  integrator_inspect_automations_from_an_agent_s1["describe_recipe<br/><i>none</i>"]
+  integrator_inspect_automations_from_an_agent_s0 --> integrator_inspect_automations_from_an_agent_s1
+  integrator_inspect_automations_from_an_agent_s2["list_recipes<br/><i>none</i>"]
+  integrator_inspect_automations_from_an_agent_s1 --> integrator_inspect_automations_from_an_agent_s2
+  integrator_ask_cost_from_an_agent["integrator/ask-cost-from-an-agent<br/><i>none</i>"]
+  integrator_ask_cost_from_an_agent_s0["cost<br/><i>none</i>"]
+  integrator_ask_cost_from_an_agent --> integrator_ask_cost_from_an_agent_s0
+  integrator_ask_cost_from_an_agent_s1["lanes<br/><i>none</i>"]
+  integrator_ask_cost_from_an_agent_s0 --> integrator_ask_cost_from_an_agent_s1
+  integrator_ask_cost_from_an_agent_s2["run_detail<br/><i>none</i>"]
+  integrator_ask_cost_from_an_agent_s1 --> integrator_ask_cost_from_an_agent_s2
+  integrator_ask_lanes_from_an_agent["integrator/ask-lanes-from-an-agent<br/><i>none</i>"]
+  integrator_ask_lanes_from_an_agent_s0["lanes<br/><i>none</i>"]
+  integrator_ask_lanes_from_an_agent --> integrator_ask_lanes_from_an_agent_s0
+  integrator_ask_lanes_from_an_agent_s1["cost<br/><i>none</i>"]
+  integrator_ask_lanes_from_an_agent_s0 --> integrator_ask_lanes_from_an_agent_s1
+  integrator_ask_lanes_from_an_agent_s2["workspaces<br/><i>none</i>"]
+  integrator_ask_lanes_from_an_agent_s1 --> integrator_ask_lanes_from_an_agent_s2
+  integrator_recall_learnings_from_an_agent["integrator/recall-learnings-from-an-agent<br/><i>none</i>"]
+  integrator_recall_learnings_from_an_agent_s0["learnings<br/><i>none</i>"]
+  integrator_recall_learnings_from_an_agent --> integrator_recall_learnings_from_an_agent_s0
+  integrator_recall_learnings_from_an_agent_s1["run_detail<br/><i>none</i>"]
+  integrator_recall_learnings_from_an_agent_s0 --> integrator_recall_learnings_from_an_agent_s1
+  integrator_recall_learnings_from_an_agent_s2["certify<br/><i>none</i>"]
+  integrator_recall_learnings_from_an_agent_s1 --> integrator_recall_learnings_from_an_agent_s2
+  integrator_certify_from_an_agent["integrator/certify-from-an-agent<br/><i>none</i>"]
+  integrator_certify_from_an_agent_s0["certify<br/><i>none</i>"]
+  integrator_certify_from_an_agent --> integrator_certify_from_an_agent_s0
+  integrator_certify_from_an_agent_s1["run_detail<br/><i>none</i>"]
+  integrator_certify_from_an_agent_s0 --> integrator_certify_from_an_agent_s1
+  integrator_certify_from_an_agent_s2["certify<br/><i>none</i>"]
+  integrator_certify_from_an_agent_s1 --> integrator_certify_from_an_agent_s2
+  page_verify -.-> integrator_certify_from_an_agent_s2
+  integrator_host_the_agent_interface["integrator/host-the-agent-interface<br/><i>none</i>"]
+  integrator_host_the_agent_interface_s0["acp<br/><i>none</i>"]
+  integrator_host_the_agent_interface --> integrator_host_the_agent_interface_s0
+  integrator_host_the_agent_interface_s1["mcp-context<br/><i>none</i>"]
+  integrator_host_the_agent_interface_s0 --> integrator_host_the_agent_interface_s1
+  integrator_host_the_agent_interface_s2["serve<br/><i>none</i>"]
+  integrator_host_the_agent_interface_s1 --> integrator_host_the_agent_interface_s2
+  page_kanban -.-> integrator_host_the_agent_interface_s2
+  integrator_keep_a_thread_alive["integrator/keep-a-thread-alive<br/><i>none</i>"]
+  integrator_keep_a_thread_alive_s0["threads<br/><i>none</i>"]
+  integrator_keep_a_thread_alive --> integrator_keep_a_thread_alive_s0
+  page_thread -.-> integrator_keep_a_thread_alive_s0
+  integrator_keep_a_thread_alive_s1["threads list<br/><i>none</i>"]
+  integrator_keep_a_thread_alive_s0 --> integrator_keep_a_thread_alive_s1
+  page_thread -.-> integrator_keep_a_thread_alive_s1
+  integrator_keep_a_thread_alive_s2["threads show<br/><i>none</i>"]
+  integrator_keep_a_thread_alive_s1 --> integrator_keep_a_thread_alive_s2
+  page_thread -.-> integrator_keep_a_thread_alive_s2
+  integrator_attach_to_a_thread["integrator/attach-to-a-thread<br/><i>none</i>"]
+  integrator_attach_to_a_thread_s0["threads attach<br/><i>none</i>"]
+  integrator_attach_to_a_thread --> integrator_attach_to_a_thread_s0
+  page_thread -.-> integrator_attach_to_a_thread_s0
+  integrator_attach_to_a_thread_s1["threads show<br/><i>none</i>"]
+  integrator_attach_to_a_thread_s0 --> integrator_attach_to_a_thread_s1
+  page_thread -.-> integrator_attach_to_a_thread_s1
+  integrator_attach_to_a_thread_s2["threads send<br/><i>none</i>"]
+  integrator_attach_to_a_thread_s1 --> integrator_attach_to_a_thread_s2
+  page_thread -.-> integrator_attach_to_a_thread_s2
+  integrator_continue_a_thread["integrator/continue-a-thread<br/><i>none</i>"]
+  integrator_continue_a_thread_s0["threads continue<br/><i>none</i>"]
+  integrator_continue_a_thread --> integrator_continue_a_thread_s0
+  page_thread -.-> integrator_continue_a_thread_s0
+  integrator_continue_a_thread_s1["threads send<br/><i>none</i>"]
+  integrator_continue_a_thread_s0 --> integrator_continue_a_thread_s1
+  page_thread -.-> integrator_continue_a_thread_s1
+  integrator_continue_a_thread_s2["threads show<br/><i>none</i>"]
+  integrator_continue_a_thread_s1 --> integrator_continue_a_thread_s2
+  page_thread -.-> integrator_continue_a_thread_s2
+  integrator_serve_threads["integrator/serve-threads<br/><i>none</i>"]
+  integrator_serve_threads_s0["threads serve<br/><i>none</i>"]
+  integrator_serve_threads --> integrator_serve_threads_s0
+  integrator_serve_threads_s1["threads list<br/><i>none</i>"]
+  integrator_serve_threads_s0 --> integrator_serve_threads_s1
+  integrator_serve_threads_s2["threads attach<br/><i>none</i>"]
+  integrator_serve_threads_s1 --> integrator_serve_threads_s2
+  integrator_send_into_a_thread["integrator/send-into-a-thread<br/><i>none</i>"]
+  integrator_send_into_a_thread_s0["threads send<br/><i>none</i>"]
+  integrator_send_into_a_thread --> integrator_send_into_a_thread_s0
+  page_thread -.-> integrator_send_into_a_thread_s0
+  integrator_send_into_a_thread_s1["threads continue<br/><i>none</i>"]
+  integrator_send_into_a_thread_s0 --> integrator_send_into_a_thread_s1
+  page_thread -.-> integrator_send_into_a_thread_s1
+  integrator_send_into_a_thread_s2["threads list<br/><i>none</i>"]
+  integrator_send_into_a_thread_s1 --> integrator_send_into_a_thread_s2
+  page_thread -.-> integrator_send_into_a_thread_s2
+  integrator_open_a_concord_scope["integrator/open-a-concord-scope<br/><i>none</i>"]
+  integrator_open_a_concord_scope_s0["concord<br/><i>partial</i>"]
+  integrator_open_a_concord_scope --> integrator_open_a_concord_scope_s0
+  integrator_open_a_concord_scope_s1["concord run<br/><i>none</i>"]
+  integrator_open_a_concord_scope_s0 --> integrator_open_a_concord_scope_s1
+  integrator_open_a_concord_scope_s2["concord ps<br/><i>none</i>"]
+  integrator_open_a_concord_scope_s1 --> integrator_open_a_concord_scope_s2
+  integrator_broadcast_a_decision["integrator/broadcast-a-decision<br/><i>none</i>"]
+  integrator_broadcast_a_decision_s0["concord send<br/><i>none</i>"]
+  integrator_broadcast_a_decision --> integrator_broadcast_a_decision_s0
+  integrator_broadcast_a_decision_s1["concord inbox<br/><i>partial</i>"]
+  integrator_broadcast_a_decision_s0 --> integrator_broadcast_a_decision_s1
+  integrator_broadcast_a_decision_s2["concord ack<br/><i>full</i>"]
+  integrator_broadcast_a_decision_s1 --> integrator_broadcast_a_decision_s2
+  integrator_claim_a_file["integrator/claim-a-file<br/><i>none</i>"]
+  integrator_claim_a_file_s0["concord admit<br/><i>none</i>"]
+  integrator_claim_a_file --> integrator_claim_a_file_s0
+  integrator_claim_a_file_s1["concord claims<br/><i>none</i>"]
+  integrator_claim_a_file_s0 --> integrator_claim_a_file_s1
+  integrator_claim_a_file_s2["concord violations<br/><i>none</i>"]
+  integrator_claim_a_file_s1 --> integrator_claim_a_file_s2
+  integrator_stop_a_concord_scope["integrator/stop-a-concord-scope<br/><i>none</i>"]
+  integrator_stop_a_concord_scope_s0["concord stop<br/><i>full</i>"]
+  integrator_stop_a_concord_scope --> integrator_stop_a_concord_scope_s0
+  integrator_stop_a_concord_scope_s1["concord ps<br/><i>none</i>"]
+  integrator_stop_a_concord_scope_s0 --> integrator_stop_a_concord_scope_s1
+  integrator_stop_a_concord_scope_s2["concord violations<br/><i>none</i>"]
+  integrator_stop_a_concord_scope_s1 --> integrator_stop_a_concord_scope_s2
+  integrator_check_concord_health["integrator/check-concord-health<br/><i>none</i>"]
+  integrator_check_concord_health_s0["concord violations<br/><i>none</i>"]
+  integrator_check_concord_health --> integrator_check_concord_health_s0
+  integrator_check_concord_health_s1["concord claims<br/><i>none</i>"]
+  integrator_check_concord_health_s0 --> integrator_check_concord_health_s1
+  integrator_check_concord_health_s2["concord help<br/><i>none</i>"]
+  integrator_check_concord_health_s1 --> integrator_check_concord_health_s2
+  integrator_read_the_orchestrator_thread["integrator/read-the-orchestrator-thread<br/><i>none</i>"]
+  integrator_read_the_orchestrator_thread_s0["orchestrator<br/><i>none</i>"]
+  integrator_read_the_orchestrator_thread --> integrator_read_the_orchestrator_thread_s0
+  page_orch -.-> integrator_read_the_orchestrator_thread_s0
+  integrator_read_the_orchestrator_thread_s1["orchestrator watch<br/><i>none</i>"]
+  integrator_read_the_orchestrator_thread_s0 --> integrator_read_the_orchestrator_thread_s1
+  page_orch -.-> integrator_read_the_orchestrator_thread_s1
+  integrator_read_the_orchestrator_thread_s2["board stream<br/><i>none</i>"]
+  integrator_read_the_orchestrator_thread_s1 --> integrator_read_the_orchestrator_thread_s2
+  page_run -.-> integrator_read_the_orchestrator_thread_s2
+  integrator_drive_the_board_over_http["integrator/drive-the-board-over-http<br/><i>none</i>"]
+  integrator_drive_the_board_over_http_s0["serve<br/><i>none</i>"]
+  integrator_drive_the_board_over_http --> integrator_drive_the_board_over_http_s0
+  integrator_drive_the_board_over_http_s1["board page<br/><i>none</i>"]
+  integrator_drive_the_board_over_http_s0 --> integrator_drive_the_board_over_http_s1
+  page_kanban -.-> integrator_drive_the_board_over_http_s1
+  integrator_drive_the_board_over_http_s2["board overview<br/><i>none</i>"]
+  integrator_drive_the_board_over_http_s1 --> integrator_drive_the_board_over_http_s2
+  page_kanban -.-> integrator_drive_the_board_over_http_s2
+  integrator_poll_the_board_programmatically["integrator/poll-the-board-programmatically<br/><i>none</i>"]
+  integrator_poll_the_board_programmatically_s0["board runs<br/><i>none</i>"]
+  integrator_poll_the_board_programmatically --> integrator_poll_the_board_programmatically_s0
+  integrator_poll_the_board_programmatically_s1["board show<br/><i>none</i>"]
+  integrator_poll_the_board_programmatically_s0 --> integrator_poll_the_board_programmatically_s1
+  integrator_poll_the_board_programmatically_s2["board stream<br/><i>none</i>"]
+  integrator_poll_the_board_programmatically_s1 --> integrator_poll_the_board_programmatically_s2
+  integrator_start_work_programmatically["integrator/start-work-programmatically<br/><i>none</i>"]
+  integrator_start_work_programmatically_s0["board start<br/><i>partial</i>"]
+  integrator_start_work_programmatically --> integrator_start_work_programmatically_s0
+  page_runs -.-> integrator_start_work_programmatically_s0
+  integrator_start_work_programmatically_s1["board runs<br/><i>none</i>"]
+  integrator_start_work_programmatically_s0 --> integrator_start_work_programmatically_s1
+  page_runs -.-> integrator_start_work_programmatically_s1
+  integrator_start_work_programmatically_s2["board show<br/><i>none</i>"]
+  integrator_start_work_programmatically_s1 --> integrator_start_work_programmatically_s2
+  page_run -.-> integrator_start_work_programmatically_s2
+  integrator_read_the_run_page_payload["integrator/read-the-run-page-payload<br/><i>none</i>"]
+  integrator_read_the_run_page_payload_s0["board page<br/><i>none</i>"]
+  integrator_read_the_run_page_payload --> integrator_read_the_run_page_payload_s0
+  page_run -.-> integrator_read_the_run_page_payload_s0
+  integrator_read_the_run_page_payload_s1["board run<br/><i>none</i>"]
+  integrator_read_the_run_page_payload_s0 --> integrator_read_the_run_page_payload_s1
+  page_run -.-> integrator_read_the_run_page_payload_s1
+  integrator_read_the_run_page_payload_s2["board overview<br/><i>none</i>"]
+  integrator_read_the_run_page_payload_s1 --> integrator_read_the_run_page_payload_s2
+  page_kanban -.-> integrator_read_the_run_page_payload_s2
+  integrator_register_tools_for_a_workflow["integrator/register-tools-for-a-workflow<br/><i>none</i>"]
+  integrator_register_tools_for_a_workflow_s0["mcp add<br/><i>none</i>"]
+  integrator_register_tools_for_a_workflow --> integrator_register_tools_for_a_workflow_s0
+  page_setup -.-> integrator_register_tools_for_a_workflow_s0
+  integrator_register_tools_for_a_workflow_s1["mcp check<br/><i>none</i>"]
+  integrator_register_tools_for_a_workflow_s0 --> integrator_register_tools_for_a_workflow_s1
+  page_setup -.-> integrator_register_tools_for_a_workflow_s1
+  integrator_register_tools_for_a_workflow_s2["mcp proxy<br/><i>none</i>"]
+  integrator_register_tools_for_a_workflow_s1 --> integrator_register_tools_for_a_workflow_s2
+  integrator_remove_a_tools_registration["integrator/remove-a-tools-registration<br/><i>none</i>"]
+  integrator_remove_a_tools_registration_s0["mcp rm<br/><i>none</i>"]
+  integrator_remove_a_tools_registration --> integrator_remove_a_tools_registration_s0
+  page_setup -.-> integrator_remove_a_tools_registration_s0
+  integrator_remove_a_tools_registration_s1["mcp list<br/><i>none</i>"]
+  integrator_remove_a_tools_registration_s0 --> integrator_remove_a_tools_registration_s1
+  page_setup -.-> integrator_remove_a_tools_registration_s1
+  integrator_remove_a_tools_registration_s2["mcp check<br/><i>none</i>"]
+  integrator_remove_a_tools_registration_s1 --> integrator_remove_a_tools_registration_s2
+  page_setup -.-> integrator_remove_a_tools_registration_s2
+  integrator_launch_an_mcp_server["integrator/launch-an-mcp-server<br/><i>none</i>"]
+  integrator_launch_an_mcp_server_s0["mcp launch<br/><i>none</i>"]
+  integrator_launch_an_mcp_server --> integrator_launch_an_mcp_server_s0
+  integrator_launch_an_mcp_server_s1["mcp list<br/><i>none</i>"]
+  integrator_launch_an_mcp_server_s0 --> integrator_launch_an_mcp_server_s1
+  page_setup -.-> integrator_launch_an_mcp_server_s1
+  integrator_launch_an_mcp_server_s2["mcp proxy<br/><i>none</i>"]
+  integrator_launch_an_mcp_server_s1 --> integrator_launch_an_mcp_server_s2
+  integrator_run_a_bounded_child_orchestrator["integrator/run-a-bounded-child-orchestrator<br/><i>none</i>"]
+  integrator_run_a_bounded_child_orchestrator_s0["spawn<br/><i>none</i>"]
+  integrator_run_a_bounded_child_orchestrator --> integrator_run_a_bounded_child_orchestrator_s0
+  integrator_run_a_bounded_child_orchestrator_s1["board runs<br/><i>none</i>"]
+  integrator_run_a_bounded_child_orchestrator_s0 --> integrator_run_a_bounded_child_orchestrator_s1
+  page_runs -.-> integrator_run_a_bounded_child_orchestrator_s1
+  integrator_run_a_bounded_child_orchestrator_s2["scheduler<br/><i>partial</i>"]
+  integrator_run_a_bounded_child_orchestrator_s1 --> integrator_run_a_bounded_child_orchestrator_s2
+  integrator_certify_an_integration["integrator/certify-an-integration<br/><i>none</i>"]
+  integrator_certify_an_integration_s0["certify<br/><i>none</i>"]
+  integrator_certify_an_integration --> integrator_certify_an_integration_s0
+  integrator_certify_an_integration_s1["certify summary<br/><i>none</i>"]
+  integrator_certify_an_integration_s0 --> integrator_certify_an_integration_s1
+  page_verify -.-> integrator_certify_an_integration_s1
+  integrator_certify_an_integration_s2["board gate<br/><i>partial</i>"]
+  integrator_certify_an_integration_s1 --> integrator_certify_an_integration_s2
+  page_run -.-> integrator_certify_an_integration_s2
+  integrator_stream_events_to_a_client["integrator/stream-events-to-a-client<br/><i>none</i>"]
+  integrator_stream_events_to_a_client_s0["board stream<br/><i>none</i>"]
+  integrator_stream_events_to_a_client --> integrator_stream_events_to_a_client_s0
+  page_run -.-> integrator_stream_events_to_a_client_s0
+  integrator_stream_events_to_a_client_s1["serve<br/><i>none</i>"]
+  integrator_stream_events_to_a_client_s0 --> integrator_stream_events_to_a_client_s1
+  integrator_stream_events_to_a_client_s2["run_status<br/><i>none</i>"]
+  integrator_stream_events_to_a_client_s1 --> integrator_stream_events_to_a_client_s2
+  integrator_share_a_workspace_view["integrator/share-a-workspace-view<br/><i>none</i>"]
+  integrator_share_a_workspace_view_s0["workspaces<br/><i>none</i>"]
+  integrator_share_a_workspace_view --> integrator_share_a_workspace_view_s0
+  integrator_share_a_workspace_view_s1["list_runs<br/><i>none</i>"]
+  integrator_share_a_workspace_view_s0 --> integrator_share_a_workspace_view_s1
+  integrator_share_a_workspace_view_s2["board page<br/><i>none</i>"]
+  integrator_share_a_workspace_view_s1 --> integrator_share_a_workspace_view_s2
+  page_kanban -.-> integrator_share_a_workspace_view_s2
+  integrator_read_a_run_detail["integrator/read-a-run-detail<br/><i>none</i>"]
+  integrator_read_a_run_detail_s0["run_detail<br/><i>none</i>"]
+  integrator_read_a_run_detail --> integrator_read_a_run_detail_s0
+  integrator_read_a_run_detail_s1["run_status<br/><i>none</i>"]
+  integrator_read_a_run_detail_s0 --> integrator_read_a_run_detail_s1
+  integrator_read_a_run_detail_s2["why<br/><i>none</i>"]
+  integrator_read_a_run_detail_s1 --> integrator_read_a_run_detail_s2
+  page_run -.-> integrator_read_a_run_detail_s2
+  integrator_ask_the_engine_to_draft["integrator/ask-the-engine-to-draft<br/><i>none</i>"]
+  integrator_ask_the_engine_to_draft_s0["draft_kickoff<br/><i>none</i>"]
+  integrator_ask_the_engine_to_draft --> integrator_ask_the_engine_to_draft_s0
+  integrator_ask_the_engine_to_draft_s1["start_run<br/><i>none</i>"]
+  integrator_ask_the_engine_to_draft_s0 --> integrator_ask_the_engine_to_draft_s1
+  integrator_ask_the_engine_to_draft_s2["list_runs<br/><i>none</i>"]
+  integrator_ask_the_engine_to_draft_s1 --> integrator_ask_the_engine_to_draft_s2
+  page_kanban(["#page kanban"])
+  page_orch(["#page orch"])
+  page_run(["#page run"])
+  page_runs(["#page runs"])
   page_setup(["#page setup"])
+  page_thread(["#page thread"])
+  page_verify(["#page verify"])
 ```
 
 ## operator
@@ -215,8 +1602,491 @@ flowchart LR
   operator_onboard_a_new_project_s4["board page<br/><i>none</i>"]
   operator_onboard_a_new_project_s3 --> operator_onboard_a_new_project_s4
   page_setup -.-> operator_onboard_a_new_project_s4
+  operator_health_check_the_install["operator/health-check-the-install<br/><i>none</i>"]
+  operator_health_check_the_install_s0["doctor<br/><i>full</i>"]
+  operator_health_check_the_install --> operator_health_check_the_install_s0
+  page_setup -.-> operator_health_check_the_install_s0
+  operator_health_check_the_install_s1["garden<br/><i>none</i>"]
+  operator_health_check_the_install_s0 --> operator_health_check_the_install_s1
+  page_setup -.-> operator_health_check_the_install_s1
+  operator_health_check_the_install_s2["version<br/><i>none</i>"]
+  operator_health_check_the_install_s1 --> operator_health_check_the_install_s2
+  operator_health_check_the_install_s3["validate<br/><i>none</i>"]
+  operator_health_check_the_install_s2 --> operator_health_check_the_install_s3
+  page_setup -.-> operator_health_check_the_install_s3
+  operator_upgrade_without_losing_runs["operator/upgrade-without-losing-runs<br/><i>none</i>"]
+  operator_upgrade_without_losing_runs_s0["update<br/><i>none</i>"]
+  operator_upgrade_without_losing_runs --> operator_upgrade_without_losing_runs_s0
+  operator_upgrade_without_losing_runs_s1["install<br/><i>none</i>"]
+  operator_upgrade_without_losing_runs_s0 --> operator_upgrade_without_losing_runs_s1
+  operator_upgrade_without_losing_runs_s2["version<br/><i>none</i>"]
+  operator_upgrade_without_losing_runs_s1 --> operator_upgrade_without_losing_runs_s2
+  operator_upgrade_without_losing_runs_s3["doctor<br/><i>full</i>"]
+  operator_upgrade_without_losing_runs_s2 --> operator_upgrade_without_losing_runs_s3
+  page_setup -.-> operator_upgrade_without_losing_runs_s3
+  operator_install_the_ide_entry["operator/install-the-ide-entry<br/><i>none</i>"]
+  operator_install_the_ide_entry_s0["zed setup<br/><i>none</i>"]
+  operator_install_the_ide_entry --> operator_install_the_ide_entry_s0
+  page_setup -.-> operator_install_the_ide_entry_s0
+  operator_install_the_ide_entry_s1["zed status<br/><i>none</i>"]
+  operator_install_the_ide_entry_s0 --> operator_install_the_ide_entry_s1
+  page_setup -.-> operator_install_the_ide_entry_s1
+  operator_install_the_ide_entry_s2["acp<br/><i>none</i>"]
+  operator_install_the_ide_entry_s1 --> operator_install_the_ide_entry_s2
+  operator_install_the_ide_entry_s3["zed<br/><i>none</i>"]
+  operator_install_the_ide_entry_s2 --> operator_install_the_ide_entry_s3
+  operator_remove_the_ide_entry["operator/remove-the-ide-entry<br/><i>none</i>"]
+  operator_remove_the_ide_entry_s0["zed uninstall<br/><i>none</i>"]
+  operator_remove_the_ide_entry --> operator_remove_the_ide_entry_s0
+  page_setup -.-> operator_remove_the_ide_entry_s0
+  operator_remove_the_ide_entry_s1["zed status<br/><i>none</i>"]
+  operator_remove_the_ide_entry_s0 --> operator_remove_the_ide_entry_s1
+  page_setup -.-> operator_remove_the_ide_entry_s1
+  operator_remove_the_ide_entry_s2["version<br/><i>none</i>"]
+  operator_remove_the_ide_entry_s1 --> operator_remove_the_ide_entry_s2
+  operator_split_a_roadmap_into_epics["operator/split-a-roadmap-into-epics<br/><i>none</i>"]
+  operator_split_a_roadmap_into_epics_s0["epics ingest<br/><i>none</i>"]
+  operator_split_a_roadmap_into_epics --> operator_split_a_roadmap_into_epics_s0
+  operator_split_a_roadmap_into_epics_s1["epics split<br/><i>none</i>"]
+  operator_split_a_roadmap_into_epics_s0 --> operator_split_a_roadmap_into_epics_s1
+  page_recipes -.-> operator_split_a_roadmap_into_epics_s1
+  operator_split_a_roadmap_into_epics_s2["epics list<br/><i>none</i>"]
+  operator_split_a_roadmap_into_epics_s1 --> operator_split_a_roadmap_into_epics_s2
+  page_recipes -.-> operator_split_a_roadmap_into_epics_s2
+  operator_split_a_roadmap_into_epics_s3["epics show<br/><i>none</i>"]
+  operator_split_a_roadmap_into_epics_s2 --> operator_split_a_roadmap_into_epics_s3
+  page_recipes -.-> operator_split_a_roadmap_into_epics_s3
+  operator_split_a_roadmap_into_epics_s4["epics<br/><i>partial</i>"]
+  operator_split_a_roadmap_into_epics_s3 --> operator_split_a_roadmap_into_epics_s4
+  operator_prioritise_the_backlog["operator/prioritise-the-backlog<br/><i>none</i>"]
+  operator_prioritise_the_backlog_s0["epics priority<br/><i>none</i>"]
+  operator_prioritise_the_backlog --> operator_prioritise_the_backlog_s0
+  page_recipes -.-> operator_prioritise_the_backlog_s0
+  operator_prioritise_the_backlog_s1["epics set<br/><i>none</i>"]
+  operator_prioritise_the_backlog_s0 --> operator_prioritise_the_backlog_s1
+  page_recipes -.-> operator_prioritise_the_backlog_s1
+  operator_prioritise_the_backlog_s2["epics ready<br/><i>none</i>"]
+  operator_prioritise_the_backlog_s1 --> operator_prioritise_the_backlog_s2
+  page_recipes -.-> operator_prioritise_the_backlog_s2
+  operator_inspect_epic_progress["operator/inspect-epic-progress<br/><i>none</i>"]
+  operator_inspect_epic_progress_s0["epics status<br/><i>none</i>"]
+  operator_inspect_epic_progress --> operator_inspect_epic_progress_s0
+  page_recipes -.-> operator_inspect_epic_progress_s0
+  operator_inspect_epic_progress_s1["epics list<br/><i>none</i>"]
+  operator_inspect_epic_progress_s0 --> operator_inspect_epic_progress_s1
+  page_recipes -.-> operator_inspect_epic_progress_s1
+  operator_inspect_epic_progress_s2["board runs<br/><i>none</i>"]
+  operator_inspect_epic_progress_s1 --> operator_inspect_epic_progress_s2
+  page_runs -.-> operator_inspect_epic_progress_s2
+  operator_archive_finished_epics["operator/archive-finished-epics<br/><i>none</i>"]
+  operator_archive_finished_epics_s0["epics archive<br/><i>none</i>"]
+  operator_archive_finished_epics --> operator_archive_finished_epics_s0
+  page_recipes -.-> operator_archive_finished_epics_s0
+  operator_archive_finished_epics_s1["epics list<br/><i>none</i>"]
+  operator_archive_finished_epics_s0 --> operator_archive_finished_epics_s1
+  page_recipes -.-> operator_archive_finished_epics_s1
+  operator_archive_finished_epics_s2["epics show<br/><i>none</i>"]
+  operator_archive_finished_epics_s1 --> operator_archive_finished_epics_s2
+  page_recipes -.-> operator_archive_finished_epics_s2
+  operator_retry_a_stuck_epic["operator/retry-a-stuck-epic<br/><i>none</i>"]
+  operator_retry_a_stuck_epic_s0["epics retry<br/><i>full</i>"]
+  operator_retry_a_stuck_epic --> operator_retry_a_stuck_epic_s0
+  page_recipes -.-> operator_retry_a_stuck_epic_s0
+  operator_retry_a_stuck_epic_s1["epics ready<br/><i>none</i>"]
+  operator_retry_a_stuck_epic_s0 --> operator_retry_a_stuck_epic_s1
+  page_recipes -.-> operator_retry_a_stuck_epic_s1
+  operator_retry_a_stuck_epic_s2["board runs<br/><i>none</i>"]
+  operator_retry_a_stuck_epic_s1 --> operator_retry_a_stuck_epic_s2
+  page_runs -.-> operator_retry_a_stuck_epic_s2
+  operator_run_a_backlog_overnight["operator/run-a-backlog-overnight<br/><i>none</i>"]
+  operator_run_a_backlog_overnight_s0["scheduler<br/><i>partial</i>"]
+  operator_run_a_backlog_overnight --> operator_run_a_backlog_overnight_s0
+  page_runs -.-> operator_run_a_backlog_overnight_s0
+  operator_run_a_backlog_overnight_s1["spawn<br/><i>none</i>"]
+  operator_run_a_backlog_overnight_s0 --> operator_run_a_backlog_overnight_s1
+  operator_run_a_backlog_overnight_s2["supervise<br/><i>partial</i>"]
+  operator_run_a_backlog_overnight_s1 --> operator_run_a_backlog_overnight_s2
+  page_runs -.-> operator_run_a_backlog_overnight_s2
+  operator_run_a_backlog_overnight_s3["conductor<br/><i>none</i>"]
+  operator_run_a_backlog_overnight_s2 --> operator_run_a_backlog_overnight_s3
+  operator_run_a_backlog_overnight_s4["coord<br/><i>none</i>"]
+  operator_run_a_backlog_overnight_s3 --> operator_run_a_backlog_overnight_s4
+  operator_watch_the_queue_drain["operator/watch-the-queue-drain<br/><i>none</i>"]
+  operator_watch_the_queue_drain_s0["board overview<br/><i>none</i>"]
+  operator_watch_the_queue_drain --> operator_watch_the_queue_drain_s0
+  page_kanban -.-> operator_watch_the_queue_drain_s0
+  operator_watch_the_queue_drain_s1["board runs<br/><i>none</i>"]
+  operator_watch_the_queue_drain_s0 --> operator_watch_the_queue_drain_s1
+  page_runs -.-> operator_watch_the_queue_drain_s1
+  operator_watch_the_queue_drain_s2["board stream<br/><i>none</i>"]
+  operator_watch_the_queue_drain_s1 --> operator_watch_the_queue_drain_s2
+  page_run -.-> operator_watch_the_queue_drain_s2
+  operator_schedule_a_recurring_recipe["operator/schedule-a-recurring-recipe<br/><i>none</i>"]
+  operator_schedule_a_recurring_recipe_s0["automations add<br/><i>partial</i>"]
+  operator_schedule_a_recurring_recipe --> operator_schedule_a_recurring_recipe_s0
+  page_autos -.-> operator_schedule_a_recurring_recipe_s0
+  operator_schedule_a_recurring_recipe_s1["automations tick<br/><i>partial</i>"]
+  operator_schedule_a_recurring_recipe_s0 --> operator_schedule_a_recurring_recipe_s1
+  page_autos -.-> operator_schedule_a_recurring_recipe_s1
+  operator_schedule_a_recurring_recipe_s2["automations scheduler install<br/><i>full</i>"]
+  operator_schedule_a_recurring_recipe_s1 --> operator_schedule_a_recurring_recipe_s2
+  operator_schedule_a_recurring_recipe_s3["automations scheduler status<br/><i>none</i>"]
+  operator_schedule_a_recurring_recipe_s2 --> operator_schedule_a_recurring_recipe_s3
+  page_autos -.-> operator_schedule_a_recurring_recipe_s3
+  operator_schedule_a_recurring_recipe_s4["automations scheduler<br/><i>partial</i>"]
+  operator_schedule_a_recurring_recipe_s3 --> operator_schedule_a_recurring_recipe_s4
+  operator_pause_and_resume_schedules["operator/pause-and-resume-schedules<br/><i>partial</i>"]
+  operator_pause_and_resume_schedules_s0["automations pause<br/><i>partial</i>"]
+  operator_pause_and_resume_schedules --> operator_pause_and_resume_schedules_s0
+  page_autos -.-> operator_pause_and_resume_schedules_s0
+  operator_pause_and_resume_schedules_s1["automations list<br/><i>partial</i>"]
+  operator_pause_and_resume_schedules_s0 --> operator_pause_and_resume_schedules_s1
+  page_autos -.-> operator_pause_and_resume_schedules_s1
+  operator_pause_and_resume_schedules_s2["automations resume<br/><i>partial</i>"]
+  operator_pause_and_resume_schedules_s1 --> operator_pause_and_resume_schedules_s2
+  page_autos -.-> operator_pause_and_resume_schedules_s2
+  operator_pause_and_resume_schedules_s3["automations remove<br/><i>full</i>"]
+  operator_pause_and_resume_schedules_s2 --> operator_pause_and_resume_schedules_s3
+  page_autos -.-> operator_pause_and_resume_schedules_s3
+  operator_pause_and_resume_schedules_s4["automations<br/><i>full</i>"]
+  operator_pause_and_resume_schedules_s3 --> operator_pause_and_resume_schedules_s4
+  operator_pause_and_resume_schedules_s5["automations scheduler uninstall<br/><i>full</i>"]
+  operator_pause_and_resume_schedules_s4 --> operator_pause_and_resume_schedules_s5
+  operator_inspect_why_a_schedule_failed["operator/inspect-why-a-schedule-failed<br/><i>partial</i>"]
+  operator_inspect_why_a_schedule_failed_s0["automations runs<br/><i>partial</i>"]
+  operator_inspect_why_a_schedule_failed --> operator_inspect_why_a_schedule_failed_s0
+  page_autos -.-> operator_inspect_why_a_schedule_failed_s0
+  operator_inspect_why_a_schedule_failed_s1["automations edit<br/><i>partial</i>"]
+  operator_inspect_why_a_schedule_failed_s0 --> operator_inspect_why_a_schedule_failed_s1
+  page_autos -.-> operator_inspect_why_a_schedule_failed_s1
+  operator_inspect_why_a_schedule_failed_s2["automations run<br/><i>full</i>"]
+  operator_inspect_why_a_schedule_failed_s1 --> operator_inspect_why_a_schedule_failed_s2
+  page_autos -.-> operator_inspect_why_a_schedule_failed_s2
+  operator_draft_a_schedule_from_an_agent["operator/draft-a-schedule-from-an-agent<br/><i>none</i>"]
+  operator_draft_a_schedule_from_an_agent_s0["propose_automation<br/><i>none</i>"]
+  operator_draft_a_schedule_from_an_agent --> operator_draft_a_schedule_from_an_agent_s0
+  page_autos -.-> operator_draft_a_schedule_from_an_agent_s0
+  operator_draft_a_schedule_from_an_agent_s1["automations draft<br/><i>partial</i>"]
+  operator_draft_a_schedule_from_an_agent_s0 --> operator_draft_a_schedule_from_an_agent_s1
+  page_autos -.-> operator_draft_a_schedule_from_an_agent_s1
+  operator_draft_a_schedule_from_an_agent_s2["automations draft commit<br/><i>full</i>"]
+  operator_draft_a_schedule_from_an_agent_s1 --> operator_draft_a_schedule_from_an_agent_s2
+  page_autos -.-> operator_draft_a_schedule_from_an_agent_s2
+  operator_draft_a_schedule_from_an_agent_s3["automations draft discard<br/><i>full</i>"]
+  operator_draft_a_schedule_from_an_agent_s2 --> operator_draft_a_schedule_from_an_agent_s3
+  page_autos -.-> operator_draft_a_schedule_from_an_agent_s3
+  operator_poll_a_ticket_tracker["operator/poll-a-ticket-tracker<br/><i>none</i>"]
+  operator_poll_a_ticket_tracker_s0["intake poll<br/><i>none</i>"]
+  operator_poll_a_ticket_tracker --> operator_poll_a_ticket_tracker_s0
+  page_inbox -.-> operator_poll_a_ticket_tracker_s0
+  operator_poll_a_ticket_tracker_s1["intake status<br/><i>none</i>"]
+  operator_poll_a_ticket_tracker_s0 --> operator_poll_a_ticket_tracker_s1
+  page_inbox -.-> operator_poll_a_ticket_tracker_s1
+  operator_poll_a_ticket_tracker_s2["intake report<br/><i>none</i>"]
+  operator_poll_a_ticket_tracker_s1 --> operator_poll_a_ticket_tracker_s2
+  page_inbox -.-> operator_poll_a_ticket_tracker_s2
+  operator_poll_a_ticket_tracker_s3["intake<br/><i>partial</i>"]
+  operator_poll_a_ticket_tracker_s2 --> operator_poll_a_ticket_tracker_s3
+  operator_push_a_ticket_into_a_run["operator/push-a-ticket-into-a-run<br/><i>none</i>"]
+  operator_push_a_ticket_into_a_run_s0["intake dispatch<br/><i>full</i>"]
+  operator_push_a_ticket_into_a_run --> operator_push_a_ticket_into_a_run_s0
+  page_inbox -.-> operator_push_a_ticket_into_a_run_s0
+  operator_push_a_ticket_into_a_run_s1["intake once<br/><i>full</i>"]
+  operator_push_a_ticket_into_a_run_s0 --> operator_push_a_ticket_into_a_run_s1
+  page_inbox -.-> operator_push_a_ticket_into_a_run_s1
+  operator_push_a_ticket_into_a_run_s2["board runs<br/><i>none</i>"]
+  operator_push_a_ticket_into_a_run_s1 --> operator_push_a_ticket_into_a_run_s2
+  page_runs -.-> operator_push_a_ticket_into_a_run_s2
+  operator_connect_a_pm_source["operator/connect-a-pm-source<br/><i>none</i>"]
+  operator_connect_a_pm_source_s0["pm sources<br/><i>none</i>"]
+  operator_connect_a_pm_source --> operator_connect_a_pm_source_s0
+  page_setup -.-> operator_connect_a_pm_source_s0
+  operator_connect_a_pm_source_s1["pm add<br/><i>partial</i>"]
+  operator_connect_a_pm_source_s0 --> operator_connect_a_pm_source_s1
+  page_setup -.-> operator_connect_a_pm_source_s1
+  operator_connect_a_pm_source_s2["pm test<br/><i>full</i>"]
+  operator_connect_a_pm_source_s1 --> operator_connect_a_pm_source_s2
+  page_setup -.-> operator_connect_a_pm_source_s2
+  operator_connect_a_pm_source_s3["pm remove<br/><i>full</i>"]
+  operator_connect_a_pm_source_s2 --> operator_connect_a_pm_source_s3
+  page_setup -.-> operator_connect_a_pm_source_s3
+  operator_connect_a_pm_source_s4["pm<br/><i>partial</i>"]
+  operator_connect_a_pm_source_s3 --> operator_connect_a_pm_source_s4
+  operator_handle_an_approval_request["operator/handle-an-approval-request<br/><i>none</i>"]
+  operator_handle_an_approval_request_s0["approvals list<br/><i>none</i>"]
+  operator_handle_an_approval_request --> operator_handle_an_approval_request_s0
+  page_inbox -.-> operator_handle_an_approval_request_s0
+  operator_handle_an_approval_request_s1["approvals show<br/><i>none</i>"]
+  operator_handle_an_approval_request_s0 --> operator_handle_an_approval_request_s1
+  page_inbox -.-> operator_handle_an_approval_request_s1
+  operator_handle_an_approval_request_s2["approvals approve<br/><i>full</i>"]
+  operator_handle_an_approval_request_s1 --> operator_handle_an_approval_request_s2
+  page_inbox -.-> operator_handle_an_approval_request_s2
+  operator_handle_an_approval_request_s3["approvals policy<br/><i>none</i>"]
+  operator_handle_an_approval_request_s2 --> operator_handle_an_approval_request_s3
+  page_setup -.-> operator_handle_an_approval_request_s3
+  operator_handle_an_approval_request_s4["approvals<br/><i>partial</i>"]
+  operator_handle_an_approval_request_s3 --> operator_handle_an_approval_request_s4
+  operator_reject_and_request_changes["operator/reject-and-request-changes<br/><i>none</i>"]
+  operator_reject_and_request_changes_s0["approvals reject<br/><i>none</i>"]
+  operator_reject_and_request_changes --> operator_reject_and_request_changes_s0
+  page_inbox -.-> operator_reject_and_request_changes_s0
+  operator_reject_and_request_changes_s1["approvals request-changes<br/><i>none</i>"]
+  operator_reject_and_request_changes_s0 --> operator_reject_and_request_changes_s1
+  page_inbox -.-> operator_reject_and_request_changes_s1
+  operator_reject_and_request_changes_s2["inbox<br/><i>none</i>"]
+  operator_reject_and_request_changes_s1 --> operator_reject_and_request_changes_s2
+  page_inbox -.-> operator_reject_and_request_changes_s2
+  operator_reject_and_request_changes_s3["oversight<br/><i>none</i>"]
+  operator_reject_and_request_changes_s2 --> operator_reject_and_request_changes_s3
+  operator_answer_a_question_the_run_asks["operator/answer-a-question-the-run-asks<br/><i>none</i>"]
+  operator_answer_a_question_the_run_asks_s0["inbox<br/><i>none</i>"]
+  operator_answer_a_question_the_run_asks --> operator_answer_a_question_the_run_asks_s0
+  page_inbox -.-> operator_answer_a_question_the_run_asks_s0
+  operator_answer_a_question_the_run_asks_s1["board answer<br/><i>none</i>"]
+  operator_answer_a_question_the_run_asks_s0 --> operator_answer_a_question_the_run_asks_s1
+  page_run -.-> operator_answer_a_question_the_run_asks_s1
+  operator_answer_a_question_the_run_asks_s2["board overview<br/><i>none</i>"]
+  operator_answer_a_question_the_run_asks_s1 --> operator_answer_a_question_the_run_asks_s2
+  page_kanban -.-> operator_answer_a_question_the_run_asks_s2
+  operator_dismiss_a_run_that_is_not_needed["operator/dismiss-a-run-that-is-not-needed<br/><i>none</i>"]
+  operator_dismiss_a_run_that_is_not_needed_s0["board not-needed<br/><i>none</i>"]
+  operator_dismiss_a_run_that_is_not_needed --> operator_dismiss_a_run_that_is_not_needed_s0
+  page_run -.-> operator_dismiss_a_run_that_is_not_needed_s0
+  operator_dismiss_a_run_that_is_not_needed_s1["board dismiss<br/><i>full</i>"]
+  operator_dismiss_a_run_that_is_not_needed_s0 --> operator_dismiss_a_run_that_is_not_needed_s1
+  page_run -.-> operator_dismiss_a_run_that_is_not_needed_s1
+  operator_dismiss_a_run_that_is_not_needed_s2["board runs<br/><i>none</i>"]
+  operator_dismiss_a_run_that_is_not_needed_s1 --> operator_dismiss_a_run_that_is_not_needed_s2
+  page_runs -.-> operator_dismiss_a_run_that_is_not_needed_s2
+  operator_kill_and_clean_a_run["operator/kill-and-clean-a-run<br/><i>none</i>"]
+  operator_kill_and_clean_a_run_s0["board kill<br/><i>full</i>"]
+  operator_kill_and_clean_a_run --> operator_kill_and_clean_a_run_s0
+  page_run -.-> operator_kill_and_clean_a_run_s0
+  operator_kill_and_clean_a_run_s1["board discard<br/><i>full</i>"]
+  operator_kill_and_clean_a_run_s0 --> operator_kill_and_clean_a_run_s1
+  page_run -.-> operator_kill_and_clean_a_run_s1
+  operator_kill_and_clean_a_run_s2["board worktree<br/><i>none</i>"]
+  operator_kill_and_clean_a_run_s1 --> operator_kill_and_clean_a_run_s2
+  page_run -.-> operator_kill_and_clean_a_run_s2
+  operator_restore_a_closed_run["operator/restore-a-closed-run<br/><i>none</i>"]
+  operator_restore_a_closed_run_s0["board restore<br/><i>full</i>"]
+  operator_restore_a_closed_run --> operator_restore_a_closed_run_s0
+  page_run -.-> operator_restore_a_closed_run_s0
+  operator_restore_a_closed_run_s1["board show<br/><i>none</i>"]
+  operator_restore_a_closed_run_s0 --> operator_restore_a_closed_run_s1
+  page_run -.-> operator_restore_a_closed_run_s1
+  operator_restore_a_closed_run_s2["board runs<br/><i>none</i>"]
+  operator_restore_a_closed_run_s1 --> operator_restore_a_closed_run_s2
+  page_runs -.-> operator_restore_a_closed_run_s2
+  operator_inspect_a_run_row["operator/inspect-a-run-row<br/><i>none</i>"]
+  operator_inspect_a_run_row_s0["board show<br/><i>none</i>"]
+  operator_inspect_a_run_row --> operator_inspect_a_run_row_s0
+  page_run -.-> operator_inspect_a_run_row_s0
+  operator_inspect_a_run_row_s1["board overview<br/><i>none</i>"]
+  operator_inspect_a_run_row_s0 --> operator_inspect_a_run_row_s1
+  page_kanban -.-> operator_inspect_a_run_row_s1
+  operator_inspect_a_run_row_s2["board telemetry<br/><i>none</i>"]
+  operator_inspect_a_run_row_s1 --> operator_inspect_a_run_row_s2
+  page_run -.-> operator_inspect_a_run_row_s2
+  operator_inspect_a_run_row_s3["board<br/><i>partial</i>"]
+  operator_inspect_a_run_row_s2 --> operator_inspect_a_run_row_s3
+  operator_read_a_runs_artifacts["operator/read-a-runs-artifacts<br/><i>none</i>"]
+  operator_read_a_runs_artifacts_s0["board artifacts<br/><i>none</i>"]
+  operator_read_a_runs_artifacts --> operator_read_a_runs_artifacts_s0
+  page_run -.-> operator_read_a_runs_artifacts_s0
+  operator_read_a_runs_artifacts_s1["board output<br/><i>none</i>"]
+  operator_read_a_runs_artifacts_s0 --> operator_read_a_runs_artifacts_s1
+  page_run -.-> operator_read_a_runs_artifacts_s1
+  operator_read_a_runs_artifacts_s2["board checkpoints<br/><i>none</i>"]
+  operator_read_a_runs_artifacts_s1 --> operator_read_a_runs_artifacts_s2
+  page_run -.-> operator_read_a_runs_artifacts_s2
+  operator_see_what_a_run_carried["operator/see-what-a-run-carried<br/><i>none</i>"]
+  operator_see_what_a_run_carried_s0["board prompt<br/><i>none</i>"]
+  operator_see_what_a_run_carried --> operator_see_what_a_run_carried_s0
+  page_run -.-> operator_see_what_a_run_carried_s0
+  operator_see_what_a_run_carried_s1["board harness<br/><i>none</i>"]
+  operator_see_what_a_run_carried_s0 --> operator_see_what_a_run_carried_s1
+  page_run -.-> operator_see_what_a_run_carried_s1
+  operator_see_what_a_run_carried_s2["board learning<br/><i>none</i>"]
+  operator_see_what_a_run_carried_s1 --> operator_see_what_a_run_carried_s2
+  page_run -.-> operator_see_what_a_run_carried_s2
+  operator_take_over_a_dead_run["operator/take-over-a-dead-run<br/><i>none</i>"]
+  operator_take_over_a_dead_run_s0["recover<br/><i>none</i>"]
+  operator_take_over_a_dead_run --> operator_take_over_a_dead_run_s0
+  page_run -.-> operator_take_over_a_dead_run_s0
+  operator_take_over_a_dead_run_s1["repair<br/><i>full</i>"]
+  operator_take_over_a_dead_run_s0 --> operator_take_over_a_dead_run_s1
+  page_run -.-> operator_take_over_a_dead_run_s1
+  operator_take_over_a_dead_run_s2["resume<br/><i>none</i>"]
+  operator_take_over_a_dead_run_s1 --> operator_take_over_a_dead_run_s2
+  page_run -.-> operator_take_over_a_dead_run_s2
+  operator_sweep_and_label_drift["operator/sweep-and-label-drift<br/><i>none</i>"]
+  operator_sweep_and_label_drift_s0["reap<br/><i>full</i>"]
+  operator_sweep_and_label_drift --> operator_sweep_and_label_drift_s0
+  page_runs -.-> operator_sweep_and_label_drift_s0
+  operator_sweep_and_label_drift_s1["supervise<br/><i>partial</i>"]
+  operator_sweep_and_label_drift_s0 --> operator_sweep_and_label_drift_s1
+  page_runs -.-> operator_sweep_and_label_drift_s1
+  operator_sweep_and_label_drift_s2["watchdog<br/><i>none</i>"]
+  operator_sweep_and_label_drift_s1 --> operator_sweep_and_label_drift_s2
+  operator_sweep_and_label_drift_s3["garden<br/><i>none</i>"]
+  operator_sweep_and_label_drift_s2 --> operator_sweep_and_label_drift_s3
+  page_setup -.-> operator_sweep_and_label_drift_s3
+  operator_check_the_fleet["operator/check-the-fleet<br/><i>none</i>"]
+  operator_check_the_fleet_s0["nodes ls<br/><i>none</i>"]
+  operator_check_the_fleet --> operator_check_the_fleet_s0
+  page_nodes -.-> operator_check_the_fleet_s0
+  operator_check_the_fleet_s1["nodes ping<br/><i>full</i>"]
+  operator_check_the_fleet_s0 --> operator_check_the_fleet_s1
+  page_nodes -.-> operator_check_the_fleet_s1
+  operator_check_the_fleet_s2["nodes doctor<br/><i>partial</i>"]
+  operator_check_the_fleet_s1 --> operator_check_the_fleet_s2
+  page_nodes -.-> operator_check_the_fleet_s2
+  operator_check_the_fleet_s3["nodes<br/><i>partial</i>"]
+  operator_check_the_fleet_s2 --> operator_check_the_fleet_s3
+  operator_start_a_remote_node["operator/start-a-remote-node<br/><i>none</i>"]
+  operator_start_a_remote_node_s0["node-agent<br/><i>none</i>"]
+  operator_start_a_remote_node --> operator_start_a_remote_node_s0
+  page_nodes -.-> operator_start_a_remote_node_s0
+  operator_start_a_remote_node_s1["node-agent docker<br/><i>none</i>"]
+  operator_start_a_remote_node_s0 --> operator_start_a_remote_node_s1
+  page_nodes -.-> operator_start_a_remote_node_s1
+  operator_start_a_remote_node_s2["node-agent host<br/><i>none</i>"]
+  operator_start_a_remote_node_s1 --> operator_start_a_remote_node_s2
+  page_nodes -.-> operator_start_a_remote_node_s2
+  operator_reclaim_leaked_sandboxes["operator/reclaim-leaked-sandboxes<br/><i>partial</i>"]
+  operator_reclaim_leaked_sandboxes_s0["sandbox-gc<br/><i>full</i>"]
+  operator_reclaim_leaked_sandboxes --> operator_reclaim_leaked_sandboxes_s0
+  page_setup -.-> operator_reclaim_leaked_sandboxes_s0
+  operator_reclaim_leaked_sandboxes_s1["sandbox-gc all<br/><i>partial</i>"]
+  operator_reclaim_leaked_sandboxes_s0 --> operator_reclaim_leaked_sandboxes_s1
+  page_setup -.-> operator_reclaim_leaked_sandboxes_s1
+  operator_reclaim_leaked_sandboxes_s2["sandbox-gc docker<br/><i>partial</i>"]
+  operator_reclaim_leaked_sandboxes_s1 --> operator_reclaim_leaked_sandboxes_s2
+  page_setup -.-> operator_reclaim_leaked_sandboxes_s2
+  operator_sweep_cloud_sandboxes["operator/sweep-cloud-sandboxes<br/><i>partial</i>"]
+  operator_sweep_cloud_sandboxes_s0["sandbox-gc e2b<br/><i>partial</i>"]
+  operator_sweep_cloud_sandboxes --> operator_sweep_cloud_sandboxes_s0
+  operator_sweep_cloud_sandboxes_s1["sandbox-gc modal<br/><i>partial</i>"]
+  operator_sweep_cloud_sandboxes_s0 --> operator_sweep_cloud_sandboxes_s1
+  operator_sweep_cloud_sandboxes_s2["sandbox-gc daytona<br/><i>partial</i>"]
+  operator_sweep_cloud_sandboxes_s1 --> operator_sweep_cloud_sandboxes_s2
+  operator_sweep_cloud_sandboxes_s3["sandbox-gc microvm<br/><i>partial</i>"]
+  operator_sweep_cloud_sandboxes_s2 --> operator_sweep_cloud_sandboxes_s3
+  operator_sweep_cloud_sandboxes_s4["sandbox-gc static<br/><i>partial</i>"]
+  operator_sweep_cloud_sandboxes_s3 --> operator_sweep_cloud_sandboxes_s4
+  operator_rotate_a_provider_key["operator/rotate-a-provider-key<br/><i>none</i>"]
+  operator_rotate_a_provider_key_s0["vault<br/><i>none</i>"]
+  operator_rotate_a_provider_key --> operator_rotate_a_provider_key_s0
+  page_setup -.-> operator_rotate_a_provider_key_s0
+  operator_rotate_a_provider_key_s1["vault status<br/><i>none</i>"]
+  operator_rotate_a_provider_key_s0 --> operator_rotate_a_provider_key_s1
+  page_setup -.-> operator_rotate_a_provider_key_s1
+  operator_rotate_a_provider_key_s2["vault which<br/><i>none</i>"]
+  operator_rotate_a_provider_key_s1 --> operator_rotate_a_provider_key_s2
+  page_setup -.-> operator_rotate_a_provider_key_s2
+  operator_rotate_a_provider_key_s3["providers configure<br/><i>none</i>"]
+  operator_rotate_a_provider_key_s2 --> operator_rotate_a_provider_key_s3
+  page_setup -.-> operator_rotate_a_provider_key_s3
+  operator_verify_provider_conformance["operator/verify-provider-conformance<br/><i>none</i>"]
+  operator_verify_provider_conformance_s0["providers status<br/><i>none</i>"]
+  operator_verify_provider_conformance --> operator_verify_provider_conformance_s0
+  page_setup -.-> operator_verify_provider_conformance_s0
+  operator_verify_provider_conformance_s1["providers conform<br/><i>none</i>"]
+  operator_verify_provider_conformance_s0 --> operator_verify_provider_conformance_s1
+  page_setup -.-> operator_verify_provider_conformance_s1
+  operator_verify_provider_conformance_s2["doctor<br/><i>full</i>"]
+  operator_verify_provider_conformance_s1 --> operator_verify_provider_conformance_s2
+  page_setup -.-> operator_verify_provider_conformance_s2
+  operator_register_an_mcp_server["operator/register-an-mcp-server<br/><i>none</i>"]
+  operator_register_an_mcp_server_s0["mcp add<br/><i>none</i>"]
+  operator_register_an_mcp_server --> operator_register_an_mcp_server_s0
+  page_setup -.-> operator_register_an_mcp_server_s0
+  operator_register_an_mcp_server_s1["mcp list<br/><i>none</i>"]
+  operator_register_an_mcp_server_s0 --> operator_register_an_mcp_server_s1
+  page_setup -.-> operator_register_an_mcp_server_s1
+  operator_register_an_mcp_server_s2["mcp check<br/><i>none</i>"]
+  operator_register_an_mcp_server_s1 --> operator_register_an_mcp_server_s2
+  page_setup -.-> operator_register_an_mcp_server_s2
+  operator_register_an_mcp_server_s3["mcp launch<br/><i>none</i>"]
+  operator_register_an_mcp_server_s2 --> operator_register_an_mcp_server_s3
+  operator_register_an_mcp_server_s4["mcp proxy<br/><i>none</i>"]
+  operator_register_an_mcp_server_s3 --> operator_register_an_mcp_server_s4
+  operator_register_an_mcp_server_s5["mcp<br/><i>none</i>"]
+  operator_register_an_mcp_server_s4 --> operator_register_an_mcp_server_s5
+  operator_set_operator_preferences["operator/set-operator-preferences<br/><i>none</i>"]
+  operator_set_operator_preferences_s0["prefs<br/><i>none</i>"]
+  operator_set_operator_preferences --> operator_set_operator_preferences_s0
+  page_setup -.-> operator_set_operator_preferences_s0
+  operator_set_operator_preferences_s1["board in-place<br/><i>none</i>"]
+  operator_set_operator_preferences_s0 --> operator_set_operator_preferences_s1
+  page_run -.-> operator_set_operator_preferences_s1
+  operator_set_operator_preferences_s2["board page<br/><i>none</i>"]
+  operator_set_operator_preferences_s1 --> operator_set_operator_preferences_s2
+  page_kanban -.-> operator_set_operator_preferences_s2
+  operator_remove_an_mcp_registration["operator/remove-an-mcp-registration<br/><i>none</i>"]
+  operator_remove_an_mcp_registration_s0["mcp rm<br/><i>none</i>"]
+  operator_remove_an_mcp_registration --> operator_remove_an_mcp_registration_s0
+  page_setup -.-> operator_remove_an_mcp_registration_s0
+  operator_remove_an_mcp_registration_s1["mcp list<br/><i>none</i>"]
+  operator_remove_an_mcp_registration_s0 --> operator_remove_an_mcp_registration_s1
+  page_setup -.-> operator_remove_an_mcp_registration_s1
+  operator_remove_an_mcp_registration_s2["doctor<br/><i>full</i>"]
+  operator_remove_an_mcp_registration_s1 --> operator_remove_an_mcp_registration_s2
+  page_setup -.-> operator_remove_an_mcp_registration_s2
+  operator_run_the_self_improvement_loop["operator/run-the-self-improvement-loop<br/><i>none</i>"]
+  operator_run_the_self_improvement_loop_s0["rsi-cycle<br/><i>none</i>"]
+  operator_run_the_self_improvement_loop --> operator_run_the_self_improvement_loop_s0
+  page_learn -.-> operator_run_the_self_improvement_loop_s0
+  operator_run_the_self_improvement_loop_s1["rsi-cycle plan<br/><i>none</i>"]
+  operator_run_the_self_improvement_loop_s0 --> operator_run_the_self_improvement_loop_s1
+  page_learn -.-> operator_run_the_self_improvement_loop_s1
+  operator_run_the_self_improvement_loop_s2["rsi-cycle doctor<br/><i>none</i>"]
+  operator_run_the_self_improvement_loop_s1 --> operator_run_the_self_improvement_loop_s2
+  page_learn -.-> operator_run_the_self_improvement_loop_s2
+  operator_run_the_self_improvement_loop_s3["rsi-cycle halt<br/><i>none</i>"]
+  operator_run_the_self_improvement_loop_s2 --> operator_run_the_self_improvement_loop_s3
+  page_learn -.-> operator_run_the_self_improvement_loop_s3
+  operator_quarantine_a_bad_self_edit["operator/quarantine-a-bad-self-edit<br/><i>none</i>"]
+  operator_quarantine_a_bad_self_edit_s0["rsi-cycle list<br/><i>none</i>"]
+  operator_quarantine_a_bad_self_edit --> operator_quarantine_a_bad_self_edit_s0
+  page_learn -.-> operator_quarantine_a_bad_self_edit_s0
+  operator_quarantine_a_bad_self_edit_s1["rsi-cycle show<br/><i>none</i>"]
+  operator_quarantine_a_bad_self_edit_s0 --> operator_quarantine_a_bad_self_edit_s1
+  page_learn -.-> operator_quarantine_a_bad_self_edit_s1
+  operator_quarantine_a_bad_self_edit_s2["rsi-cycle quarantine<br/><i>none</i>"]
+  operator_quarantine_a_bad_self_edit_s1 --> operator_quarantine_a_bad_self_edit_s2
+  page_learn -.-> operator_quarantine_a_bad_self_edit_s2
+  operator_quarantine_a_bad_self_edit_s3["rsi-cycle revert<br/><i>none</i>"]
+  operator_quarantine_a_bad_self_edit_s2 --> operator_quarantine_a_bad_self_edit_s3
+  page_learn -.-> operator_quarantine_a_bad_self_edit_s3
+  operator_serve_the_local_api["operator/serve-the-local-api<br/><i>none</i>"]
+  operator_serve_the_local_api_s0["serve<br/><i>none</i>"]
+  operator_serve_the_local_api --> operator_serve_the_local_api_s0
+  page_kanban -.-> operator_serve_the_local_api_s0
+  operator_serve_the_local_api_s1["board page<br/><i>none</i>"]
+  operator_serve_the_local_api_s0 --> operator_serve_the_local_api_s1
+  page_kanban -.-> operator_serve_the_local_api_s1
+  operator_serve_the_local_api_s2["topology<br/><i>none</i>"]
+  operator_serve_the_local_api_s1 --> operator_serve_the_local_api_s2
+  page_orch -.-> operator_serve_the_local_api_s2
+  operator_step_a_run_by_hand["operator/step-a-run-by-hand<br/><i>none</i>"]
+  operator_step_a_run_by_hand_s0["execute<br/><i>none</i>"]
+  operator_step_a_run_by_hand --> operator_step_a_run_by_hand_s0
+  page_run -.-> operator_step_a_run_by_hand_s0
+  operator_step_a_run_by_hand_s1["execute reflector<br/><i>none</i>"]
+  operator_step_a_run_by_hand_s0 --> operator_step_a_run_by_hand_s1
+  page_run -.-> operator_step_a_run_by_hand_s1
+  operator_step_a_run_by_hand_s2["run<br/><i>none</i>"]
+  operator_step_a_run_by_hand_s1 --> operator_step_a_run_by_hand_s2
+  page_runs -.-> operator_step_a_run_by_hand_s2
   page_autos(["#page autos"])
   page_inbox(["#page inbox"])
+  page_kanban(["#page kanban"])
+  page_learn(["#page learn"])
+  page_nodes(["#page nodes"])
+  page_orch(["#page orch"])
   page_recipes(["#page recipes"])
   page_run(["#page run"])
   page_runs(["#page runs"])
