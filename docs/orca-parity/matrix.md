@@ -91,8 +91,8 @@ inventory of the same checkout (`AGENTS.md`, the `orca` verb surface); rows
 | # | Orca capability | Orca evidence | mini-ork | Status |
 |---|---|---|---|---|
 | 40 | Tasks page over GitHub / GitLab / Linear / Jira, start workspace from item | `task-page/TaskPage.tsx`, `settings/TasksPane.tsx` | `kanban` sources pane emits `pm add\|test\|remove` for github/linear/jira and shows each source's declared/enabled/skipped/errored state, which is what `pm sources` prints — the pane supersedes the verb, so no button is owed; `orch` emits `intake once`; a mirrored ticket's own page emits `intake dispatch <uid>` (`task.py`) while the ticket is open; GitLab has no provider | partial (GitLab: missing) |
-| 41 | Automations page and editor (prompt, project, agent, schedule, precheck) | `automations/AutomationEditorDialog.tsx` | `autos` page emits run/pause/resume/remove/scheduler; `mini_ork/automations.py` has `update` but the CLI has no `automations edit` | partial — no editor, one verb short |
-| 42 | Automation runs dashboard with host filter | `automations/AutomationRunsDashboard.tsx` | `automations list` + `autos` page rows; no run history view | partial |
+| 41 | Automations page and editor (prompt, project, agent, schedule, precheck) | `automations/AutomationEditorDialog.tsx` | `autos` page emits run/pause/resume/remove/scheduler, reviews agent-written drafts with `automations draft commit\|discard` (`autos.py`), and the CLI has `automations add\|edit`; no in-page editor form | partial — editor only |
+| 42 | Automation runs dashboard with host filter | `automations/AutomationRunsDashboard.tsx` | `automations runs` and the `autos` page's Recent firings table — one row per attempt with status and a link into the run (`autos.py`); no host column or filter | partial |
 | 43 | Artifacts page: preview, publish public link, copy/open, delete | `artifacts/ArtifactsPage.tsx`, `ArtifactPublishButton.tsx` | Run/node artifacts with preview (`ide_pages/node_artifacts.py`, `board artifacts`); every row opens the file and carries Copy path / Reveal (`run.py`); no share link (would need an account and a host), no delete | partial |
 | 44 | Skills: browse, install to target agents, share bundle, freshness update | `skills/SkillsPage.tsx`, `SkillDetailDialog.tsx:81-184` | `skills list/show/validate/promote` CLI + Zed `crates/agent_skills`; the `skills` page browses the registry with each skill's tier and description, renders a skill's body in place, and promotes a TraceOtter-mined procedure into the project registry (`mini_ork/ide_pages/skills.py`); no share bundle, no freshness update | partial |
 | 45 | Activity inbox: thread list/detail, scope filters, clear unread | `activity/ActivityPrototypePage.tsx` | `inbox` page (`mini_ork/ide_pages/inbox.py`, 1126 lines) | parity |
@@ -188,8 +188,8 @@ Closed this pass (the pages now emit the verb that already worked):
 The `partial` set splits into two kinds and should not be planned together:
 
 - **one verb or one button away** — rows 9, 10, 11, 17, 36, 41, 42, 53, 56, 61
-  (of these, 36 is done and 9/40 have their start action; 41/42 still lack an
-  `automations edit` verb and a run-history view).
+  (of these, 36/42 are done and 9/40 have their start action; 41 is missing only
+  an in-page editor form).
 - **needs a design decision first** — rows 14 (GitLab provider), 18 (worktree
   GC), 22 (quick commands vs recipes), 23 (daemon), 43 (share links need a
   host), 51 (message taxonomy), 63 (how much run context belongs in chat).
