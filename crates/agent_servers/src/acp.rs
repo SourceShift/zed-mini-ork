@@ -116,6 +116,14 @@ struct ClientContext {
     sessions: Rc<RefCell<HashMap<acp::SessionId, AcpSession>>>,
     session_list: Rc<RefCell<Option<Rc<AcpSessionList>>>>,
     request_elicitations: Entity<ElicitationStore>,
+    /// Command announcements that arrived before their session was registered.
+    ///
+    /// An agent may announce its slash commands from inside `session/new`,
+    /// which is before the client has a session to attach them to (the id
+    /// only exists once the response lands). Dropping them left the editor
+    /// rejecting every `/command` with "available commands: none", so they
+    /// are held here and applied when the session is registered.
+    early_commands: Rc<RefCell<HashMap<acp::SessionId, Vec<acp::AvailableCommand>>>>,
 }
 
 fn dispatch_queue_closed_error() -> acp::Error {
@@ -274,6 +282,7 @@ pub struct AcpConnection {
     agent_version: Option<SharedString>,
     connection: ConnectionTo<Agent>,
     sessions: Rc<RefCell<HashMap<acp::SessionId, AcpSession>>>,
+    early_commands: Rc<RefCell<HashMap<acp::SessionId, Vec<acp::AvailableCommand>>>>,
     pending_sessions: RefCell<HashMap<acp::SessionId, PendingAcpSession>>,
     auth_methods: Vec<acp_v2::AuthMethod>,
     agent_server_store: WeakEntity<AgentServerStore>,
@@ -763,6 +772,7 @@ impl AcpConnection {
             debug_log,
         } = transport::spawn_stdio(&project, command, cx)?;
         let sessions = Rc::new(RefCell::new(HashMap::default()));
+        let early_commands = Rc::new(RefCell::new(HashMap::default()));
 
         let (release_channel, version): (Option<&str>, String) = cx.update(|cx| {
             (
@@ -824,6 +834,7 @@ impl AcpConnection {
         // Set up the foreground dispatch loop to process work items from handlers.
         let dispatch_context = ClientContext {
             sessions: sessions.clone(),
+            early_commands: early_commands.clone(),
             session_list: client_session_list.clone(),
             request_elicitations: request_elicitations.clone(),
         };
@@ -983,6 +994,7 @@ impl AcpConnection {
             telemetry_id,
             agent_version,
             sessions,
+            early_commands,
             pending_sessions: RefCell::new(HashMap::default()),
             agent_capabilities: response.agent_capabilities,
             request_elicitations,
@@ -1009,6 +1021,7 @@ impl AcpConnection {
     fn new_for_test(
         connection: ConnectionTo<Agent>,
         sessions: Rc<RefCell<HashMap<acp::SessionId, AcpSession>>>,
+        early_commands: Rc<RefCell<HashMap<acp::SessionId, Vec<acp::AvailableCommand>>>>,
         agent_capabilities: acp::AgentCapabilities,
         request_elicitations: Entity<ElicitationStore>,
         agent_server_store: WeakEntity<AgentServerStore>,
@@ -1027,6 +1040,7 @@ impl AcpConnection {
             agent_version: None,
             connection,
             sessions,
+            early_commands,
             pending_sessions: RefCell::new(HashMap::default()),
             auth_methods: vec![],
             agent_server_store,
@@ -1073,7 +1087,7 @@ impl AcpConnection {
             }
         });
         self.sessions.borrow_mut().insert(
-            session_id,
+            session_id.clone(),
             AcpSession {
                 thread: thread.downgrade(),
                 suppress_abort_err: false,
@@ -1083,6 +1097,23 @@ impl AcpConnection {
                 _release_subscription: release_subscription,
             },
         );
+
+        // Commands announced during `session/new`, before this registration.
+        let early_commands = self.early_commands.borrow_mut().remove(&session_id);
+        if let Some(commands) = early_commands {
+            if let Err(error) = thread.update(cx, |thread, cx| {
+                thread.handle_session_update(
+                    acp::SessionUpdate::AvailableCommandsUpdate(
+                        acp::AvailableCommandsUpdate::new(commands),
+                    ),
+                    cx,
+                )
+            }) {
+                log::error!(
+                    "Failed to apply commands announced before session {session_id:?} registered: {error:?}"
+                );
+            }
+        }
     }
 
     fn remove_session(&self, session_id: &acp::SessionId, thread_id: gpui::EntityId) {
@@ -2350,6 +2381,7 @@ pub mod test_support {
         let logout_count = Arc::new(AtomicUsize::new(0));
         let sessions: Rc<RefCell<HashMap<acp::SessionId, AcpSession>>> =
             Rc::new(RefCell::new(HashMap::default()));
+        let early_commands = Rc::new(RefCell::new(HashMap::default()));
         let client_session_list: Rc<RefCell<Option<Rc<AcpSessionList>>>> =
             Rc::new(RefCell::new(None));
 
@@ -2505,6 +2537,7 @@ pub mod test_support {
         let request_elicitations = cx.new(|_| ElicitationStore::default());
         let dispatch_context = ClientContext {
             sessions: sessions.clone(),
+            early_commands: early_commands.clone(),
             session_list: client_session_list.clone(),
             request_elicitations: request_elicitations.clone(),
         };
@@ -2524,6 +2557,7 @@ pub mod test_support {
             AcpConnection::new_for_test(
                 client_conn,
                 sessions,
+                early_commands,
                 agent_capabilities,
                 request_elicitations,
                 agent_server_store,
@@ -4753,12 +4787,14 @@ mod tests {
             .await
             .expect("failed to receive ACP connection");
         let sessions = Rc::new(RefCell::new(HashMap::default()));
+        let early_commands = Rc::new(RefCell::new(HashMap::default()));
 
         let connection = cx.update(|cx| {
             let request_elicitations = cx.new(|_| ElicitationStore::default());
             AcpConnection::new_for_test(
                 client_conn,
                 sessions,
+                early_commands,
                 acp::AgentCapabilities::default(),
                 request_elicitations,
                 WeakEntity::new_invalid(),
@@ -5121,6 +5157,7 @@ exit 7
 
         let sessions: Rc<RefCell<HashMap<acp::SessionId, AcpSession>>> =
             Rc::new(RefCell::new(HashMap::default()));
+        let early_commands = Rc::new(RefCell::new(HashMap::default()));
         let client_session_list: Rc<RefCell<Option<Rc<AcpSessionList>>>> =
             Rc::new(RefCell::new(None));
 
@@ -5151,8 +5188,21 @@ exit 7
                 agent_client_protocol::on_receive_request!(),
             )
             .on_receive_request(
-                async move |_req: acp::NewSessionRequest, responder, _cx| {
-                    responder.respond(acp::NewSessionResponse::new(acp::SessionId::new("unused")))
+                async move |_req: acp::NewSessionRequest, responder, cx| {
+                    // An agent may announce its slash commands here, before
+                    // the client has the session id the response will carry.
+                    // The client must not drop that announcement.
+                    let session_id = acp::SessionId::new("unused");
+                    cx.send_notification(acp::SessionNotification::new(
+                        session_id.clone(),
+                        acp::SessionUpdate::AvailableCommandsUpdate(
+                            acp::AvailableCommandsUpdate::new(vec![acp::AvailableCommand::new(
+                                "status",
+                                "Run card",
+                            )]),
+                        ),
+                    ))?;
+                    responder.respond(acp::NewSessionResponse::new(session_id))
                 },
                 agent_client_protocol::on_receive_request!(),
             )
@@ -5267,6 +5317,7 @@ exit 7
         let request_elicitations = cx.new(|_| ElicitationStore::default());
         let dispatch_context = ClientContext {
             sessions: sessions.clone(),
+            early_commands: early_commands.clone(),
             session_list: client_session_list.clone(),
             request_elicitations: request_elicitations.clone(),
         };
@@ -5291,6 +5342,7 @@ exit 7
             AcpConnection::new_for_test(
                 client_conn,
                 sessions,
+                early_commands,
                 agent_capabilities,
                 request_elicitations,
                 agent_server_store,
@@ -5651,11 +5703,45 @@ exit 7
         reloaded_thread.read_with(cx, |thread, _| assert!(thread.notices().is_empty()));
     }
 
-    // Regression test: per the ACP spec, an agent replays the entire conversation
-    // history as `session/update` notifications *before* responding to the
-    // `session/load` request. These notifications must be applied to the
-    // reconstructed thread, not dropped because the session hasn't been
-    // registered yet.
+    // Regression test: an agent may announce its slash commands from inside
+    // `session/new`, before the client has the session id that response carries.
+    // Those announcements must be applied once the session registers; dropping
+    // them left every `/command` rejected as unknown.
+    #[gpui::test]
+    async fn test_new_session_keeps_commands_announced_before_the_response(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        // Keep every handle: dropping the keep-alive task cancels the fake
+        // agent's connection before the session request is dispatched.
+        let (connection, project, _load_count, _close_count, _updates, _gate, _keep_agent_alive) =
+            connect_fake_agent(None, cx).await;
+
+        let thread = cx
+            .update(|cx| {
+                connection.clone().new_session(
+                    project,
+                    util::path_list::PathList::new(&[std::path::Path::new("/a")]),
+                    cx,
+                )
+            })
+            .await
+            .expect("new_session failed");
+        cx.run_until_parked();
+
+        let commands = thread.read_with(cx, |thread, _| {
+            thread
+                .available_commands()
+                .iter()
+                .map(|command| command.name.clone())
+                .collect::<Vec<_>>()
+        });
+        assert_eq!(commands, vec!["status"]);
+    }
+
+    // Per the ACP spec, an agent replays the entire conversation history as
+    // `session/update` notifications *before* responding to the `session/load`
+    // request. These notifications must be applied to the reconstructed thread,
+    // not dropped because the session hasn't been registered yet.
     #[gpui::test]
     async fn test_load_session_replays_notifications_sent_before_response(
         cx: &mut gpui::TestAppContext,
@@ -6716,6 +6802,20 @@ fn handle_session_notification(
     let (thread, session_modes, config_opts_data) = {
         let sessions = ctx.sessions.borrow();
         let Some(session) = sessions.get(&notification.session_id) else {
+            // An agent that announces its slash commands from inside
+            // `session/new` is ahead of this map by exactly one request: the
+            // session is registered when the response is processed. Hold the
+            // announcement until then instead of discarding it — the editor
+            // otherwise treats every `/command` as unknown for the life of
+            // the thread.
+            if let acp::SessionUpdate::AvailableCommandsUpdate(update) = &notification.update {
+                ctx.early_commands
+                    .borrow_mut()
+                    .entry(notification.session_id.clone())
+                    .or_default()
+                    .extend(update.available_commands.iter().cloned());
+                return;
+            }
             log::warn!(
                 "Received session notification for unknown session: {:?}",
                 notification.session_id
