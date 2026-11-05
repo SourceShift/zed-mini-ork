@@ -6,6 +6,7 @@ mod fallible_options;
 mod language;
 mod language_model;
 pub mod merge_from;
+mod mini_ork;
 mod project;
 mod serde_helper;
 mod terminal;
@@ -22,6 +23,7 @@ pub use fallible_options::*;
 pub use language::*;
 pub use language_model::*;
 pub use merge_from::MergeFrom as MergeFromTrait;
+pub use mini_ork::*;
 pub use project::*;
 use serde::de::DeserializeOwned;
 pub use serde_helper::{
@@ -203,6 +205,9 @@ pub struct SettingsContent {
     pub tabs: Option<ItemSettingsContent>,
     pub tab_bar: Option<TabBarSettingsContent>,
     pub status_bar: Option<StatusBarSettingsContent>,
+
+    /// Settings for the mini-ork IDE shell (the fork's status bar items).
+    pub mini_ork: Option<MiniOrkSettingsContent>,
 
     pub preview_tabs: Option<PreviewTabsSettingsContent>,
 
@@ -411,7 +416,7 @@ fallible_options::flattened_deserialize!(SettingsContent {
         journal, log, line_indicator_format, language_models, copilot, outline_panel, project_panel,
         node, proxy, reduce_motion, server_url, credentials_url, session, telemetry, terminal,
         title_bar, vim_mode, calls, which_key, vim, modeline_lines, feature_flags,
-        instrumentation,
+        instrumentation, mini_ork,
     },
     defaults: {},
 });

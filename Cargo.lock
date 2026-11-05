@@ -10986,6 +10986,7 @@ dependencies = [
  "ui_input",
  "util",
  "workspace",
+ "zed_actions",
 ]
 
 [[package]]
