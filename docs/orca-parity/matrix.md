@@ -16,7 +16,7 @@ Statuses are defined in `README.md`. Two conventions matter when reading:
   "worktree creation" is `partial` because the verb exists but the mental model
   a user brings is rejected at step one.
 
-Counts: **14 parity · 35 partial · 1 cli-only · 14 missing · 4 not-applicable**
+Counts: **16 parity · 34 partial · 1 cli-only · 13 missing · 4 not-applicable**
 across 68 rows. Rows 1–49 come from the renderer inventory of `sources/orca`
 (`src/renderer`, `src/preload`, `src/shared`); rows 50–59 from the orchestration
 inventory of the same checkout (`AGENTS.md`, the `orca` verb surface); rows
@@ -27,7 +27,7 @@ inventory of the same checkout (`AGENTS.md`, the `orca` verb surface); rows
 | # | Orca capability | Orca evidence | mini-ork | Status |
 |---|---|---|---|---|
 | 1 | Multi-view shell with a left sidebar, workbench, right sidebar | `src/renderer/src/app-shell/AppWorkspaceShell.tsx:91-248` | Zed workbench + 12-entry activity bar (`crates/mini_ork_ui/src/sidebar.rs`) + 20 pages (`mini_ork/ide_pages/__init__.py`) | parity |
-| 2 | Command palette with worktree, tab, project, settings, task rows | `components/use-worktree-jump-palette-list-entries.ts:40-231` | `⌘J` jump palette lists runs and pages only (`crates/mini_ork_ui/src/jump.rs`) | partial — no settings deep-links, no task or file rows |
+| 2 | Command palette with worktree, tab, project, settings, task rows | `components/use-worktree-jump-palette-list-entries.ts:40-231` | `⌘J` jump palette lists runs, tickets (read from the cached board page), files (project tree, collected once per open), pages and settings deep-links (`crates/mini_ork_ui/src/jump.rs`) | parity |
 | 3 | File quick-open | `components/QuickOpen.tsx` | Zed file finder | parity (inherited) |
 | 4 | Recent-tab switcher overlay | `components/tab-bar/RecentTabSwitcher.tsx` | Zed tab commands in the palette; no overlay | partial |
 | 5 | Back/forward worktree history | `TitlebarLeftControls.tsx:26-153` | Zed per-pane nav history; nothing across runs | partial |
@@ -83,23 +83,23 @@ inventory of the same checkout (`AGENTS.md`, the `orca` verb surface); rows
 |---|---|---|---|---|
 | 36 | Provider usage roster and per-account switchers | `status-bar/UsageRosterPanel.tsx`, `ClaudeSwitcherMenu.tsx` | `lanes` page shows usage and emits `usage-report`, plus `lifetime summary` and `lifetime conductor-history` from its header (`lanes.py`); `providers` has `status`/`configure` with no page action | partial |
 | 37 | Resource manager: per-workspace CPU/mem, session inventory, kill | `status-bar/WorkspaceSpaceManagerPanel.tsx`, `use-resource-usage-actions.ts:222` | Nothing; `nodes` page covers remote nodes, not local processes | missing |
-| 38 | Status-bar segment visibility menu | `status-bar/StatusBarVisibilityMenu.tsx` | Zed status bar items are not user-selectable | missing |
-| 39 | Agent-completion notifications, sounds, macOS permission card | `NotificationCardStack.tsx`, `hooks/agent-hook-completion-notifications.ts` | Zed `crates/notifications` plus the `inbox` page; mini-ork run completion is not wired to a desktop toast | partial |
+| 38 | Status-bar segment visibility menu | `status-bar/StatusBarVisibilityMenu.tsx` | Right-click the board toggle for a checklist of the six segments; each toggle writes `mini_ork.status_bar` in settings.json and a hidden segment is not drawn at all (`crates/mini_ork_ui/src/status.rs`, `crates/settings_content/src/mini_ork.rs`) | parity |
+| 39 | Agent-completion notifications, sounds, macOS permission card | `NotificationCardStack.tsx`, `hooks/agent-hook-completion-notifications.ts` | Zed `crates/notifications` plus the `inbox` page; a run that leaves `working` raises a toast whose Show opens its tab (`crates/mini_ork_ui/src/store.rs::announce_finished`); no per-state sound, no permission card | partial |
 
 ## 6. Feature pages
 
 | # | Orca capability | Orca evidence | mini-ork | Status |
 |---|---|---|---|---|
-| 40 | Tasks page over GitHub / GitLab / Linear / Jira, start workspace from item | `task-page/TaskPage.tsx`, `settings/TasksPane.tsx` | `kanban` sources pane emits `pm add\|test\|remove` for github/linear/jira and shows each source's declared/enabled/skipped/errored state, which is what `pm sources` prints — the pane supersedes the verb, so no button is owed; `orch` emits `intake once`; no row starts a run from an item; GitLab has no provider | partial (GitLab: missing) |
+| 40 | Tasks page over GitHub / GitLab / Linear / Jira, start workspace from item | `task-page/TaskPage.tsx`, `settings/TasksPane.tsx` | `kanban` sources pane emits `pm add\|test\|remove` for github/linear/jira and shows each source's declared/enabled/skipped/errored state, which is what `pm sources` prints — the pane supersedes the verb, so no button is owed; `orch` emits `intake once`; a mirrored ticket's own page emits `intake dispatch <uid>` (`task.py`) while the ticket is open; GitLab has no provider | partial (GitLab: missing) |
 | 41 | Automations page and editor (prompt, project, agent, schedule, precheck) | `automations/AutomationEditorDialog.tsx` | `autos` page emits run/pause/resume/remove/scheduler; `mini_ork/automations.py` has `update` but the CLI has no `automations edit` | partial — no editor, one verb short |
 | 42 | Automation runs dashboard with host filter | `automations/AutomationRunsDashboard.tsx` | `automations list` + `autos` page rows; no run history view | partial |
-| 43 | Artifacts page: preview, publish public link, copy/open, delete | `artifacts/ArtifactsPage.tsx`, `ArtifactPublishButton.tsx` | Run/node artifacts (`ide_pages/node_artifacts.py`, `board artifacts`); no share link (would need an account and a host) | partial |
-| 44 | Skills: browse, install to target agents, share bundle, freshness update | `skills/SkillsPage.tsx`, `SkillDetailDialog.tsx:81-184` | `skills list/show/validate/promote` CLI + Zed `crates/agent_skills`; no mini-ork skills page, no share | partial |
+| 43 | Artifacts page: preview, publish public link, copy/open, delete | `artifacts/ArtifactsPage.tsx`, `ArtifactPublishButton.tsx` | Run/node artifacts with preview (`ide_pages/node_artifacts.py`, `board artifacts`); every row opens the file and carries Copy path / Reveal (`run.py`); no share link (would need an account and a host), no delete | partial |
+| 44 | Skills: browse, install to target agents, share bundle, freshness update | `skills/SkillsPage.tsx`, `SkillDetailDialog.tsx:81-184` | `skills list/show/validate/promote` CLI + Zed `crates/agent_skills`; the `skills` page browses the registry with each skill's tier and description, renders a skill's body in place, and promotes a TraceOtter-mined procedure into the project registry (`mini_ork/ide_pages/skills.py`); no share bundle, no freshness update | partial |
 | 45 | Activity inbox: thread list/detail, scope filters, clear unread | `activity/ActivityPrototypePage.tsx` | `inbox` page (`mini_ork/ide_pages/inbox.py`, 1126 lines) | parity |
 | 46 | Agent dashboard: Kanban of agent sessions, terminal preview | `dashboard/AgentDashboardDrawer.tsx`, `dashboard-popout/AgentKanbanBoard.tsx` | `kanban`, `orch`, `runs`, `dags` pages | parity |
 | 47 | Orca Mobile: pairing QR, paired devices, relay | `mobile/MobilePage.tsx`, `MobileHeroPairingStep.tsx` | Nothing; no mobile client | not-applicable — no mobile target exists |
 | 48 | Notification center and permission card | `NotificationCardStack.tsx` | Zed notifications + `inbox` page | partial |
-| 49 | Global search across worktrees, docs, tasks | `cmd-j/palette-filter.ts`, `use-worktree-jump-palette-list-entries.ts` | `⌘J` over runs/pages; `search` page over ContextNest | partial |
+| 49 | Global search across worktrees, docs, tasks | `cmd-j/palette-filter.ts`, `use-worktree-jump-palette-list-entries.ts` | `⌘J` over runs, tickets, files, pages and settings (`jump.rs`), plus the `search` page over ContextNest; the file rows cover the current project only | partial |
 
 ## 7. Orchestration (Orca's core, and the closest comparison)
 
@@ -151,9 +151,10 @@ missing. What is left, in order of value per line changed:
    `update`), and a review surface for the drafts the agent produces
    (`mcp:draft_kickoff`, `mcp:draft_recipe`). Row 9's composer now drafts and
    starts; it cannot show a draft produced elsewhere.
-2. **Tasks, row 40** — no row starts a run from a task item; GitLab has no
-   provider. (`pm sources` needs no button: the `kanban` sources pane renders
-   the same declared/enabled/skipped/errored state.)
+2. **Tasks, row 40** — only the GitLab provider is missing: a mirrored
+   ticket's page already emits `intake dispatch <uid>` while the ticket is open.
+   (`pm sources` needs no button: the `kanban` sources pane renders the same
+   declared/enabled/skipped/errored state.)
 3. **Worktrees, rows 10/11/17** — rename, pin, sleep and unread are states
    mini-ork does not model; the `runs` list is the closest surface and has no
    context menu. These need a decision before a button.
@@ -174,10 +175,21 @@ Closed this pass (the pages now emit the verb that already worked):
   `verify` gates tab, each labelable with `verifier annotate` (false positive /
   false negative). No Orca row maps to it; it is mini-ork's own loop and it had
   no caller at all.
+- **Palette and status bar, rows 2/38/49** — `⌘J` gained ticket, file and
+  settings rows (`jump.rs`), and the status bar's own segments hide from a
+  right-click checklist written to `mini_ork.status_bar` (`status.rs`).
+- **Skills, row 44** — a `skills` page: registry with per-skill tier, the
+  `SKILL.md` body rendered in place, and `skills promote` on mined procedures
+  (`ide_pages/skills.py`).
+- **Artifacts, row 43** — artifact rows copy their path or reveal the file
+  (`run.py`); the public share link is still declined on purpose (it needs an
+  account and a host).
 
 The `partial` set splits into two kinds and should not be planned together:
 
-- **one verb or one button away** — rows 9, 10, 11, 17, 36, 41, 42, 53, 56, 61.
+- **one verb or one button away** — rows 9, 10, 11, 17, 36, 41, 42, 53, 56, 61
+  (of these, 36 is done and 9/40 have their start action; 41/42 still lack an
+  `automations edit` verb and a run-history view).
 - **needs a design decision first** — rows 14 (GitLab provider), 18 (worktree
   GC), 22 (quick commands vs recipes), 23 (daemon), 43 (share links need a
   host), 51 (message taxonomy), 63 (how much run context belongs in chat).
